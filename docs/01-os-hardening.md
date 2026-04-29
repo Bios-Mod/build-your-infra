@@ -966,8 +966,6 @@ that AIDE and auditd may not catch. acct provides an irrefutable command
 history per user, independent of shell history. sysstat establishes a
 performance baseline that makes anomalous resource consumption visible.
 
----
-
 ### Verification
 
 ```bash
@@ -1183,6 +1181,12 @@ sudo logrotate --debug /etc/logrotate.d/hardening-logs 2>&1 | grep "create"
 ---
 
 ## Step 12 — Security Audit Baseline (Lynis)
+
+> Lynis maps its controls internally against CIS Benchmark Level 1, NIST SP 800-53,
+> and ISO 27001 — a passing Lynis control corresponds to the equivalent CIS L1
+> requirement being met at runtime, not only in configuration files.
+> This is not a formal CIS audit; it is a verified runtime baseline using Lynis
+> as the audit engine. The badge reflects alignment, not certification.
 
 ### What was done
 Lynis 3.0.9 was run after completing all hardening steps to establish a

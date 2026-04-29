@@ -1,7 +1,7 @@
 # Multi-Service Linux Server — Build & Hardening Guide
 
 ![Lynis Hardening Index](https://img.shields.io/badge/Lynis%20Index-88-brightgreen?style=flat-square&logo=linux&logoColor=white)
-![CIS Level 1](https://img.shields.io/badge/CIS-Level%201-blue?style=flat-square)
+![CIS Level 1](https://img.shields.io/badge/CIS-Level%201%20Aligned-blue?style=flat-square)
 ![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange?style=flat-square&logo=ubuntu&logoColor=white)
 ![OpenSSH](https://img.shields.io/badge/OpenSSH-Ed25519-black?style=flat-square&logo=openssh&logoColor=white)
 ![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)
