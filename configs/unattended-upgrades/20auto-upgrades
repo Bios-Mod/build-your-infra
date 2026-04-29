@@ -1,0 +1,17 @@
+// ============================================================
+// Deploy to : /etc/apt/apt.conf.d/20auto-upgrades
+// Apply     : sudo systemctl restart unattended-upgrades
+// Note      : Controls execution schedule. Values in days.
+//             Works together with 50unattended-upgrades.
+// ============================================================
+// How often to update the package list (apt update)
+APT::Periodic::Update-Package-Lists "1";
+
+// How often to download available updates
+APT::Periodic::Download-Upgradeable-Packages "1";
+
+// How often to apply security updates
+APT::Periodic::Unattended-Upgrade "1";
+
+// How often to clean up old downloaded packages from the cache
+APT::Periodic::AutocleanInterval "7";

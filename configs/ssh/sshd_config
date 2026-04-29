@@ -1,0 +1,190 @@
+# ============================================================
+# Source  : /etc/ssh/sshd_config
+# Purpose : OpenSSH daemon hardened configuration
+# Apply   : sudo sshd -t && sudo systemctl reload ssh
+# Verify  : sudo sshd -T | grep -E "allowtcpforwarding|allowagentforwarding|tcpkeepalive|loglevel|maxauthtries|maxsessions|strictmodes|banner"
+# ============================================================
+
+# This is the sshd server system-wide configuration file.  See
+# sshd_config(5) for more information.
+
+# This sshd was compiled with PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games
+
+# The strategy used for options in the default sshd_config shipped with
+# OpenSSH is to specify options with their default value where
+# possible, but leave them commented.  Uncommented options override the
+# default value.
+
+# Load drop-in configs from sshd_config.d/ after auditing the directory.
+Include /etc/ssh/sshd_config.d/*.conf
+
+# When systemd socket activation is used (the default), the socket
+# configuration must be re-generated after changing Port, AddressFamily, or
+# ListenAddress.
+#
+# For changes to take effect, run:
+#
+#   systemctl daemon-reload
+#   systemctl restart ssh.socket
+#
+
+# Interface restriction to wg0 is enforced via UFW rules (Step 5).
+# SSH listens on all interfaces at socket level — UFW drops
+# any packet arriving outside wg0 before it reaches this daemon.
+
+#ListenAddress 10.0.0.1
+# Non-standard port — operational benefit only (reduces bot noise in auth.log).
+# Not a security control: nmap finds SSH on any port. Real security is
+# provided by key-only auth, Fail2Ban, and UFW.
+Port 22222
+#AddressFamily any
+#ListenAddress ::
+
+#HostKey /etc/ssh/ssh_host_rsa_key
+#HostKey /etc/ssh/ssh_host_ecdsa_key
+#HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Ciphers and keying
+#RekeyLimit default none
+
+# ── Cryptographic policy ─────────────────────────────────────────────────────
+# Explicit allowlists — modern algorithms only. CBC-mode ciphers excluded
+# (BEAST / Lucky13). ETM MACs only (eliminates padding oracle class).
+# DH group1/group14 excluded (Logjam / 1024-bit downgrade).
+# OpenSSH 8.x+ defaults already exclude the worst options — explicit config
+# makes the policy auditable without runtime inspection via 'sshd -T'.
+Ciphers chacha20-poly1305@openssh.com,aes256-gcm@openssh.com,aes128-gcm@openssh.com,aes256-ctr,aes192-ctr,aes128-ctr
+
+# Explicit MAC allowlist — ETM (Encrypt-then-MAC) variants only.
+# EtM authenticates the ciphertext before decryption — eliminates padding oracle attacks.
+MACs hmac-sha2-512-etm@openssh.com,hmac-sha2-256-etm@openssh.com,umac-128-etm@openssh.com
+
+# Key exchange — Curve25519 and ECDH only. Removes diffie-hellman-group1 (Logjam).
+KexAlgorithms curve25519-sha256,curve25519-sha256@libssh.org,ecdh-sha2-nistp521,ecdh-sha2-nistp384,ecdh-sha2-nistp256
+
+# Logging
+#SyslogFacility AUTH
+# VERBOSE logs the fingerprint of the key used on each login — audit trail
+# of which client connected, not just which user.
+LogLevel VERBOSE
+
+# ── Authentication ────────────────────────────────────────────────────────────
+# Explicit whitelist — any account not listed cannot connect via SSH
+# even if it exists on the system. Replace <username> with actual username.
+AllowUsers <username>
+
+# Close unauthenticated connections after 30 seconds — reduces exposure
+# window for incomplete authentication attempts.
+LoginGraceTime 30
+
+# Removes the most valuable privilege escalation target.
+PermitRootLogin no
+
+# SSH verifies ownership and permissions of ~/.ssh/ and authorized_keys
+# before allowing login. Prevents injected keys if write access to those
+# files is gained. OpenSSH default is yes — set explicitly for auditability.
+StrictModes yes
+
+# Limits authentication attempts per connection. After 3 failures the
+# connection is closed. Complements Fail2Ban which acts across connections.
+MaxAuthTries 3
+
+# Limits simultaneous sessions per connection.
+MaxSessions 2
+
+# Ed25519 key authentication only — fast, modern, secure.
+PubkeyAuthentication yes
+
+# Only the standard path — .ssh/authorized_keys2 is a legacy path that OpenSSH
+# still reads by default but is undocumented and rarely audited.
+# Restricting to a single explicit path eliminates it as a persistence vector.
+AuthorizedKeysFile .ssh/authorized_keys
+
+#AuthorizedPrincipalsFile none
+#AuthorizedKeysCommand none
+#AuthorizedKeysCommandUser nobody
+
+#HostbasedAuthentication no
+#IgnoreUserKnownHosts no
+#IgnoreRhosts yes
+
+# ── Password and keyboard auth ────────────────────────────────────────────────
+# Key-only authentication. With no password to try, brute-force is irrelevant.
+PasswordAuthentication no
+PermitEmptyPasswords no
+
+# Disables challenge-response (PAM keyboard-interactive). Must be no when
+# PasswordAuthentication is no to fully close the password auth path.
+KbdInteractiveAuthentication no
+
+# ── Kerberos / GSSAPI (not used) ─────────────────────────────────────────────
+#KerberosAuthentication no
+#KerberosOrLocalPasswd yes
+#KerberosTicketCleanup yes
+#KerberosGetAFSToken no
+#GSSAPIAuthentication no
+#GSSAPICleanupCredentials yes
+#GSSAPIStrictAcceptorCheck yes
+#GSSAPIKeyExchange no
+
+# ── PAM ───────────────────────────────────────────────────────────────────────
+# PAM handles account and session processing (limits, environment, logging).
+# PasswordAuthentication and KbdInteractiveAuthentication are both no —
+# PAM cannot be used as a password bypass path.
+UsePAM yes
+
+# ── Forwarding and tunneling ──────────────────────────────────────────────────
+# SSH is used for interactive shell access only.
+# All tunneling and forwarding capabilities are disabled — prevents use
+# of the SSH session as a proxy or lateral movement vector.
+AllowTcpForwarding no
+AllowAgentForwarding no
+#GatewayPorts no
+X11Forwarding no
+#X11DisplayOffset 10
+#X11UseLocalhost yes
+#PermitTTY yes
+PrintMotd no
+#PrintLastLog yes
+
+# Session liveness is handled at the SSH protocol level (encrypted channel),
+# not at the TCP layer. ClientAliveInterval sends an encrypted keepalive
+# every 300s; after 2 missed responses (600s total) the session is dropped.
+# TCPKeepAlive no prevents unencrypted TCP-level probes that could be spoofed.
+TCPKeepAlive no
+ClientAliveInterval 300
+ClientAliveCountMax 2
+
+#PermitUserEnvironment no
+#Compression delayed
+#UseDNS no
+#PidFile /run/sshd.pid
+
+# Limits pre-authentication connections: start dropping at 10, 30% rate, hard cap 60.
+# CIS L1 recommendation. Mitigates pre-auth connection exhaustion DoS.
+MaxStartups 10:30:60
+
+#PermitTunnel no
+#ChrootDirectory none
+#VersionAddendum none
+
+# ── Banner ────────────────────────────────────────────────────────────────────
+# Legal warning displayed before any authentication attempt.
+# Content stored in /etc/issue.net. Satisfies CIS L1 control 5.2.23.
+Banner /etc/issue.net
+
+# Suppress OS/distro version string from the SSH identification banner.
+# Ubuntu's default is yes — disabling reduces information leakage.
+DebianBanner no
+
+# Allow client to pass locale environment variables
+AcceptEnv LANG LC_*
+
+# SFTP subsystem — required for Step 02 (SFTP server)
+Subsystem	sftp	/usr/lib/openssh/sftp-server
+
+#Match User anoncvs
+#	X11Forwarding no
+#	AllowTcpForwarding no
+#	PermitTTY no
+#	ForceCommand cvs server
