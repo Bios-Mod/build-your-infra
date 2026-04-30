@@ -40,12 +40,16 @@ Port 22222
 #AddressFamily any
 #ListenAddress ::
 
-#HostKey /etc/ssh/ssh_host_rsa_key
-#HostKey /etc/ssh/ssh_host_ecdsa_key
-#HostKey /etc/ssh/ssh_host_ed25519_key
-
 # Ciphers and keying
 #RekeyLimit default none
+
+# ── Host identity ─────────────────────────────────────────────────────────────
+# Ed25519 only. OpenSSH defaults to RSA, ECDSA and Ed25519
+# if HostKey is left unset and those files exist on disk. Restricting both
+# the host key file and the offered host key algorithms keeps the server
+# identity aligned with the hardened cryptographic policy defined below.
+HostKey /etc/ssh/ssh_host_ed25519_key
+HostKeyAlgorithms ssh-ed25519
 
 # ── Cryptographic policy ─────────────────────────────────────────────────────
 # Explicit allowlists — modern algorithms only. CBC-mode ciphers excluded

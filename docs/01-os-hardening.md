@@ -200,8 +200,8 @@ resolvectl status | grep "DNS Servers"
 ## Step 3 — SSH Hardening
 
 ### What was done
-`/etc/ssh/sshd_config` hardened across five areas: authentication, access
-control, session limits, forwarding, and cryptographic policy.
+`/etc/ssh/sshd_config` hardened across six areas: authentication, access
+control, session limits, forwarding, cryptographic policy, and host key identity.
 
 Audit `sshd_config.d/` before enabling the `Include` directive — a drop-in
 could silently re-enable password auth or root login:
@@ -213,20 +213,22 @@ sudo grep -r "PasswordAuthentication\|PermitRootLogin\|PubkeyAuthentication" \
 # → no conflicting directives
 ```
 
-Deploy the config and create the banner:
+Deploy the config, create the banner, and remove unused host key material from disk:
 
 > **⚠️ Critical operational note (Preventing Lockout):**
-> Before restarting the SSH daemon or enabling UFW in the next steps, 
+> Before restarting the SSH daemon or enabling UFW in the next steps,
 > **do not close your current active SSH session**.
-> Open a second terminal window and verify you can successfully authenticate using 
+> Open a second terminal window and verify you can successfully authenticate using
 > your Ed25519 key on the new port (22222).
-> If a misconfiguration or network drop occurs, your existing established session 
+> If a misconfiguration or network drop occurs, your existing established session
 > will remain active, allowing you to rollback the changes.
 
 ```bash
 sudo cp sshd_config /etc/ssh/sshd_config
 sudo chmod 600 /etc/ssh/sshd_config
 sudo cp issue.net.template /etc/issue.net
+sudo rm /etc/ssh/ssh_host_rsa_key /etc/ssh/ssh_host_rsa_key.pub
+sudo rm /etc/ssh/ssh_host_ecdsa_key /etc/ssh/ssh_host_ecdsa_key.pub
 sudo sshd -t && sudo systemctl reload ssh
 ```
 
@@ -239,9 +241,9 @@ Key decisions — each directive is documented inline in the config:
 |---|---|---|
 | Authentication | `PasswordAuthentication no` · `PubkeyAuthentication yes` · `PermitEmptyPasswords no` · `KbdInteractiveAuthentication no` | Ed25519 key only — no password path remains open |
 | Access control | `PermitRootLogin no` · `AllowUsers <username>` · `AuthorizedKeysFile .ssh/authorized_keys` | Explicit whitelist; single authorized_keys path eliminates legacy `.authorized_keys2` persistence vector |
-| Session limits | `MaxAuthTries 3` · `LoginGraceTime 30` · `MaxSessions 2` · `MaxStartups 10:30:60` | Reduces exposure window and mitigates pre-auth connection exhaustion |
+| Session & connection | `MaxAuthTries 3` · `LoginGraceTime 30` · `MaxSessions 2` · `MaxStartups 10:30:60` · `UseDNS no` | Limits exposure window and pre-auth connection exhaustion; reverse DNS lookup disabled — avoids PTR delays with internal DNS active |
 | Forwarding | `AllowTcpForwarding no` · `AllowAgentForwarding no` · `X11Forwarding no` | SSH used for interactive shell only — tunneling and proxy paths disabled |
-| Cryptographic policy | `Ciphers` · `MACs` · `KexAlgorithms` | Modern authenticated-encryption only; CBC, non-ETM MACs, and weak DH groups excluded |
+| Cryptographic policy | `Ciphers` · `MACs` · `KexAlgorithms` · `HostKey` · `HostKeyAlgorithms` | Modern authenticated-encryption only; CBC, non-ETM MACs, and weak DH groups excluded — host identity restricted to Ed25519, RSA and ECDSA key files removed from disk |
 
 > **SFTP — Step 02:** `AllowTcpForwarding no` does not affect the SFTP
 > subsystem — SFTP runs over the standard SSH channel, not a TCP forward.
@@ -305,6 +307,17 @@ sudo sshd -T | grep -E "^ciphers|^macs|^kexalgorithms"
 # → ciphers chacha20-poly1305@openssh.com,...
 # → macs hmac-sha2-512-etm@openssh.com,...
 # → kexalgorithms curve25519-sha256,...
+
+# Ed25519 is the only active host key — RSA and ECDSA must not appear
+sudo sshd -T | grep -E 'hostkey|hostkeyalgorithms|usedns'
+# → hostkey /etc/ssh/ssh_host_ed25519_key
+# → hostkeyalgorithms ssh-ed25519
+# → usedns no
+
+# Key files — only Ed25519 pair on disk
+ls /etc/ssh/ssh_host_*
+# → /etc/ssh/ssh_host_ed25519_key
+# → /etc/ssh/ssh_host_ed25519_key.pub
 ```
 
 ---
