@@ -147,6 +147,12 @@ sudo netplan apply
 > - **VPS:** verify the existing Netplan config with `cat /etc/netplan/*.yaml`
 >   before overwriting — providers often pre-configure it via cloud-init.
 >   Replace address/gateway values with those assigned by the provider.
+> - **Cloud Provider Note (cloud-init):**
+>   Cloud providers often use `cloud-init`, which can dynamically overwrite 
+>   `/etc/netplan/` configurations on every reboot.
+>   Ensure `cloud-init` network management is disabled (e.g., by creating 
+>   `/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg` 
+>   with `network: {config: disabled}`) before applying your static IP.
 
 **Ubuntu 24.04 — Netplan DHCP bug:** Netplan 0.106 generates `DHCP=ipv4` in
 the systemd-networkd unit even when `dhcp4: no` is set — a known bug when
@@ -209,6 +215,14 @@ sudo grep -r "PasswordAuthentication\|PermitRootLogin\|PubkeyAuthentication" \
 
 Deploy the config and create the banner:
 
+> **⚠️ Critical operational note (Preventing Lockout):**
+> Before restarting the SSH daemon or enabling UFW in the next steps, 
+> **do not close your current active SSH session**.
+> Open a second terminal window and verify you can successfully authenticate using 
+> your Ed25519 key on the new port (22222).
+> If a misconfiguration or network drop occurs, your existing established session 
+> will remain active, allowing you to rollback the changes.
+
 ```bash
 sudo cp sshd_config /etc/ssh/sshd_config
 sudo chmod 600 /etc/ssh/sshd_config
@@ -236,6 +250,11 @@ Key decisions — each directive is documented inline in the config:
 > **`DebianBanner no`** suppresses the OpenSSH version string from the
 > identification banner — reduces information leakage without affecting
 > functionality.
+
+> **Cloud Provider Note (cloud-init):** On a VPS, `cloud-init` often manages SSH keys
+> and `sshd_config` automatically. Verify that your provider's cloud-init modules are
+> not configured to overwrite your hardened SSH settings or the 
+> `.ssh/authorized_keys` file upon reboot.
 
 ### Why
 SSH is the primary attack vector on internet-facing servers. Disabling
