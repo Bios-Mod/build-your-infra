@@ -8,7 +8,9 @@
 ![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)
 ![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)
 ![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)
-![Phase](https://img.shields.io/badge/Phase-OS%20Hardening%20Complete-success?style=flat-square)
+![AWS](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
+![ARM64](https://img.shields.io/badge/Graviton2-ARM64-232F3E?style=flat-square&logo=arm&logoColor=white)
+![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
 
 A practical, step-by-step reference for deploying and hardening a self-managed
 Linux server from scratch. Covers OS hardening, network services, and identity
@@ -23,20 +25,27 @@ No GUI tools. No automation frameworks. Everything via CLI.
 
 ---
 
-## Stack & Environment
+## Stack & Environments
 
-| Component     | Detail |
-|---------------|--------|
-| OS            | Ubuntu Server 24.04 LTS |
-| Architecture  | ARM64 (aarch64) / x86_64 — see note |
-| Deployment    | VM (VMware Fusion · VMware Workstation · VirtualBox) · Bare metal · VPS |
-| Network       | Static IP — Bridged (VM) / direct (bare metal / VPS) |
-| Remote Access | SSH key-based authentication (Ed25519) |
+| Component     | VM (VMware Fusion)                    | AWS EC2                                |
+|---------------|---------------------------------------|----------------------------------------|
+| OS            | Ubuntu Server 24.04 LTS               | Ubuntu Server 24.04 LTS                |
+| Architecture  | ARM64 (Apple Silicon)                 | ARM64 (Graviton2)                      |
+| Deployment    | VMware Fusion · Bridged network       | EC2 t4g.micro · eu-west-1              |
+| Network       | Static IP · LAN                       | Dynamic public IP · VPC                |
+| Remote Access | SSH Ed25519 · port 22222              | SSH Ed25519 · port 22222               |
 
-> **Architecture note:** This lab was built and tested on ARM64 (Apple Silicon
-> via VMware Fusion). All configurations are architecture-agnostic except where
-> noted. x86_64 users on VMware Workstation, VirtualBox, or bare metal can
-> follow the same steps — differences are called out inline.
+Both environments follow the same hardening baseline and service stack from
+Step 01 onward. DHCP (Step 04) is VM-only — not applicable on AWS.
+
+> See [`docs/00-aws-deployment.md`](docs/00-aws-deployment.md) for AWS
+> infrastructure provisioning.
+
+> **Architecture note:** This lab is built and tested on ARM64 (Apple Silicon
+> via VMware Fusion and AWS Graviton2). All configurations are
+> architecture-agnostic except where noted. x86_64 users on VMware Workstation,
+> VirtualBox, bare metal, or other cloud providers can follow the same steps —
+> differences are called out inline.
 
 ---
 
@@ -66,6 +75,7 @@ values before applying.
 
 | Step | Component | Technology | Status | Doc |
 |------|-----------|------------|--------|-----|
+| 00 | Cloud Infrastructure | AWS EC2 · EBS gp3 · Security Groups · Key Pair | ✅ Complete | [`docs/00-aws-deployment.md`](docs/00-aws-deployment.md) |
 | 01 | OS Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | ✅ Complete | [`docs/01-os-hardening.md`](docs/01-os-hardening.md) |
 
 12 steps covering 9 independent security layers — Lynis hardening index **88**.
