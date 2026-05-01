@@ -115,7 +115,14 @@ multi-lab/
 │   ├── unattended-upgrades
 │   └── wireguard
 ├── docs
-│   └── 01-os-hardening.md
+│   ├── 00-aws-deployment.md
+│   ├── 01-os-hardening.md
+│   ├── 02-sftp.md
+│   ├── 03-dns-bind9.md
+│   ├── 04-dhcp.md
+│   ├── 05-nginx-https.md
+│   ├── 06-reverse-proxy.md
+│   └── 07-samba4.md
 └── snapshots
     └── README.md
 ```
