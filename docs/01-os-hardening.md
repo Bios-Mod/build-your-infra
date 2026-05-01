@@ -36,6 +36,104 @@ opening any port to the public network.
 
 ---
 
+## Prerequisites
+
+All steps reference configuration files from this repository.
+Obtain them before executing any step — either clone the repo or copy
+individual files directly from GitHub:
+
+```bash
+# Option A — clone (requires git configured)
+git clone https://github.com/Bios-Mod/multi-lab.git
+cd multi-lab
+
+# Option B — copy individual files directly from GitHub
+# Navigate to the file in the repo, click Raw, copy the content
+# https://github.com/Bios-Mod/multi-lab/tree/main/configs
+```
+
+All `cp` commands assume the current directory is the repo root.
+
+---
+
+## Step 0 — Admin User Setup
+
+> **This step must be completed before applying any SSH or sudo configuration.**
+> The `sshd_config` in Step 3 uses `AllowUsers <username>` — if the target
+> user does not exist when SSH is reloaded, the session is locked out.
+
+### What was done
+
+A dedicated non-root admin user is created, added to the required groups,
+assigned a password, and configured with the SSH public key before any
+other hardening is applied.
+
+```bash
+# Create user with home directory
+sudo adduser <username>
+
+# Add to admin groups
+sudo usermod -aG sudo,adm,admin <username>
+
+# Set a strong password for sudo privilege escalation
+sudo passwd <username>
+
+# Switch to the new user and verify sudo access
+sudo su - <username>
+sudo whoami
+# → root
+exit
+
+# Copy SSH public key from the default AMI user
+sudo mkdir -p /home/<username>/.ssh
+sudo cp /home/ubuntu/.ssh/authorized_keys /home/<username>/.ssh/authorized_keys
+sudo chown -R <username>:<username> /home/<username>/.ssh
+sudo chmod 700 /home/<username>/.ssh
+sudo chmod 600 /home/<username>/.ssh/authorized_keys
+```
+
+> **On AWS:** the default AMI user is `ubuntu`. The key injected by AWS at
+> launch is placed only in `/home/ubuntu/.ssh/authorized_keys` — it must be
+> copied manually to any new user since cloud-init is unaware of accounts
+> created after launch. On a local VM this step is not required — the key
+> is configured directly during OS setup.
+
+### Why
+
+Operating as the default AMI user (`ubuntu`) exposes a predictable username.
+A named user provides an explicit, auditable identity — all sudo actions in
+`/var/log/auth.log` are attributed to it, and `AllowUsers` in SSH whitelists
+exactly that name. A password is required for `sudo` privilege escalation
+even with key-based SSH — this ensures a second factor is always present
+before any privileged operation is executed.
+
+Root login is disabled at the SSH level (Step 3). The `ubuntu` user is left
+intact but unused — removing it risks breaking cloud-init hooks on AWS.
+
+### Verification
+
+```bash
+# Confirm groups — must include sudo and adm
+id <username>
+# → uid=1001(<username>) gid=1001(<username>) groups=...,27(sudo),4(adm)
+
+# Confirm SSH key works for new user — open a NEW terminal before proceeding
+ssh -i ~/.ssh/<your_key> <username>@<server-ip>
+# → must authenticate successfully
+
+# Confirm authorized_keys ownership and permissions
+ls -la /home/<username>/.ssh/
+# → drwx------  .ssh            <username>:<username>
+# → -rw-------  authorized_keys <username>:<username>
+```
+
+> **Do not proceed until SSH login as `<username>` is confirmed working in
+> a second terminal.** This is the same lockout prevention principle applied
+> throughout the hardening steps — always verify access before closing the
+> current session.
+
+---
+
 ## Step 1 — System Update & Automated Security Upgrades
 
 ### What was done
@@ -47,11 +145,23 @@ sudo apt update && sudo apt full-upgrade -y
 sudo apt autoremove && sudo apt autoclean
 ```
 
+Install unattended-upgrades and package audit tools:
+
+```bash
+sudo apt install unattended-upgrades debsums apt-show-versions -y
+
+# debsums ships with automated checks disabled — enable weekly cron
+sudo sed -i 's/^#\?CRON_CHECK=.*/CRON_CHECK=weekly/' /etc/default/debsums
+```
+
+> **`apt-listbugs` is Debian-only** — not available in Ubuntu repos.
+> See Lynis deviation `DEB-0810` in Step 12.
+
 Deploy the unattended-upgrades configuration:
 
 ```bash
-sudo cp 50unattended-upgrades /etc/apt/apt.conf.d/50unattended-upgrades
-sudo cp 20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades
+sudo cp configs/unattended-upgrades/50unattended-upgrades /etc/apt/apt.conf.d/50unattended-upgrades
+sudo cp configs/unattended-upgrades/20auto-upgrades /etc/apt/apt.conf.d/20auto-upgrades
 sudo systemctl restart unattended-upgrades
 ```
 
@@ -60,20 +170,12 @@ sudo systemctl restart unattended-upgrades
 
 #### Package integrity & audit tools
 
-Three complementary tools covering different aspects of package hygiene:
+Two complementary tools covering package hygiene:
 
 | Tool | Role |
 |---|---|
-| `apt-listbugs` | Intercepts `apt install` / `apt upgrade` — queries the Debian bug tracker for critical bugs before proceeding |
 | `debsums` | Verifies installed package files against dpkg's checksum database — package-level tamper detection, complements AIDE |
 | `apt-show-versions` | Reports installed vs available version per package with repository origin — confirms all security packages are current |
-
-```bash
-sudo apt install apt-listbugs debsums apt-show-versions -y
-
-# debsums ships with automated checks disabled — enable weekly cron
-sudo sed -i 's/^#\?CRON_CHECK=.*/CRON_CHECK=weekly/' /etc/default/debsums
-```
 
 ### Why
 An outdated system carries known, publicly documented vulnerabilities.
@@ -124,6 +226,10 @@ grep CRON_CHECK /etc/default/debsums
 > **Platform note:** All configuration values in this lab reflect a specific
 > build on Ubuntu Server 24.04 LTS / VMware Fusion / ARM64. Adapt to your
 > deployment — the reasoning applies universally, the exact values do not.
+
+> **AWS/Cloud skip:** On EC2 the network is managed by cloud-init and the
+> VPC DHCP server. Do not modify Netplan — the Elastic IP handles the static
+> public address at the AWS layer. Proceed directly to Step 3.
 
 ### What was done
 Static IP configured via Netplan. Key decisions:
@@ -215,13 +321,16 @@ sudo grep -r "PasswordAuthentication\|PermitRootLogin\|PubkeyAuthentication" \
 
 Deploy the config, create the banner, and remove unused host key material from disk:
 
+> **Cloud Provider Note:** On AWS, verify that `cloud-init` or any provider
+> configuration does not override the intended SSH settings on reboot. Confirm
+> the effective configuration after the restart and again after a reboot test.
+
 > **⚠️ Critical operational note (Preventing Lockout):**
-> Before restarting the SSH daemon or enabling UFW in the next steps,
-> **do not close your current active SSH session**.
-> Open a second terminal window and verify you can successfully authenticate using
-> your Ed25519 key on the new port (22222).
-> If a misconfiguration or network drop occurs, your existing established session
-> will remain active, allowing you to rollback the changes.
+> Before restarting the SSH daemon, keep a recovery path open until the new
+> port is confirmed from a second session or console access.
+
+> **Note:** When changing the SSH port (`Port 22222`), use a full restart
+> after validating the config and enable the service so it persists across reboot.
 
 ```bash
 sudo cp sshd_config /etc/ssh/sshd_config
@@ -229,7 +338,11 @@ sudo chmod 600 /etc/ssh/sshd_config
 sudo cp issue.net.template /etc/issue.net
 sudo rm /etc/ssh/ssh_host_rsa_key /etc/ssh/ssh_host_rsa_key.pub
 sudo rm /etc/ssh/ssh_host_ecdsa_key /etc/ssh/ssh_host_ecdsa_key.pub
-sudo sshd -t && sudo systemctl reload ssh
+sudo sshd -t
+sudo systemctl enable ssh
+sudo systemctl restart ssh
+sudo ss -tuln | grep 22222 # Verify the new port is active
+sudo systemctl is-enabled ssh # Verify persistence across reboot
 ```
 
 📄 [`configs/ssh/sshd_config`](../configs/ssh/sshd_config)
@@ -281,13 +394,13 @@ sudo sshd -T | grep -E "allowtcpforwarding|allowagentforwarding|tcpkeepalive|log
 
 # Password auth must fail
 ssh -p 22222 -o PubkeyAuthentication=no -o PreferredAuthentications=password \
-  <username>@10.0.0.1
+  <username>@X.X.X.X
 
 # Server must not advertise 'password' as available auth method
-ssh -vv -p 22222 <username>@10.0.0.1 2>&1 | grep "Authentications that can continue"
+ssh -vv -p 22222 <username>@X.X.X.X 2>&1 | grep "Authentications that can continue"
 
 # Banner appears before authentication prompt
-ssh -p 22222 <username>@10.0.0.1
+ssh -p 22222 <username>@X.X.X.X
 # → legal warning text before key prompt
 
 # VERBOSE logging — key fingerprint visible after login
@@ -318,6 +431,10 @@ sudo sshd -T | grep -E 'hostkey|hostkeyalgorithms|usedns'
 ls /etc/ssh/ssh_host_*
 # → /etc/ssh/ssh_host_ed25519_key
 # → /etc/ssh/ssh_host_ed25519_key.pub
+
+# Service enabled for reboot persistence
+systemctl is-enabled ssh
+# → enabled
 ```
 
 ---
