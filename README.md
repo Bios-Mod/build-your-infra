@@ -8,9 +8,8 @@
 ![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)
 ![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)
 ![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)
-![AWS](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
-![ARM64](https://img.shields.io/badge/Graviton2-ARM64-232F3E?style=flat-square&logo=arm&logoColor=white)
 ![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
+![ARM64](https://img.shields.io/badge/Graviton2-ARM64-232F3E?style=flat-square&logo=arm&logoColor=white)
 
 A practical, step-by-step reference for deploying and hardening a self-managed
 Linux server from scratch. Covers OS hardening, network services, and identity
