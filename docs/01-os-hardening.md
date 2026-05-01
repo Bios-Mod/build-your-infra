@@ -663,8 +663,8 @@ sudo wg show
 ## Step 6 — Fail2Ban
 
 ### What was done
-`jail.local` created as the upgrade-safe override — `jail.conf` is never
-edited directly. Ban escalation policy across three jails:
+
+`fail2ban` installed, then `jail.local` created as the upgrade-safe override — `jail.conf` is never edited directly. Ban escalation policy across three jails:
 
 | Jail | Trigger | Ban duration |
 |---|---|---|
@@ -683,12 +683,17 @@ Key decisions:
 > **VM / bare metal:** include your LAN subnet (`192.168.X.X/X`) in `ignoreip`.
 > **VPS with no trusted LAN:** keep only `127.0.0.1/8 ::1` and `10.0.0.0/24`
 > (WireGuard subnet). Remove the LAN entry if WireGuard was not deployed.
+> **Cloud note:** In AWS, avoid whitelisting a dynamic home IP in `ignoreip`.
+> Keep only loopback unless you have a stable private access path such as
+> WireGuard.
 
 `allowipv6` fix — `fail2ban.conf` ships with this value commented out,
 causing a `WARNING` on every `fail2ban-client` invocation. Applied via the
 official override directory, upgrade-safe:
 
 ```bash
+sudo apt install fail2ban -y
+sudo systemctl enable fail2ban
 sudo cp jail.local /etc/fail2ban/jail.local
 sudo mkdir -p /etc/fail2ban/fail2ban.d
 sudo cp allowipv6.conf /etc/fail2ban/fail2ban.d/allowipv6.conf
