@@ -31,7 +31,7 @@ No GUI tools. No automation frameworks. Everything via CLI.
 | OS            | Ubuntu Server 24.04 LTS               | Ubuntu Server 24.04 LTS                |
 | Architecture  | ARM64 (Apple Silicon)                 | ARM64 (Graviton2)                      |
 | Deployment    | VMware Fusion · Bridged network       | EC2 t4g.micro · eu-west-1              |
-| Network       | Static IP · LAN                       | Dynamic public IP · VPC                |
+| Network       | Static IP · LAN                       | Elastic IP · VPC                       |
 | Remote Access | SSH Ed25519 · port 22222              | SSH Ed25519 · port 22222               |
 
 Both environments follow the same hardening baseline and service stack from
@@ -85,7 +85,7 @@ values before applying.
 |------|---------|------------|--------|-----|
 | 02 | File Transfer | SFTP (OpenSSH subsystem) | 🔲 Planned | [`docs/02-sftp.md`](docs/02-sftp.md) |
 | 03 | DNS | BIND9 | 🔲 Planned | [`docs/03-dns-bind9.md`](docs/03-dns-bind9.md) |
-| 04 | DHCP | Kea / ISC DHCP | 🔲 Planned | [`docs/04-dhcp.md`](docs/04-dhcp.md) |
+| 04 | DHCP | Kea / ISC DHCP | 🖥️ VM only 🔲 Planned | [`docs/04-dhcp.md`](docs/04-dhcp.md) |
 | 05 | Web Server | Nginx + HTTPS (self-signed) | 🔲 Planned | [`docs/05-nginx-https.md`](docs/05-nginx-https.md) |
 | 06 | Reverse Proxy | Nginx (`proxy_pass`) | 🔲 Planned | [`docs/06-reverse-proxy.md`](docs/06-reverse-proxy.md) |
 | 07 | Directory Server | Samba 4 | 🔲 Planned | [`docs/07-samba4.md`](docs/07-samba4.md) |

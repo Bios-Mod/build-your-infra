@@ -30,10 +30,10 @@ configuration starts in Step 01.
 |---------------|--------------------------------------------------|
 | Provider      | AWS EC2                                          |
 | Region        | eu-west-1 (Europe — Ireland)                     |
-| Instance      | t4g.micro · 2 vCPU · 1 GB RAM · Graviton2 ARM64 |
+| Instance      | t4g.micro · 2 vCPU · 1 GB RAM · Graviton2 ARM64  |
 | OS            | Ubuntu Server 24.04 LTS (ARM64)                  |
 | Storage       | 20 GiB EBS gp3                                   |
-| Public IP     | Dynamic — changes on stop/start                  |
+| Public IP     | Elastic IP — static                              |
 | Instance name | `multi-lab-aws`                                  |
 | Admin user    | `ubuntu` (default AMI user, non-root with sudo)  |
 
@@ -167,7 +167,31 @@ UFW misconfiguration does not expose the instance to the internet.
 
 ---
 
-## Step 4 — First Connection
+## Step 4 — Elastic IP
+
+The default public IP is dynamic — it changes on every stop/start cycle.
+An Elastic IP provides a static public address at no cost while the instance
+is running.
+
+**EC2 → Elastic IPs → Allocate Elastic IP address → Allocate**\
+**Actions → Associate Elastic IP address → Instance: `multi-lab-aws` → Associate**
+
+| Field         | Value           |
+|---------------|-----------------|
+| Resource type | Instance        |
+| Instance      | `multi-lab-aws` |
+
+The Elastic IP replaces the dynamic public IP immediately. Update
+`~/.ssh/config → HostName` and the WireGuard `Endpoint` field with the new
+static address — this is a one-time change.
+
+> **After WireGuard is deployed (Step 01 — Step 5):** the `Endpoint` field
+> in every client config must reflect this static address. No further
+> updates are needed on stop/start.
+
+---
+
+## Step 5 — First Connection
 
 The instance is reachable ~30 seconds after launch (status: `running`).
 
@@ -195,6 +219,11 @@ sudo apt update && sudo apt upgrade -y
 
 ### Stop/start IP workflow
 
+With Elastic IP assigned (Step 3.5), the public address is permanent — no update needed on stop/start.
+
+> **If the Elastic IP is released:** reassign and update `~/.ssh/config →
+> HostName` and the WireGuard `Endpoint` on each client.
+
 The public IP changes on every stop/start cycle. After restarting:
 
 ```bash
@@ -207,9 +236,9 @@ aws ec2 describe-instances \
 # Update ~/.ssh/config → HostName with the new IP
 ```
 
-> After WireGuard is deployed (Step 01), SSH always targets the WireGuard
-> address (`10.0.0.1`) regardless of the public IP. Only the WireGuard
-> `Endpoint` field needs updating on IP change — see Step 01.
+> After WireGuard is deployed (Step 01), SSH targets the WireGuard address
+> (`10.0.0.1`) — the Elastic IP is the stable `Endpoint` in every client config. 
+> No updates needed on stop/start.
 
 ---
 
@@ -222,6 +251,7 @@ aws ec2 describe-instances \
 - [ ] Security group `multi-lab-sg` attached — ports 22, 22222, 51820 open
 - [ ] First `apt update && apt upgrade -y` completed
 - [ ] Instance stopped — Free Tier hours preserved
+- [ ] Elastic IP preserved
 
 **Next:** [`docs/01-os-hardening.md`](01-os-hardening.md) —
 apply OS hardening. After Step 01: delete the port 22 inbound rule from

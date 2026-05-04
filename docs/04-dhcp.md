@@ -1,8 +1,13 @@
 # Multi-Lab Server — DHCP
 
-**Ubuntu 24.04 LTS · VM / Bare metal / VPS**
+**Ubuntu 24.04 LTS · VM / Bare metal**
 
 ---
+
+> **Deployment scope:** This service runs exclusively on the local VM deployment
+> (VMware Fusion). DHCP has no use case in a cloud environment — AWS manages
+> address assignment at the VPC layer. This module does not apply to the
+> EC2 deployment.
 
 ## Introduction
 This document covers the DHCP deployment phase on top of the hardened OS

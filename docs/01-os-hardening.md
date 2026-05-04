@@ -358,6 +358,12 @@ Key decisions — each directive is documented inline in the config:
 | Forwarding | `AllowTcpForwarding no` · `AllowAgentForwarding no` · `X11Forwarding no` | SSH used for interactive shell only — tunneling and proxy paths disabled |
 | Cryptographic policy | `Ciphers` · `MACs` · `KexAlgorithms` · `HostKey` · `HostKeyAlgorithms` | Modern authenticated-encryption only; CBC, non-ETM MACs, and weak DH groups excluded — host identity restricted to Ed25519, RSA and ECDSA key files removed from disk |
 
+> **`AllowTcpForwarding no` vs `ip_forward`:** These are independent controls.
+> `AllowTcpForwarding no` disables SSH-level port forwarding through the daemon.
+> `net.ipv4.ip_forward = 1` is a kernel parameter required for WireGuard to route
+> packets between the VPN interface (`wg0`) and the network stack — it is enabled
+> in Step 5 and has no relationship to SSH forwarding. Both can and should coexist.
+
 > **SFTP — Step 02:** `AllowTcpForwarding no` does not affect the SFTP
 > subsystem — SFTP runs over the standard SSH channel, not a TCP forward.
 > No change to this file is required when SFTP is deployed in Step 02.
