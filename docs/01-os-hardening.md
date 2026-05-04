@@ -552,8 +552,12 @@ sudo systemctl enable wg-quick@wg0
 sudo ufw allow 51820/udp comment 'WireGuard VPN'
 sudo ufw allow in on wg0 to any port 22222 proto tcp comment 'SSH via WireGuard only'
 sudo ufw delete limit 22222/tcp
+sudo ufw route allow in on wg0 out on wg0 comment 'WireGuard peer-to-peer forwarding'
 sudo ufw reload
 ```
+> UFW's default forward policy is DROP. Without the route allow rule, packets between > peers are forwarded by the kernel (ip_forward = 1) but dropped by UFW before they 
+> leave wg0 — the handshake succeeds and wg show reports an active tunnel, but no 
+> traffic passes. This rule is the fix for that failure mode.
 
 > SSH continues to listen on all interfaces at the socket level — UFW drops
 > any packet arriving on port 22222 outside `wg0` before it reaches the
@@ -618,6 +622,31 @@ Import the filled template via `Add Tunnel → Import tunnel(s) from file`.
 To autostart: right-click the tunnel → `Edit tunnel` → check
 `Launch WireGuard on startup`.
 
+#### AWS EC2 — deployment notes
+The steps above apply to both environments. EC2-specific deltas:
+
+**Endpoint:** use the Elastic IP (`<EIP>`) instead of the LAN address.
+The Elastic IP is static — client configs do not need updating on instance stop/start.
+
+**Security Group:** once WireGuard is active, remove the inbound rule for
+`22222/tcp` from `multi-lab-sg`. UFW enforces SSH access via `wg0` — the
+Security Group rule is redundant and increases attack surface.
+`51820/udp` must remain open to `0.0.0.0/0`.
+
+**Hub-and-spoke topology:** EC2 acts as the WireGuard hub. All devices connect
+as peers via outbound connections to the Elastic IP — this bypasses CGNAT on the
+home network without requiring an inbound-reachable IP on either the Mac or the VM.
+
+| Peer | VPN address | Endpoint |
+|---|---|---|
+| Mac | `10.0.0.2` | `<EIP>:51820` |
+| VM (VMware) | `10.0.0.3` | `<EIP>:51820` |
+
+> **`wg0.conf` and `client-template.conf`** do not require changes — the
+> `Endpoint` field in the client template already uses a placeholder. Fill it
+> with the Elastic IP at deployment time. Peer IPs are assigned sequentially
+> from the existing VPN subnet (`10.0.0.0/24`).
+
 ### Why
 WireGuard adds a cryptographic perimeter in front of SSH. A client without a
 valid private key receives no response from the server — the port appears
@@ -642,6 +671,7 @@ sudo wg show
 sudo ufw status numbered
 # → 51820/udp  ALLOW     Anywhere     (WireGuard VPN)
 # → 22222/tcp  ALLOW IN  on wg0       (SSH via WireGuard only)
+# → Anywhere on wg0  ALLOW FWD        Anywhere on wg0
 # → NO open rule for 22222/tcp to Anywhere
 
 # Client — ping server VPN IP with tunnel active
@@ -651,11 +681,14 @@ ping 10.0.0.1
 ssh -p 22222 <username>@10.0.0.1
 
 # Negative test — SSH must be unreachable without WireGuard
-sudo wg-quick down wg0
-ssh -p 22222 -o ConnectTimeout=5 <server-lan-ip>
+# ⚠️  EC2 only: do NOT run wg-quick down from inside the tunnel.
+# Dropping wg0 cuts the only SSH path — the instance becomes unreachable
+# until restarted from the AWS EC2 console.
+# Run this test from a second terminal with an active tunnel, or skip it —
+# the UFW rule check above is sufficient to confirm the configuration is correct.
+sudo wg-quick down wg0          # VM/bare metal only
+ssh -p 22222 -o ConnectTimeout=5 <server-ip>
 # → Connection timed out
-
-# Restore tunnel
 sudo wg-quick up wg0
 
 # Confirm handshake on server
