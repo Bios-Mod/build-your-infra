@@ -221,10 +221,11 @@ sudo apt update && sudo apt upgrade -y
 
 With Elastic IP assigned (Step 3.5), the public address is permanent — no update needed on stop/start.
 
-> **If the Elastic IP is released:** reassign and update `~/.ssh/config →
-> HostName` and the WireGuard `Endpoint` on each client.
-
-The public IP changes on every stop/start cycle. After restarting:
+> **With Elastic IP (this lab):** the public address is permanent — no
+> update needed after stop/start.
+>
+> **Without Elastic IP:** a new public IP is assigned on every start.
+> Retrieve it after each boot:
 
 ```bash
 # Retrieve new IP via AWS CLI

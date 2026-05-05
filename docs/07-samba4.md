@@ -1,5 +1,8 @@
 # Multi-Lab Server — Samba 4 AD DC
 
+> **Prerequisite:** Step 03 — BIND9 must be fully deployed and validated
+> before provisioning Samba 4. Samba's AD DS depends on DNS resolution.
+
 **Ubuntu 24.04 LTS · VM / Bare metal / VPS**
 
 ---

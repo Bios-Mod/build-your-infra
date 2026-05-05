@@ -1,14 +1,15 @@
 # Multi-Service Linux Server — Build & Hardening Guide
 
-![Lynis Hardening Index](https://img.shields.io/badge/Lynis%20Index-88-brightgreen?style=flat-square&logo=linux&logoColor=white)
+[![Lynis Hardening Index](https://img.shields.io/badge/Lynis%20Index-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](docs/01-os-hardening.md#step-12--security-audit-baseline-lynis)
 ![CIS Level 1](https://img.shields.io/badge/CIS-Level%201%20Aligned-blue?style=flat-square)
 ![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange?style=flat-square&logo=ubuntu&logoColor=white)
 ![OpenSSH](https://img.shields.io/badge/OpenSSH-Ed25519-black?style=flat-square&logo=openssh&logoColor=white)
-![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)
-![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)
-![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)
-![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)
-![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)
+[![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)](docs/01-os-hardening.md#step-5--wireguard-vpn)
+[![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)](docs/01-os-hardening.md#step-4--ufw-firewall)
+[![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)](docs/01-os-hardening.md#step-6--fail2ban)
+[![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)](docs/01-os-hardening.md#step-8--apparmor)
+[![auditd](https://img.shields.io/badge/auditd-active-blue)](docs/01-os-hardening.md#step-10--audit-trail-auditd--aide)
+[![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](docs/00-aws-deployment.md#step-3--ec2-instance)
 ![ARM64](https://img.shields.io/badge/Graviton2-ARM64-232F3E?style=flat-square&logo=arm&logoColor=white)
 
 A practical, step-by-step reference for deploying and hardening a self-managed

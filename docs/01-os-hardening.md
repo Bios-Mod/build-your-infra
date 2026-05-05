@@ -879,9 +879,12 @@ itself attempts.
 # Summary of loaded profiles and confined processes
 sudo aa-status
 
-# Expected delta vs OS default (minimal Ubuntu Server 24.04 install):
-# → ~+29 loaded profiles, ~+28 in enforce mode
-# Run aa-status before and after installation to confirm the delta.
+# Profile count varies by package version — the exact number is not
+# meaningful. What matters: confirm loaded profiles increased after
+# installation and that running services have enforce mode active.
+# At this stage only system daemons (chronyd, rsyslogd) will appear
+# as confined processes — application profiles are enabled per service
+# as each one is deployed in later steps.
 
 # No profile load errors
 sudo dmesg | grep -i apparmor     # → no DENIED or error lines at boot
