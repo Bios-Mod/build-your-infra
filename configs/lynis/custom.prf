@@ -115,3 +115,17 @@ skip-test=TOOL-5002
 skip-test=KRNL-6000:net.ipv4.conf.all.forwarding
 skip-test=KRNL-6000:kernel.modules_disabled
 skip-test=KRNL-6000:kernel.unprivileged_bpf_disabled
+
+#############################################
+# EC2 / Cloud environment suppressions
+# These tests are not applicable in a cloud environment or produce
+# known false positives covered by existing hardening layers.
+#############################################
+
+# USB storage is blacklisted via modprobe.d (Step 9.3) — Lynis checks
+# module availability, not blacklist status. Physical USB is not present on EC2.
+skip-test=USB-1000
+
+# Locked system accounts (daemon, nobody, sshd...) are Ubuntu defaults.
+# Accounts with '!' in /etc/shadow are service accounts, not orphaned users.
+skip-test=AUTH-9284

@@ -1,6 +1,7 @@
 # Multi-Service Linux Server — Build & Hardening Guide
 
-[![Lynis Hardening Index](https://img.shields.io/badge/Lynis%20Index-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](docs/01-os-hardening.md#step-12--security-audit-baseline-lynis)
+[![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](docs/01-os-hardening.md#step-12--security-audit-baseline-lynis)
+[![Lynis EC2](https://img.shields.io/badge/Lynis%20EC2-90-brightgreen?style=flat-square&logo=amazonaws&logoColor=white)](docs/01-os-hardening.md#step-12--security-audit-baseline-lynis)
 ![CIS Level 1](https://img.shields.io/badge/CIS-Level%201%20Aligned-blue?style=flat-square)
 ![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange?style=flat-square&logo=ubuntu&logoColor=white)
 ![OpenSSH](https://img.shields.io/badge/OpenSSH-Ed25519-black?style=flat-square&logo=openssh&logoColor=white)
@@ -78,7 +79,7 @@ values before applying.
 | 00 | Cloud Infrastructure | AWS EC2 · EBS gp3 · Security Groups · Key Pair | ✅ Complete | [`docs/00-aws-deployment.md`](docs/00-aws-deployment.md) |
 | 01 | OS Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | ✅ Complete | [`docs/01-os-hardening.md`](docs/01-os-hardening.md) |
 
-12 steps covering 9 independent security layers — Lynis hardening index **88**.
+12 steps covering 9 independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
 
 ## Services
 

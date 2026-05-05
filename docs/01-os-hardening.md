@@ -148,7 +148,7 @@ sudo apt autoremove && sudo apt autoclean
 Install unattended-upgrades and package audit tools:
 
 ```bash
-sudo apt install unattended-upgrades debsums apt-show-versions -y
+sudo apt install unattended-upgrades debsums apt-show-versions apt-listchanges -y
 
 # debsums ships with automated checks disabled — enable weekly cron
 sudo sed -i 's/^#\?CRON_CHECK=.*/CRON_CHECK=weekly/' /etc/default/debsums
@@ -176,6 +176,7 @@ Two complementary tools covering package hygiene:
 |---|---|
 | `debsums` | Verifies installed package files against dpkg's checksum database — package-level tamper detection, complements AIDE |
 | `apt-show-versions` | Reports installed vs available version per package with repository origin — confirms all security packages are current |
+| `apt-listchanges` | Displays significant changes in packages before upgrade — prevents unexpected behavior from silent changelog changes |
 
 ### Why
 An outdated system carries known, publicly documented vulnerabilities.
@@ -344,6 +345,13 @@ sudo systemctl restart ssh
 sudo ss -tuln | grep 22222 # Verify the new port is active
 sudo systemctl is-enabled ssh # Verify persistence across reboot
 ```
+
+> **`/etc/issue` vs `/etc/issue.net`:** `/etc/issue.net` serves the SSH
+> pre-authentication banner (configured above). `/etc/issue` serves the
+> local console login prompt — both should carry the same legal warning:
+> ```bash
+> sudo cp /etc/issue.net /etc/issue
+> ```
 
 📄 [`configs/ssh/sshd_config`](../configs/ssh/sshd_config)
 📄 [`configs/ssh/issue.net.template`](../configs/ssh/issue.net.template)
@@ -904,9 +912,14 @@ Unused services disabled to eliminate unnecessary code paths, listening
 sockets, and privilege escalation vectors.
 
 ```bash
-sudo systemctl disable --now ModemManager packagekit
-sudo systemctl mask udisks2
+sudo systemctl disable --now ModemManager
+sudo systemctl mask packagekit udisks2
 ```
+
+> **`packagekit`** uses D-Bus socket activation and has no `[Install]` section —
+> `disable` is a no-op and returns a warning. `mask` (symlink to `/dev/null`)
+> is the correct action: it prevents activation via D-Bus, systemd dependency,
+> or manual start. Same rationale applies to `udisks2`.
 
 `udisks2` is masked rather than disabled — symlinked to `/dev/null`, it cannot
 start manually or as a dependency. Complements the `usb_storage` kernel
@@ -934,12 +947,13 @@ sudo apt-mark hold snapd
 
 > **VM vs bare metal / VPS:**
 >
-> | Service | VM (VMware) | Bare metal / VPS |
+> | Service      | VM (VMware)                        | Bare metal / VPS                              |
 > |---|---|---|
-> | open-vm-tools | ✅ Keep | ❌ Remove |
-> | vgauth | ✅ Keep | ❌ Remove |
-> | multipathd | Disable | Disable unless multi-path storage |
-> | ModemManager | Disable | Disable unless mobile broadband |
+> | open-vm-tools | ✅ Keep                           | ❌ Remove                                      |
+> | vgauth        | ✅ Keep                           | ❌ Remove                                      |
+> | multipathd    | Disable unless multi-path storage  | Disable unless multi-path storage             |
+> | ModemManager  | Disable                           | Disable unless mobile broadband               |
+> | snapd         | Purge recommended — not required on server | Purge — no use case on a headless server |
 >
 > VirtualBox: use `virtualbox-guest-utils` instead of `open-vm-tools`.
 > Target service count is ≤17 regardless of platform.
@@ -950,17 +964,40 @@ boundary, or a code path that can be exploited. Removing services that will
 never be used eliminates those vectors entirely rather than relying on
 configuration alone to constrain them.
 
+> **Evaluation criteria — disable/mask if the service falls into any of these categories:**
+>
+> | Category | Examples | Action |
+> |---|---|---|
+> | Hypervisor guest agents | `open-vm-tools`, `vboxguard` | Keep on VM — mask on VPS/EC2 |
+> | Hardware abstraction | `udisks2`, `ModemManager`, `bluetooth` | Mask — no physical hardware |
+> | Crash reporting / telemetry | `apport`, `ubuntu-advantage-esm-apps` | Purge |
+> | D-Bus activated package managers | `packagekit`, `snapd` | Mask / purge |
+> | Cloud provisioning agents | `cloud-init`, `amazon-ssm-agent` | Keep on EC2 — evaluate elsewhere |
+>
+> The target is the minimum set required to run the lab's services. No fixed number —
+> any service not justified by a deployed component is a candidate for removal.
+
 ### Verification
 
 ```bash
-# Service count (target: ≤17)
-systemctl list-units --type=service --state=running | grep active | wc -l
+# Audit running services — evaluate each against the lab's purpose
+systemctl list-units --type=service --state=running --no-legend --no-pager \
+  | awk '{print $1}' | sort
+
+# For any unknown service:
+#   systemctl cat <service>                    — what it does
+#   systemctl show <service> -p WantedBy       — what depends on it
 
 systemctl is-enabled udisks2        # → masked
 systemctl status udisks2            # → masked; vendor preset: enabled
 
-dpkg -l | grep apport               # → no output
+sudo sysctl --system                # → reload sysctl
 sysctl fs.suid_dumpable             # → fs.suid_dumpable = 0
+# sysctl --system reloads all files from /usr/lib/sysctl.d/, /run/sysctl.d/, and 
+# /etc/sysctl.d/ in order. Run it any time a package removal may have 
+# altered runtime kernel parameters — apport is a known example.
+
+dpkg -l | grep apport               # → no output
 
 apt-mark showhold | grep snapd      # → snapd
 snap list 2>&1                      # → Command 'snap' not found
@@ -987,6 +1024,7 @@ sudo chmod 750 /etc/sudoers.d
 ```bash
 # Umask
 sudo sed -i 's/^UMASK\s.*/UMASK\t\t027/' /etc/login.defs
+sudo sed -i 's/^USERGROUPS_ENAB\s.*/USERGROUPS_ENAB\tno/' /etc/login.defs
 
 # Password aging
 sudo sed -i 's/^PASS_MAX_DAYS\s.*/PASS_MAX_DAYS\t90/' /etc/login.defs
@@ -1012,12 +1050,17 @@ sudo sed -i 's/^#\?SHA_CRYPT_MAX_ROUNDS.*/SHA_CRYPT_MAX_ROUNDS 65536/' /etc/logi
 ```bash
 sudo apt install libpam-pwquality libpam-tmpdir -y
 sudo cp common-password /etc/pam.d/common-password
-echo "session optional pam_tmpdir.so" | sudo tee -a /etc/pam.d/common-session
+sudo cp common-session /etc/pam.d/common-session
 ```
 
 `libpam-tmpdir` gives each login session a private `$TMPDIR` under
 `/tmp/user/<uid>` — isolated from other users, preventing symlink and race
 condition attacks against the global `/tmp`.
+
+> `common-password` and `common-session` are managed as static files —
+> `pam-auth-update` is not called after deployment. Future `pam-auth-update`
+> invocations (triggered by package installs) may overwrite these files.
+> Re-apply the configs after any PAM package upgrade.
 
 📄 [`configs/pam/common-password`](../configs/pam/common-password)
 📄 [`configs/pam/common-session`](../configs/pam/common-session)
@@ -1050,8 +1093,9 @@ user-initiated dumps.
 ### Verification
 
 ```bash
-grep "^UMASK" /etc/login.defs       # → UMASK 027
-umask                               # → 0007 (USERGROUPS_ENAB effect)
+grep "^UMASK" /etc/login.defs            # → UMASK          027
+grep "^USERGROUPS_ENAB" /etc/login.defs  # → USERGROUPS_ENAB        no
+umask                                    # → 0027  — open a NEW SSH session first
 
 stat -c "%n %a" /etc/cron.d /etc/cron.daily /etc/cron.hourly /etc/cron.weekly /etc/cron.monthly
 # → 700 each
@@ -1064,8 +1108,9 @@ sudo chage -l <username>            # → Maximum: 90 / Minimum: 1 / Warning: 14
 grep "SHA_CRYPT" /etc/login.defs
 # → SHA_CRYPT_MIN_ROUNDS 65536
 # → SHA_CRYPT_MAX_ROUNDS 65536
-sudo grep "^<username>:" /etc/shadow | cut -d: -f2 | cut -c1-25
-# → $6$rounds=65536$...
+sudo grep "^<username>:" /etc/shadow | cut -d: -f2 | cut -c1-3
+# → $6$  (SHA512 — correct)
+# If $y$ appears, run: sudo passwd <username>  to re-hash with the new policy
 
 grep pam_pwquality /etc/pam.d/common-password   # → retry=3 minlen=12 ...
 grep pam_unix /etc/pam.d/common-password        # → sha512 rounds=65536
@@ -1114,7 +1159,7 @@ absent from the default configuration.
 
 ```bash
 lsmod | grep -E "dccp|sctp|rds|tipc|usb_storage"   # → no output
-sudo modprobe dccp 2>&1                             # → Invalid argument
+sudo modprobe dccp 2>&1                            # → Invalid argument
 ```
 
 ---
@@ -1125,7 +1170,20 @@ sudo modprobe dccp 2>&1                             # → Invalid argument
 Three complementary tools covering different detection scopes:
 
 **rkhunter** — signature-based rootkit detection, complements AIDE (integrity
-baseline) and auditd (real-time syscall events):
+baseline) and auditd (real-time syscall events)
+
+> **Installation prompt — Postfix (MTA):** `apt install rkhunter` triggers a
+> Postfix configuration dialog because rkhunter supports email alerting.
+>
+> | Option | When to use |
+> |---|---|
+> | `No configuration` | **EC2 / VPS — select this.** No mail server in this lab. |
+> | `Internet Site` | Only if a local MTA is configured and outbound SMTP is available. |
+>
+> Selecting `No configuration` skips Postfix setup entirely. rkhunter daily
+> reports land in `/var/log/rkhunter.log` — reviewed via cron output or
+> manually. Email alerting can be added later via `MAIL-ON-WARNING` in
+> `/etc/rkhunter.conf` once an SMTP relay is available.
 
 ```bash
 sudo apt install rkhunter -y
@@ -1165,12 +1223,12 @@ performance baseline that makes anomalous resource consumption visible.
 ### Verification
 
 ```bash
-sudo rkhunter --check --skip-keypress 2>&1 | tail -5
+sudo rkhunter --check --skip-keypress 2>&1 | tail -5 # → Normal frezze for a minute
 grep -E "CRON_DAILY|CRON_DB|APT_AUTO" /etc/default/rkhunter
 # → CRON_DAILY_RUN="true" / CRON_DB_UPDATE="true" / APT_AUTOGEN="yes"
 
-sudo lastcomm | head -10
-sar -u 1 3
+sudo lastcomm | head -10 # Last commands executed 
+sar -u 1 3 
 ```
 
 ---
@@ -1201,9 +1259,25 @@ Rules cover the following monitoring areas:
 
 Deploy the rules file and load it:
 ```bash
+sudo apt install auditd audispd-plugins -y
+sudo systemctl enable auditd
+sudo systemctl start auditd
 sudo cp 99-hardening.rules /etc/audit/rules.d/99-hardening.rules
 sudo augenrules --load
 ```
+
+> **`audispd-plugins`** provides the audit dispatcher — required to forward
+> auditd events to rsyslog. Installed here; the integration is configured
+> in Step 11.
+
+> **Immutable mode conflict:** if auditd already has rules loaded with `-e 2`
+> from a previous session, `augenrules --load` returns:
+> `Error sending add rule request: Operation not permitted`
+> Restart auditd to reset the ruleset before reloading:
+> ```bash
+> sudo systemctl restart auditd
+> sudo augenrules --load
+> ```
 
 > **ARM64:** `unlink` and `rename` do not exist in the aarch64 ABI — the
 > rules use `unlinkat`, `renameat`, `renameat2` only. On ARM64, auditd
@@ -1211,7 +1285,19 @@ sudo augenrules --load
 > including `-e 2`, is not loaded. Verify active syscall names before deploying:
 > ```bash
 > ausyscall --dump | grep -E "unlink|rename"
+> # ARM64 expected output — unlink/rename do NOT exist, only their *at variants:
+> # 35   unlinkat
+> # 38   renameat
+> # 276  renameat2
+> # x86_64 expected output — classic names present:
+> # 87   unlink
+> # 82   rename
+> # 263  unlinkat
+> # 316  renameat2
 > ```
+> On ARM64 (EC2 t4g/Graviton), the rules file uses unlinkat, renameat, 
+> renameat2 only — unlink and rename do not exist in the aarch64 ABI
+> and must not appear in the rules or auditd silently stops parsing.
 
 📄 [`configs/audit/99-hardening.rules`](../configs/audit/99-hardening.rules)
 
@@ -1229,12 +1315,17 @@ sudo aide --init --config /etc/aide/aide.conf
 sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
 ```
 
+> The database must exist before running --check. --init builds the
+> baseline snapshot of the filesystem — --check compares against it.
+> Running --check without a database always fails with
+> open failed for file '/var/lib/aide/aide.db': No such file or directory.
+
 > `aide --init` exits with code 17 and emits warnings on continuously written
 > files (`audit.log`, `pacct`) — expected. The database is generated correctly.
 
 Enable daily automated check:
 ```bash
-sudo sed -i 's/CRON_DAILY_RUN=.*/CRON_DAILY_RUN=yes/' /etc/default/aide
+sudo sed -i 's/^#\?CRON_DAILY_RUN=.*/CRON_DAILY_RUN=yes/' /etc/default/aide
 ```
 
 📄 [`configs/aide/99-hardening`](../configs/aide/99-hardening)
@@ -1251,42 +1342,63 @@ The `mounts` and `file_deletion` rules are filtered to user-initiated events
 pressure the buffer under load.
 
 ### Verification
+
 ```bash
-# auditd — immutable mode active
-sudo auditctl -s | grep "enabled 2"
+# auditd — confirm rules loaded (any output = correct, empty = rules not loaded)
+sudo auditctl -l | grep -c "\-k"
+# → 9  (one line per rule key — exact number may vary by architecture)
+
+# auditd — immutable mode active (run AFTER loading rules)
+sudo auditctl -s | grep enabled
+# → enabled 2
 
 # auditd — confirm all rule keys loaded
-sudo auditctl -l | grep -E "identity|sshd_config|privileged|network_config|audit_config|mounts|file_deletion|vpn_config|cron_config"
-# → file_deletion & mounts must show: -F auid>=1000 -F auid!=-1
+sudo auditctl -l | grep -oP '(?<=-k )\S+' | sort -u
+# → audit_config, cron_config, file_deletion, identity,
+#   mounts, network_config, privileged, sshd_config, vpn_config
 
-# auditd — test identity rule
-cat /etc/shadow
-sudo ausearch -k identity | tail -5
+# auditd — test identity rule (triggers on /etc/shadow read)
+sudo cat /etc/shadow > /dev/null
+sudo ausearch -k identity | tail -3
+# → type=SYSCALL ... key="identity"
 
 # auditd — test file_deletion (run as normal user, not root)
 touch ~/audit-test && mv ~/audit-test ~/audit-test-renamed && rm ~/audit-test-renamed
-sudo ausearch -k file_deletion --uid $(id -u) | tail -10
-# → events must show auid=1000, not auid=4294967295
+sudo ausearch -k file_deletion --uid $(id -u) | tail -5
+# → type=SYSCALL ... key="file_deletion" ... auid=1000
 
-# auditd — test vpn_config rule
-sudo touch /etc/wireguard/audit_test && sudo ausearch -k vpn_config | tail -5
+# auditd — test vpn_config
+sudo touch /etc/wireguard/audit_test
+sudo ausearch -k vpn_config | tail -3
+# → type=SYSCALL ... key="vpn_config"
 sudo rm /etc/wireguard/audit_test
 
-# auditd — test cron_config rule
-sudo touch /etc/cron.d/audit_test && sudo ausearch -k cron_config | tail -5
+# auditd — test cron_config
+sudo touch /etc/cron.d/audit_test
+sudo ausearch -k cron_config | tail -3
+# → type=SYSCALL ... key="cron_config"
 sudo rm /etc/cron.d/audit_test
 
-# AIDE — clean check (no output = no changes = correct)
-sudo aide --check --config /etc/aide/aide.conf
+# AIDE — database exists
+sudo ls -lh /var/lib/aide/aide.db
+# → -rw------- ... /var/lib/aide/aide.db
 
-# AIDE — confirm daily cron active
-ls -lh /etc/cron.daily/dailyaidecheck
+# AIDE — clean baseline check (no output = no changes = correct)
+sudo aide --check --config /etc/aide/aide.conf
+# → AIDE found no differences between database and filesystem.
+
+# AIDE — daily cron active (must not start with #)
 grep CRON_DAILY_RUN /etc/default/aide
+# → CRON_DAILY_RUN=yes
 
 # AIDE — test detection
 sudo touch /etc/ssh/aide_test
-sudo aide --check --config /etc/aide/aide.conf 2>&1 | grep "f++++"
-# → f++++++++++++++++: /etc/ssh/aide_test
+sudo aide --check --config /etc/aide/aide.conf 2>/dev/null | grep "aide_test"
+# → f+++++++++++++++++: /etc/ssh/aide_test
+# f+++++++++++++++++ — 17 + signs indicate a new file not present in
+# the baseline database. The exact count varies by AIDE version and monitored
+# attributes — grep by filename, not by + pattern, to avoid version-dependent
+# mismatches.
 
 # AIDE — cleanup and regenerate baseline after test
 sudo rm /etc/ssh/aide_test
@@ -1312,7 +1424,7 @@ Create log files before rsyslog starts. rsyslog runs as uid `syslog` — if a
 file is owned by `root`, rsyslog writes to it silently fail with no error:
 ```bash
 sudo install -m 640 -o syslog -g adm /dev/null /var/log/ufw.log
-sudo install -m 640 -o root   -g adm /dev/null /var/log/fail2ban.log
+sudo install -m 640 -o syslog -g adm /dev/null /var/log/fail2ban.log
 ```
 
 Deploy the configs and restart:
@@ -1369,9 +1481,10 @@ sudo tail -n 3 /var/log/fail2ban.log
 # → Jail 'sshd' started / Jail is in operation
 
 # Logrotate dry-run — verify create owners per block
-sudo logrotate --debug /etc/logrotate.d/hardening-logs 2>&1 | grep "create"
-# → create 640 syslog adm   (auth/ufw/kern block)
-# → create 640 root adm     (fail2ban block)
+sudo logrotate --debug /etc/logrotate.d/hardening-logs 2>&1 | grep -E "create|rotating|considering"
+# → considering log /var/log/ufw.log
+# → considering log /var/log/fail2ban.log
+# → rotating log ... (or: log does not need rotating)
 ```
 
 ---
@@ -1389,9 +1502,19 @@ Lynis 3.0.9 was run after completing all hardening steps to establish a
 verified baseline. A custom profile suppresses intentional deviations from
 CIS defaults — each skipped test is documented with its justification.
 
-Result: **88**
+Install Lynis — version 3.0.9 is available in the Ubuntu 24.04 repositories
+and matches the version used to establish the baseline score:
 
 ```bash
+sudo apt install lynis -y
+lynis show version   # → 3.0.9
+```
+
+Deploy the custom profile before running the audit:
+
+```bash
+sudo mkdir -p /etc/lynis
+sudo cp configs/lynis/custom.prf /etc/lynis/custom.prf
 sudo lynis audit system --profile /etc/lynis/custom.prf
 ```
 
@@ -1411,6 +1534,10 @@ passing test whose reason is unknown.
 > No residual warnings. All Lynis observations are either passing controls
 > or intentional deviations documented in
 > [`configs/lynis/custom.prf`](../configs/lynis/custom.prf).
+>
+> **Hardening index: 88 (VM) · 90 (EC2)**
+> EC2 suppresses two additional false positives not present in the VM
+> environment — see `USB-1000` and `AUTH-9284` below.
 
 | Control | Type | Justification |
 |---|---|---|
@@ -1431,6 +1558,9 @@ passing test whose reason is unknown.
 | `NAME-4028` | Temporary | Internal DNS not deployed yet *(→ Step 03 — BIND9)* |
 | `LOGG-2154` | Temporary | No external log server — planned as a future module *(→ logging module)* |
 | `TOOL-5002` | Temporary | No automation tool active — each module will ship an automation script *(→ automation phase)* |
+| `USB-1000` | False positive | `usb_storage` blacklisted via `modprobe.d` — Lynis checks availability, not blacklist status. No physical USB on EC2. *(EC2 only)* |
+| `AUTH-9284` | False positive | Ubuntu default service accounts with `!` in `/etc/shadow` — system-managed, not orphaned. *(EC2 only)* |
+| `NAME-4404` | False positive | Private IP and hostname added to `/etc/hosts` — required for FQDN resolution in cloud environments without a local DNS. *(EC2 only)* |
 
 ### Verification
 ```bash
