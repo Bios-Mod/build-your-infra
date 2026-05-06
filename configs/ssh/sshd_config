@@ -160,7 +160,8 @@ ClientAliveCountMax 2
 
 #PermitUserEnvironment no
 #Compression delayed
-#UseDNS no
+
+UseDNS no
 #PidFile /run/sshd.pid
 
 # Limits pre-authentication connections: start dropping at 10, 30% rate, hard cap 60.

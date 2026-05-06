@@ -10,7 +10,7 @@ Named to reflect the exact server state at capture time.
 | # | Name | Taken after | State |
 |---|------|-------------|-------|
 | 1 | `ubuntu-base-install` | Fresh OS installation — no configuration applied | ✅ Retained |
-| 2 | `complete-hardening` | Full OS hardening completed — CIS Level 1 baseline. See [`docs/01-os-hardening.md`](../docs/01-os-hardening.md). Permanent base restore point for all service deployments. | ✅ Retained |
+| 2 | `complete-hardening` | Full OS hardening completed — CIS Level 1 baseline (Lynis 88). See [`docs/01-os-hardening.md`](../docs/01-os-hardening.md). Permanent base restore point for all service deployments. | ✅ Retained |
 
 ---
 
@@ -30,8 +30,7 @@ disk. Both must be explicitly deleted when no longer needed — deregistering
 an AMI does **not** delete its underlying snapshot.
 
 **To create an AMI:**
-EC2 → Instances → `multi-lab-aws` → Actions →
-Image and templates → Create image.
+EC2 → Instances → `multi-lab-aws` → Actions → Image and templates → Create image.
 Stop the instance first for a consistent, filesystem-coherent image.
 
 **To delete an AMI and free storage:**
@@ -57,6 +56,7 @@ Delete intermediate snapshots once the subsequent step is confirmed stable.
 | # | AMI Name | Taken after | State |
 |---|----------|-------------|-------|
 | 1 | `multi-lab-aws-base-install` | Fresh Ubuntu 24.04 ARM64 — first `apt upgrade` only | ✅ Retained |
+| 2 | `multi-lab-aws-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline confirmed (Lynis 90). Taken immediately before SFTP deployment (Step 02). Permanent base restore point. | ✅ Retained |
 
 ---
 
