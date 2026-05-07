@@ -19,6 +19,11 @@ by adding the access control block and the required filesystem structure.
 > must be complete before deploying SFTP. The SFTP user and chroot directory
 > created here integrate with the existing AppArmor and auditd configuration.
 
+> **Security context:** This service runs on top of the baseline established
+> in `01-os-hardening.md`. The relevant active layers for SFTP are:
+> WireGuard perimeter (Step 5), UFW `allow in on wg0` (Step 5),
+> AppArmor enforcement (Step 8), auditd monitoring (Step 10).
+
 ---
 
 ## Environment
@@ -126,14 +131,25 @@ absolute path outside the chroot is used here to avoid ambiguity and
 keep key management consistent with the admin user.
 
 ```bash
-# On the client machine (Mac/Linux) — generate a dedicated key for SFTP
+# ── On the CLIENT machine (Mac/Linux) ─────────────────────────────────────────
+
+# Generate a dedicated keypair for SFTP
 ssh-keygen -t ed25519 -C "sftp-multi-lab" -f ~/.ssh/id_ed25519_sftp
 
-# Copy the public key to the server
-ssh-copy-id -i ~/.ssh/id_ed25519_sftp.pub -p 22222 <username>@10.0.0.1
+# Display the public key — copy this output
+cat ~/.ssh/id_ed25519_sftp.pub
 
+# ── On the SERVER ─────────────────────────────────────────────────────────────
+
+# Create the .ssh directory for sftpuser
 sudo mkdir -p /home/sftpuser/.ssh
-sudo cp ~/.ssh/<your_key>.pub /home/sftpuser/.ssh/authorized_keys
+
+# Paste the public key from the step above
+sudo tee /home/sftpuser/.ssh/authorized_keys > /dev/null << 'EOF'
+ssh-ed25519 AAAA... sftp-multi-lab
+EOF
+
+# Set correct ownership and permissions
 sudo chown -R sftpuser:sftpuser /home/sftpuser/.ssh
 sudo chmod 700 /home/sftpuser/.ssh
 sudo chmod 600 /home/sftpuser/.ssh/authorized_keys
@@ -231,7 +247,7 @@ chroot. Added to the existing rules file and reloaded.
 ```bash
 sudo tee -a /etc/audit/rules.d/99-hardening.rules > /dev/null << 'EOF'
 # SFTP — Step 02: file operations inside the SFTP chroot
--w /srv/sftp/ -p rwxa -k sftp_activity
+-w /srv/sftp/ -p rwa -k sftp_activity
 EOF
 
 sudo augenrules --load
@@ -276,9 +292,11 @@ would generate false positives on every file transfer.
 ```bash
 sudo tee -a /etc/aide/aide.conf.d/99-hardening << 'EOF'
 # SFTP chroot root — monitors ownership and permission changes
+/srv/sftp/sftpuser  PERMS+sha512
 # uploads/ excluded: writable data directory, changes are expected
-/srv/sftp/[^u]  PERMS+sha512
+!/srv/sftp/sftpuser/uploads
 EOF
+# AIDE negation syntax: the ! prefix explicitly excludes a path from monitoring. 
 
 sudo aide --init --config /etc/aide/aide.conf
 sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
@@ -339,11 +357,6 @@ sftp> ls
 >     IdentityFile ~/.ssh/<your_key>
 > ```
 > After this, `sftp multi-lab-sftp` is the only command needed.
-
-> **Security context:** This service runs on top of the baseline established
-> in `01-os-hardening.md`. The relevant active layers for SFTP are:
-> WireGuard perimeter (Step 5), UFW `allow in on wg0` (Step 5),
-> AppArmor enforcement (Step 8), auditd monitoring (Step 10).
 
 ---
 

@@ -192,3 +192,21 @@ Subsystem	sftp	/usr/lib/openssh/sftp-server
 #	AllowTcpForwarding no
 #	PermitTTY no
 #	ForceCommand cvs server
+
+# ── SFTP — sshd_config ────────────────────────────────────────────────────────
+# Transfer-only access model. sftpuser is confined to /srv/sftp/sftpuser
+# via ChrootDirectory — cannot traverse the filesystem or open a shell.
+#
+# ChrootDirectory ownership rule: the chroot root and every component of
+# its path must be owned by root and not writable by group or other.
+# OpenSSH enforces this strictly — a misconfigured owner causes immediate
+# disconnect with "broken pipe" and no further error detail.
+#
+# ForceCommand internal-sftp: overrides any shell access attempt.
+# The user cannot bypass SFTP even if the nologin shell check is bypassed.
+Match User sftpuser
+    ForceCommand internal-sftp -l VERBOSE
+    ChrootDirectory /srv/sftp/sftpuser
+    AllowTcpForwarding no
+    X11Forwarding no
+    PasswordAuthentication no
