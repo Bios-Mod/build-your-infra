@@ -42,8 +42,7 @@ by adding the access control block and the required filesystem structure.
 
 ### What was done
 
-A system user with no login shell is created. No home directory under `/home`
-— the chroot directory serves as the user's root.
+A dedicated user with no login shell is created. The home directory at `/home/sftpuser` is used exclusively for key management — the SFTP session root is the chroot directory defined in Step 4.
 
 ```bash
 sudo adduser sftpuser --shell /usr/sbin/nologin --gecos ""
@@ -124,11 +123,11 @@ stat -c "%U %G %a %n" /srv/sftp/sftpuser/uploads
 ### What was done
 
 SFTP authentication uses the same Ed25519 key infrastructure as SSH.
-The authorized key is placed inside the chroot — note that OpenSSH
-resolves `AuthorizedKeysFile` paths relative to the chroot when the
-path is relative, but uses the real filesystem when absolute. An
-absolute path outside the chroot is used here to avoid ambiguity and
-keep key management consistent with the admin user.
+`AuthorizedKeysFile` in `sshd_config` is set to `.ssh/authorized_keys` — a
+relative path that OpenSSH resolves against the user's home directory on the
+**real filesystem**, not the chroot. For `sftpuser`, this resolves to
+`/home/sftpuser/.ssh/authorized_keys`, which sits outside the chroot jail and
+is therefore not reachable by the confined session.
 
 ```bash
 # ── On the CLIENT machine (Mac/Linux) ─────────────────────────────────────────
@@ -241,8 +240,8 @@ sudo sshd -T -C user=sftpuser | grep -E "forcecommand|chrootdirectory|allowtcpfo
 
 ### What was done
 
-A dedicated audit rule monitors file operations performed under the SFTP
-chroot. Added to the existing rules file and reloaded.
+A dedicated audit rule monitors changes under the SFTP path. The rule is
+appended to the existing hardening ruleset and then loaded.
 
 ```bash
 sudo tee -a /etc/audit/rules.d/99-hardening.rules > /dev/null << 'EOF'
@@ -250,27 +249,26 @@ sudo tee -a /etc/audit/rules.d/99-hardening.rules > /dev/null << 'EOF'
 -w /srv/sftp/ -p rwa -k sftp_activity
 EOF
 
+sudo systemctl restart auditd
 sudo augenrules --load
 ```
 
-> **Immutable mode:** if auditd was loaded with `-e 2`, restart it before
-> reloading rules: `sudo systemctl restart auditd && sudo augenrules --load`
+> **Immutable mode:** if auditd is already running with `-e 2`, restart it
+> before reloading the ruleset.
 
 📄 [`configs/audit/99-hardening.rules`](../configs/audit/99-hardening.rules)
 
 ### Why
 
-The SFTP chroot is a writable path accessible from the network. Auditing
-file operations inside it provides an event trail of every upload, rename,
-and deletion — independent of SFTP session logs. Paired with the `identity`
-and `sshd_config` rules already active from Step 10, this closes the logging
-gap for SFTP-specific activity.
+The SFTP path is network-accessible and writable by design. This rule adds a
+dedicated event trail for file changes under `/srv/sftp/`, complementing the
+baseline audit coverage already applied in `01-os-hardening.md`.
 
 ### Verification
 
 ```bash
 sudo auditctl -l | grep sftp_activity
-# → -w /srv/sftp/ -p rwxa -k sftp_activity
+# → -w /srv/sftp/ -p rwa -k sftp_activity
 
 # Test — create a file as sftpuser and verify the event appears
 sudo touch /srv/sftp/sftpuser/uploads/audit_test
@@ -285,49 +283,61 @@ sudo rm /srv/sftp/sftpuser/uploads/audit_test
 
 ### What was done
 
-The SFTP chroot root is added to the AIDE monitoring scope. The `uploads/`
-directory is intentionally excluded — it is a writable data directory and
-would generate false positives on every file transfer.
+The SFTP chroot root is added to the AIDE scope. The writable `uploads/`
+directory is excluded to avoid expected transfer activity generating
+constant differences.
 
 ```bash
-sudo tee -a /etc/aide/aide.conf.d/99-hardening << 'EOF'
-# SFTP chroot root — monitors ownership and permission changes
-/srv/sftp/sftpuser  PERMS+sha512
-# uploads/ excluded: writable data directory, changes are expected
+sudo tee -a /etc/aide/aide.conf.d/99-hardening > /dev/null << 'EOF'
+# SFTP chroot root — monitor ownership and permission changes
+/srv/sftp/sftpuser    OwnerMode
+# Writable upload directory — excluded from integrity checks
 !/srv/sftp/sftpuser/uploads
 EOF
-# AIDE negation syntax: the ! prefix explicitly excludes a path from monitoring. 
 
 sudo aide --init --config /etc/aide/aide.conf
 sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
 ```
 
-> **Baseline regeneration is required** after any structural change to a
-> monitored path. Regenerate any time a new service modifies files under
-> an existing AIDE-monitored directory.
+> **`!` prefix:** explicitly excludes a path from AIDE monitoring — changes
+> inside `uploads/` are expected and must not generate false positives.
+
+> **Baseline regeneration:** after extending the AIDE scope, regenerate the
+> database so the current SFTP structure becomes the new trusted baseline.
 
 📄 [`configs/aide/99-hardening`](../configs/aide/99-hardening)
 
 ### Why
 
-Monitoring the chroot root detects unauthorized ownership or permission
-changes — for example, if `sftpuser` were somehow granted write access to
-the chroot root, AIDE would flag it at the next daily check before the
-misconfiguration can be exploited.
+The chroot root must remain root-owned and non-writable. Monitoring it with
+AIDE makes permission or ownership drift visible, while excluding `uploads/`
+avoids false positives from normal SFTP transfers.
 
 ### Verification
 
 ```bash
+# Confirm the chroot root is in scope
+grep sftp /etc/aide/aide.conf.d/99-hardening
+
 sudo aide --check --config /etc/aide/aide.conf
 # → AIDE found no differences between database and filesystem.
-
-# Confirm the chroot root is in scope
-grep srv/sftp /etc/aide/aide.conf.d/99-hardening
+# Expected warnings on /var/log/account/pacct, /var/log/audit/audit.log,
+# and /var/log/sysstat/sa<DD> are normal — see 01-os-hardening.md Step 10.
 ```
 
 ---
 
 ## Connect
+
+> **`~/.ssh/config` block — eliminates all flags:**
+> ```
+> Host multi-lab-sftp
+>     HostName 10.0.0.1
+>     User sftpuser
+>     Port 22222
+>     IdentityFile ~/.ssh/<your_key>
+> ```
+> After this, `sftp multi-lab-sftp` is the only command needed.
 
 ```bash
 # SFTP — with ~/.ssh/config Host block defined (recommended)
@@ -342,28 +352,12 @@ sftp> ls
 # → uploads/   (only — no system paths visible)
 ```
 
-> **`-P` not `-p`:** SFTP uses uppercase `-P` for port (unlike `ssh -p`).
-> `-i` specifies the private key — the same one whose public counterpart
-> is in `authorized_keys`. You never transmit or reference the public key
-> at connection time; the client signs the server's challenge with the
-> private key and the server verifies against the stored public key.
-
-> **`~/.ssh/config` block — eliminates all flags:**
-> ```
-> Host multi-lab-sftp
->     HostName 10.0.0.1
->     User sftpuser
->     Port 22222
->     IdentityFile ~/.ssh/<your_key>
-> ```
-> After this, `sftp multi-lab-sftp` is the only command needed.
-
 ---
 
 ## Snapshot
 
 SFTP represents the first deployed service on top of the hardened OS baseline.
-Take a snapshot before proceeding to the next module — this captures the
-minimal, verified state: hardened OS + SFTP, no additional services.
+Take a snapshot before proceeding to the next module — this preserves the
+verified state: hardened OS + SFTP, no additional services.
 
 ---

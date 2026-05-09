@@ -34,3 +34,8 @@ CONTENTEX = p+ftype+i+l+n+u+g+s+sha256+acl+xattrs
 /usr/sbin       CONTENTEX
 /usr/lib/systemd/system CONTENTEX
 /boot           CONTENTEX
+# SFTP chroot root — monitor ownership and permission changes
+# OwnerMode = p+u+g+ftype (permissions, uid, gid, file type)
+# uploads/ excluded: writable data directory, changes are expected
+/srv/sftp/sftpuser    OwnerMode
+!/srv/sftp/sftpuser/uploads
