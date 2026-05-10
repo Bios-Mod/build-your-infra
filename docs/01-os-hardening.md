@@ -1399,6 +1399,9 @@ sudo aide --check --config /etc/aide/aide.conf 2>/dev/null | grep "aide_test"
 # the baseline database. The exact count varies by AIDE version and monitored
 # attributes — grep by filename, not by + pattern, to avoid version-dependent
 # mismatches.
+# Expected changes on every --check (active logs, not a sign of compromise):
+# /var/log/account/pacct · /var/log/audit/audit.log · /var/log/sysstat/sa<DD>
+# /var/log/amazon/ssm/ — AWS EC2 only, SSM Agent kept active for emergency access
 
 # AIDE — cleanup and regenerate baseline after test
 sudo rm /etc/ssh/aide_test

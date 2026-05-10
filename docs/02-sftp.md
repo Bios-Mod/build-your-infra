@@ -66,7 +66,7 @@ getent passwd sftpuser
 # → sftpuser:x:...:...:/usr/sbin/nologin
 
 # Shell must be nologin — interactive login must fail
-sudo -u sftpuser /bin/bash
+su - sftpuser
 # → This account is currently not available.
 ```
 
@@ -137,6 +137,14 @@ ssh-keygen -t ed25519 -C "sftp-multi-lab" -f ~/.ssh/id_ed25519_sftp
 
 # Display the public key — copy this output
 cat ~/.ssh/id_ed25519_sftp.pub
+
+# Set correct permissions — SSH rejects private keys accessible by others
+chmod 600 ~/.ssh/id_ed25519_sftp
+chmod 644 ~/.ssh/id_ed25519_sftp.pub
+
+ls -la ~/.ssh/id_ed25519_sftp*
+# → -rw-------  id_ed25519_sftp
+# → -rw-r--r--  id_ed25519_sftp.pub
 
 # ── On the SERVER ─────────────────────────────────────────────────────────────
 
@@ -251,6 +259,7 @@ EOF
 
 sudo systemctl restart auditd
 sudo augenrules --load
+sudo reboot now
 ```
 
 > **Immutable mode:** if auditd is already running with `-e 2`, restart it
@@ -321,8 +330,7 @@ grep sftp /etc/aide/aide.conf.d/99-hardening
 
 sudo aide --check --config /etc/aide/aide.conf
 # → AIDE found no differences between database and filesystem.
-# Expected warnings on /var/log/account/pacct, /var/log/audit/audit.log,
-# and /var/log/sysstat/sa<DD> are normal — see 01-os-hardening.md Step 10.
+# Expected warnings — see 01-os-hardening.md Step 10.
 ```
 
 ---
@@ -350,6 +358,20 @@ sftp -i ~/.ssh/<your_key> -P 22222 -o "StrictHostKeyChecking=accept-new" sftpuse
 sftp> cd /
 sftp> ls
 # → uploads/   (only — no system paths visible)
+
+# On the client — create a test file
+echo "sftp-test" > /tmp/sftp_test.txt
+
+# Connect and test
+sftp multi-lab-sftp-local
+sftp> put /tmp/sftp_test.txt uploads/
+sftp> ls uploads/
+# → sftp_test.txt
+sftp> rm uploads/sftp_test.txt
+sftp> bye
+
+# Cleanup client
+rm /tmp/sftp_test.txt
 ```
 
 ---
