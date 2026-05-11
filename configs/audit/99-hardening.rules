@@ -25,6 +25,12 @@
 -w /etc/sudoers -p wa -k identity
 -w /etc/sudoers.d/ -p wa -k identity
 
+# Log changes to PAM configuration (authentication module stack)
+# /etc/pam.d/ modification can inject rogue modules, bypass authentication,
+# or silently log credentials. Not in CIS L1 standard rules -- added because
+# PAM controls every authentication event on this server.
+-w /etc/pam.d/ -p wa -k pam_config
+
 # Log changes to SSH configuration
 -w /etc/ssh/sshd_config -p wa -k sshd_config
 
@@ -34,6 +40,7 @@
 
 # Log changes to network configuration
 -w /etc/netplan/ -p wa -k network_config
+-w /etc/hosts -p wa -k network_config
 
 # Log modifications to the audit system itself
 -w /etc/audit/ -p wa -k audit_config

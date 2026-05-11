@@ -830,6 +830,7 @@ enforcement via `pam_limits` is added in Step 9 — both layers are required.
 sudo sysctl --system | grep "Applying"
 
 # Verify key runtime values
+# Kernel — memory and privilege hardening
 sysctl kernel.randomize_va_space        # → 2
 sysctl kernel.kptr_restrict             # → 2
 sysctl kernel.dmesg_restrict            # → 1
@@ -837,13 +838,28 @@ sysctl kernel.sysrq                     # → 0
 sysctl kernel.perf_event_paranoid       # → 3
 sysctl kernel.unprivileged_bpf_disabled # → 2
 sysctl kernel.core_uses_pid             # → 1
+sysctl kernel.modules_disabled          # → 0  (WireGuard module — see KRNL-6000)
+
+# Filesystem
 sysctl fs.suid_dumpable                 # → 0
-sysctl fs.protected_fifos               # → 2  (99-protect-links.conf must not win)
-sysctl dev.tty.ldisc_autoload           # → 0
+sysctl fs.protected_fifos               # → 2
+sysctl fs.protected_hardlinks           # → 1
+sysctl fs.protected_symlinks            # → 1
+
+# Network
 sysctl net.ipv4.tcp_syncookies          # → 1
+sysctl net.ipv4.tcp_rfc1337             # → 1
 sysctl net.ipv4.conf.all.rp_filter      # → 1
+sysctl net.ipv4.conf.all.accept_redirects    # → 0
+sysctl net.ipv4.conf.all.send_redirects      # → 0
+sysctl net.ipv4.conf.all.accept_source_route # → 0
+sysctl net.ipv6.conf.all.accept_redirects    # → 0
+sysctl net.ipv6.conf.all.accept_source_route # → 0
 sysctl net.ipv4.ip_forward              # → 1  (WireGuard active)
-sudo sysctl net.core.bpf_jit_harden     # → 2  (requires sudo to read)
+sysctl dev.tty.ldisc_autoload           # → 0
+
+# BPF — requires sudo
+sudo sysctl net.core.bpf_jit_harden     # → 2
 
 # Confirm log_martians persists after UFW reload
 sudo ufw reload
@@ -1124,6 +1140,11 @@ ulimit -c                                       # → 0
 # Weak password rejected
 sudo passwd <username>
 # → BAD PASSWORD: The password contains less than 1 uppercase letters
+
+# Account expiry — 365 days from setup date
+sudo chage -E $(date -d "+365 days" +%Y-%m-%d) <username>
+sudo chage -l <username>
+# → Account expires: <date>
 ```
 
 ---
@@ -1554,7 +1575,6 @@ passing test whose reason is unknown.
 | `KRNL-6000` — `kernel.unprivileged_bpf_disabled` | Conscious deviation | Value `2` — intentionally stricter than CIS L1 minimum (`1`); see Step 7 |
 | `KRNL-6000` — `kernel.modules_disabled` | Conscious deviation | Value `0` — WireGuard loads as a kernel module; see Step 7 |
 | `KRNL-6000` — `net.ipv4.conf.all.forwarding` | Conscious deviation | Value `1` — required for WireGuard VPN routing; see Step 5 |
-| `AUTH-9282` | Conscious deviation | No account expiry on sole admin — lockout risk outweighs gain on a personal lab |
 | `BOOT-5122` | VM-specific | GRUB password not set — hypervisor authentication covers physical boot access |
 | `FILE-6310` | Architectural constraint | `/home`, `/tmp`, `/var` not on separate partitions — requires reinstall to resolve |
 | `BOOT-5264` | Temporary | systemd unit hardening applied per service at end of each module — not applicable at OS baseline *(→ each service step)* |
