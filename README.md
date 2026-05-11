@@ -76,8 +76,8 @@ values before applying.
 
 | Step | Component | Technology | Status | Doc |
 |------|-----------|------------|--------|-----|
-| 00 | Cloud Infrastructure | AWS EC2 · EBS gp3 · Security Groups · Key Pair | ✅ Complete | [`docs/00-aws-deployment.md`](docs/00-aws-deployment.md) |
-| 01 | OS Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | ✅ Complete | [`docs/01-os-hardening.md`](docs/01-os-hardening.md) |
+| 00 | Cloud Infrastructure | AWS EC2 · EBS gp3 · Security Groups · Key Pair | Complete | [`docs/00-aws-deployment.md`](docs/00-aws-deployment.md) |
+| 01 | OS Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Complete | [`docs/01-os-hardening.md`](docs/01-os-hardening.md) |
 
 12 steps covering 9 independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
 
@@ -85,12 +85,12 @@ values before applying.
 
 | Step | Service | Technology | Status | Doc |
 |------|---------|------------|--------|-----|
-| 02 | File Transfer | SFTP (OpenSSH subsystem) | ✅ Complete | [`docs/02-sftp.md`](docs/02-sftp.md) |
-| 03 | DNS | BIND9 | 🔲 Planned | [`docs/03-dns-bind9.md`](docs/03-dns-bind9.md) |
-| 04 | DHCP | Kea / ISC DHCP | 🖥️ VM only 🔲 Planned | [`docs/04-dhcp.md`](docs/04-dhcp.md) |
-| 05 | Web Server | Nginx + HTTPS (self-signed) | 🔲 Planned | [`docs/05-nginx-https.md`](docs/05-nginx-https.md) |
-| 06 | Reverse Proxy | Nginx (`proxy_pass`) | 🔲 Planned | [`docs/06-reverse-proxy.md`](docs/06-reverse-proxy.md) |
-| 07 | Directory Server | Samba 4 | 🔲 Planned | [`docs/07-samba4.md`](docs/07-samba4.md) |
+| 02 | File Transfer | SFTP (OpenSSH subsystem) | Complete | [`docs/02-sftp.md`](docs/02-sftp.md) |
+| 03 | DNS | BIND9 | Planned | [`docs/03-dns-bind9.md`](docs/03-dns-bind9.md) |
+| 04 | DHCP | Kea / ISC DHCP | VM only - Planned | [`docs/04-dhcp.md`](docs/04-dhcp.md) |
+| 05 | Web Server | Nginx + HTTPS (self-signed) | Planned | [`docs/05-nginx-https.md`](docs/05-nginx-https.md) |
+| 06 | Reverse Proxy | Nginx (`proxy_pass`) | Planned | [`docs/06-reverse-proxy.md`](docs/06-reverse-proxy.md) |
+| 07 | Directory Server | Samba 4 | Planned | [`docs/07-samba4.md`](docs/07-samba4.md) |
 
 Services are deployed in order of complexity — each layer builds on the
 security foundation established before it.

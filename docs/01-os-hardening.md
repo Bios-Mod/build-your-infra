@@ -326,7 +326,7 @@ Deploy the config, create the banner, and remove unused host key material from d
 > configuration does not override the intended SSH settings on reboot. Confirm
 > the effective configuration after the restart and again after a reboot test.
 
-> **⚠️ Critical operational note (Preventing Lockout):**
+> **Critical operational note (Preventing Lockout):**
 > Before restarting the SSH daemon, keep a recovery path open until the new
 > port is confirmed from a second session or console access.
 
@@ -548,7 +548,7 @@ sudo wg-quick up wg0
 sudo systemctl enable wg-quick@wg0
 ```
 
-> ⚠️ **Key cleanup:** once the client keypair is transferred to the device,
+> **Key cleanup:** once the client keypair is transferred to the device,
 > delete it from the server — a private key must never persist outside its owner:
 > ```bash
 > rm ~/mac_private.key ~/mac_public.key
@@ -689,7 +689,7 @@ ping 10.0.0.1
 ssh -p 22222 <username>@10.0.0.1
 
 # Negative test — SSH must be unreachable without WireGuard
-# ⚠️  EC2 only: do NOT run wg-quick down from inside the tunnel.
+# EC2 only: do NOT run wg-quick down from inside the tunnel.
 # Dropping wg0 cuts the only SSH path — the instance becomes unreachable
 # until restarted from the AWS EC2 console.
 # Run this test from a second terminal with an active tunnel, or skip it —
@@ -949,8 +949,8 @@ sudo apt-mark hold snapd
 >
 > | Service      | VM (VMware)                        | Bare metal / VPS                              |
 > |---|---|---|
-> | open-vm-tools | ✅ Keep                           | ❌ Remove                                      |
-> | vgauth        | ✅ Keep                           | ❌ Remove                                      |
+> | open-vm-tools | Keep                           | Remove                                      |
+> | vgauth        | Keep                           | Remove                                      |
 > | multipathd    | Disable unless multi-path storage  | Disable unless multi-path storage             |
 > | ModemManager  | Disable                           | Disable unless mobile broadband               |
 > | snapd         | Purge recommended — not required on server | Purge — no use case on a headless server |
