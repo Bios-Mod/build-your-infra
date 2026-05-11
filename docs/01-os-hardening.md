@@ -1268,15 +1268,16 @@ Rules cover the following monitoring areas:
 | Key | What is monitored |
 |---|---|
 | `identity` | `/etc/passwd`, `/etc/shadow`, `/etc/group`, `/etc/sudoers{,.d}` |
+| `pam_config` | `/etc/pam.d/` -- authentication module stack |
 | `sshd_config` | `/etc/ssh/sshd_config` |
 | `privileged` | `su`, `sudo` execution |
-| `network_config` | `/etc/netplan/` |
+| `network_config` | `/etc/netplan/`, `/etc/hosts` |
 | `audit_config` | `/etc/audit/`, `auditctl`, `auditd` binaries |
-| `mounts` | Mount syscalls — user-initiated only (`auid>=1000`) |
-| `file_deletion` | Delete and rename syscalls — user-initiated only (`auid>=1000`) |
-| `vpn_config` | `/etc/wireguard/` — conditional, only if Step 5 was deployed |
+| `mounts` | Mount syscalls -- user-initiated only (`auid>=1000`) |
+| `file_deletion` | Delete and rename syscalls -- user-initiated only (`auid>=1000`) |
+| `vpn_config` | `/etc/wireguard/` -- conditional, only if Step 5 was deployed |
 | `cron_config` | `/etc/crontab`, `/etc/cron.{d,daily,hourly,weekly,monthly}/` |
-| `-e 2` | Immutable mode — rules cannot be modified without a reboot |
+| `-e 2` | Immutable mode -- rules cannot be modified without a reboot |
 
 Deploy the rules file and load it:
 ```bash
