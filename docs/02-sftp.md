@@ -225,11 +225,6 @@ internal SFTP process. `ChrootDirectory` jails the session at the filesystem
 level. Together they provide two independent enforcement layers: process
 isolation and filesystem confinement.
 
-`internal-sftp` (built into the SSH binary) is preferred over
-`/usr/lib/openssh/sftp-server` (the external binary declared in `Subsystem`)
-for chrooted sessions — it runs in-process without requiring system binaries
-like `ls` or `sh` inside the chroot.
-
 ### Verification
 
 ```bash
