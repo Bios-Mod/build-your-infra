@@ -87,7 +87,7 @@ values before applying.
 |------|---------|------------|--------|-----|
 | 02 | File Transfer | SFTP (OpenSSH subsystem) | Complete | [`docs/02-sftp.md`](docs/02-sftp.md) |
 | 03 | DNS | BIND9 | Planned | [`docs/03-dns-bind9.md`](docs/03-dns-bind9.md) |
-| 04 | DHCP | Kea / ISC DHCP | VM only - Planned | [`docs/04-dhcp.md`](docs/04-dhcp.md) |
+| 04 | DHCP | Kea DHCP | VM only - Planned | [`docs/04-dhcp.md`](docs/04-dhcp.md) |
 | 05 | Web Server | Nginx + HTTPS (self-signed) | Planned | [`docs/05-nginx-https.md`](docs/05-nginx-https.md) |
 | 06 | Reverse Proxy | Nginx (`proxy_pass`) | Planned | [`docs/06-reverse-proxy.md`](docs/06-reverse-proxy.md) |
 | 07 | Directory Server | Samba 4 | Planned | [`docs/07-samba4.md`](docs/07-samba4.md) |

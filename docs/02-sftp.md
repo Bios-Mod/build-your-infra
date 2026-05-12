@@ -11,18 +11,19 @@ OpenSSH internal subsystem — no additional packages required. SFTP is
 isolated via a dedicated system user with no shell access, a chroot jail,
 and a `Match User` block appended to the existing `sshd_config`.
 
-The subsystem entry (`Subsystem sftp /usr/lib/openssh/sftp-server`) was
-already placed in `sshd_config` during Step 03 — this step activates it
-by adding the access control block and the required filesystem structure.
+The subsystem entry (`Subsystem sftp internal-sftp`) declared in `sshd_config`
+uses the SFTP implementation built into the SSH binary — no external process or
+system binaries are required inside the chroot. This step activates SFTP access
+by adding the `Match User` block and the required filesystem structure.
 
-> **Prerequisite:** Steps 01–05 (OS hardening, SSH hardening, UFW, WireGuard)
+> **Prerequisite:** Step 01 (OS hardening, SSH hardening, UFW, WireGuard)
 > must be complete before deploying SFTP. The SFTP user and chroot directory
 > created here integrate with the existing AppArmor and auditd configuration.
 
 > **Security context:** This service runs on top of the baseline established
 > in `01-os-hardening.md`. The relevant active layers for SFTP are:
-> WireGuard perimeter (Step 5), UFW `allow in on wg0` (Step 5),
-> AppArmor enforcement (Step 8), auditd monitoring (Step 10).
+> WireGuard perimeter, UFW `allow in on wg0`,
+> AppArmor enforcement, auditd monitoring.
 
 ---
 
@@ -363,7 +364,7 @@ sftp> ls
 echo "sftp-test" > /tmp/sftp_test.txt
 
 # Connect and test
-sftp multi-lab-sftp-local
+sftp multi-lab-sftp
 sftp> put /tmp/sftp_test.txt uploads/
 sftp> ls uploads/
 # → sftp_test.txt

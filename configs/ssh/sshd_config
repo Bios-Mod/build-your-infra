@@ -185,7 +185,7 @@ DebianBanner no
 AcceptEnv LANG LC_*
 
 # SFTP subsystem — required for Step 02 (SFTP server)
-Subsystem	sftp	/usr/lib/openssh/sftp-server
+Subsystem	sftp	internal-sftp
 
 #Match User anoncvs
 #	X11Forwarding no

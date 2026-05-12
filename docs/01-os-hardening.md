@@ -665,10 +665,12 @@ Restricting SSH to the `wg0` interface eliminates the entire category of
 internet-facing SSH attacks. Fail2Ban and UFW remain active as
 defense-in-depth layers for any traffic that reaches the VPN.
 
-Split tunnel (`AllowedIPs = 10.0.0.0/24`) is the correct choice for this lab —
-only VPN-destined traffic routes through the server. Full tunnel (`0.0.0.0/0`)
-would route all client internet traffic through the server, adding unnecessary
-load and latency without security benefit for this use case.
+Split tunnel (`AllowedIPs = 10.0.0.0/24`) routes only VPN subnet traffic
+through the server — peer-to-peer traffic between clients is forwarded by
+the hub, but each client's regular internet traffic exits locally.
+Full tunnel (`0.0.0.0/0`) would route all client internet traffic through
+the server, adding unnecessary load and latency without security benefit
+for this use case.
 
 ### Verification
 ```bash
