@@ -1,0 +1,25 @@
+// ============================================================
+// Deploy to:  /etc/apt/apt.conf.d/20auto-upgrades
+// Apply:      sudo systemctl restart unattended-upgrades
+// Module:     hardening
+// Requires:   none
+//
+// APT periodic schedule — enables daily update, download and unattended-upgrade
+// Parameters modified from baseline:  none
+//
+// Note:       Controls execution frequency in days. Works in tandem with
+//             50unattended-upgrades (scope/policy). Both files must be
+//             present for automatic updates to function.
+// Verify:     sudo unattended-upgrade --dry-run --debug
+// ============================================================
+// How often to update the package list (apt update)
+APT::Periodic::Update-Package-Lists "1";
+
+// How often to download available updates
+APT::Periodic::Download-Upgradeable-Packages "1";
+
+// How often to apply security updates
+APT::Periodic::Unattended-Upgrade "1";
+
+// How often to clean up old downloaded packages from the cache
+APT::Periodic::AutocleanInterval "7";

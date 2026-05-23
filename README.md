@@ -1,145 +1,196 @@
-# Multi-Service Linux Server — Build & Hardening Guide
+# build-your-infra — Multi-Environment Infrastructure Lab
 
-[![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](docs/01-os-hardening.md#step-12--security-audit-baseline-lynis)
-[![Lynis EC2](https://img.shields.io/badge/Lynis%20EC2-90-brightgreen?style=flat-square&logo=amazonaws&logoColor=white)](docs/01-os-hardening.md#step-12--security-audit-baseline-lynis)
+[![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/self-managed.md)
+[![Lynis EC2](https://img.shields.io/badge/Lynis%20EC2-90-brightgreen?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/self-managed/self-managed.md)
 ![CIS Level 1](https://img.shields.io/badge/CIS-Level%201%20Aligned-blue?style=flat-square)
 ![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange?style=flat-square&logo=ubuntu&logoColor=white)
-![OpenSSH](https://img.shields.io/badge/OpenSSH-Ed25519-black?style=flat-square&logo=openssh&logoColor=white)
-[![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)](docs/01-os-hardening.md#step-5--wireguard-vpn)
-[![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)](docs/01-os-hardening.md#step-4--ufw-firewall)
-[![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)](docs/01-os-hardening.md#step-6--fail2ban)
-[![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)](docs/01-os-hardening.md#step-8--apparmor)
-[![auditd](https://img.shields.io/badge/auditd-active-blue)](docs/01-os-hardening.md#step-10--audit-trail-auditd--aide)
-[![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](docs/00-aws-deployment.md#step-3--ec2-instance)
-![ARM64](https://img.shields.io/badge/Graviton2-ARM64-232F3E?style=flat-square&logo=arm&logoColor=white)
+[![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)](modules/hardening/self-managed/self-managed.md)
+[![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/self-managed.md)
+[![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)](modules/hardening/self-managed/self-managed.md)
+[![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)](modules/hardening/self-managed/self-managed.md)
+[![auditd](https://img.shields.io/badge/auditd-active-blue)](modules/hardening/self-managed/self-managed.md)
+[![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](environments/vps/vps-ec2-setup.md)
 
-A practical, step-by-step reference for deploying and hardening a self-managed
-Linux server from scratch. Covers OS hardening, network services, and identity
-management — each layer documented at the configuration level, with the
-reasoning behind every decision explained inline.
+A practical, step-by-step reference for deploying and hardening infrastructure across three environments: local VM, VPS/EC2, and AWS Native managed services. Each module is implemented at the configuration level, with the reasoning behind every decision explained inline.
 
-Built and tested on Ubuntu Server 24.04 LTS. Works on a VM (VMware, VirtualBox),
-directly on bare metal hardware, or on a VPS. VM-specific steps are clearly
-marked — everything else applies universally.
-
-No GUI tools. No automation frameworks. Everything via CLI.
+Built and tested on Ubuntu Server 24.04 LTS. No GUI tools. No automation frameworks. Everything via CLI.
 
 ---
 
-## Stack & Environments
+## Environments
 
-| Component     | VM (VMware Fusion)                    | AWS EC2                                |
-|---------------|---------------------------------------|----------------------------------------|
-| OS            | Ubuntu Server 24.04 LTS               | Ubuntu Server 24.04 LTS                |
-| Architecture  | ARM64 (Apple Silicon)                 | ARM64 (Graviton2)                      |
-| Deployment    | VMware Fusion · Bridged network       | EC2 t4g.micro · eu-west-1              |
-| Network       | Static IP · LAN                       | Elastic IP · VPC                       |
-| Remote Access | SSH Ed25519 · port 22222              | SSH Ed25519 · port 22222               |
+| Component     | Local (VM)                                        | VPS / EC2                                       | AWS Native                          |
+|---------------|---------------------------------------------------|-------------------------------------------------|-------------------------------------|
+| OS            | Ubuntu Server 24.04 LTS                           | Ubuntu Server 24.04 LTS                         | Managed (per service)               |
+| Architecture  | ARM64 (Apple Silicon) / x86_64                    | ARM64 (Graviton2)                               | —                                   |
+| Deployment    | VMware Fusion / VirtualBox · Bridged network      | EC2 t4g.micro · eu-west-1                       | AWS managed services · eu-west-1    |
+| Network       | Static IP · LAN                                   | Elastic IP · VPC                                | VPC · private subnets               |
+| Remote Access | SSH Ed25519 · port 22222 · WireGuard VPN          | SSH Ed25519 · port 22222 · WireGuard VPN        | SSM Session Manager / service APIs  |
 
-Both environments follow the same hardening baseline and service stack from
-Step 01 onward. DHCP (Step 04) is VM-only — not applicable on AWS.
+`local` and `vps` follow the same self-managed hardening baseline. `aws-native`
+replaces each service with its AWS managed equivalent — no OS to manage.
 
-> See [`docs/00-aws-deployment.md`](docs/00-aws-deployment.md) for AWS
-> infrastructure provisioning.
+> See [`environments/README.md`](environments/README.md) for environment setup
+> guides and when to use each.
 
-> **Architecture note:** This lab is built and tested on ARM64 (Apple Silicon
-> via VMware Fusion and AWS Graviton2). All configurations are
-> architecture-agnostic except where noted. x86_64 users on VMware Workstation,
-> VirtualBox, bare metal, or other cloud providers can follow the same steps —
-> differences are called out inline.
+> **Architecture note:** Built and tested on ARM64 (Apple Silicon via VMware
+> Fusion and AWS Graviton2). All configurations are architecture-agnostic
+> except where noted. x86_64 users can follow the same steps — differences
+> are called out inline.
 
 ---
 
 ## Deploying This Lab
 
-**Prerequisites**
-- Ubuntu Server 24.04 LTS (ARM64 or x86_64)
-- One of:
-  - **VM:** VMware Fusion (macOS) · VMware Workstation · VirtualBox — Bridged network adapter
-  - **Bare metal:** Any x86_64 or ARM64 machine with Ubuntu Server installed directly
-  - **VPS:** Any cloud provider (AWS EC2, Hetzner, DigitalOcean…) — Ubuntu 24.04 image
-- SSH access to the server
+Choose your environment and follow its setup guide before applying any module:
 
-**Deployment order**
-Steps are numbered and must be followed in sequence — each layer depends on
-the one before it. Start with `docs/01-os-hardening.md` before deploying
-any service.
+- **Local VM** — Ubuntu Server 24.04 LTS · VMware Fusion / VirtualBox (bridged adapter) → [`environments/local/local-vm-setup.md`](environments/local/local-vm-setup.md)
+- **VPS / EC2** — Ubuntu Server 24.04 LTS on any cloud provider → [`environments/vps/vps-ec2-setup.md`](environments/vps/vps-ec2-setup.md)
+- **AWS Native** — AWS account with IAM user, custom VPC, and base security services enabled → [`environments/aws-native/aws-native-setup.md`](environments/aws-native/aws-native-setup.md)
 
-**Using the configs**
-Each file in `configs/` includes a `Deploy to:` header with the exact target
-path and reload command. Replace `192.168.X.X` placeholders with your actual
-values before applying.
+Apply modules in order — `hardening` is the only hard prerequisite. All other
+modules are independent and can be deployed individually on top of the
+hardened base.
 
 ---
 
-## Foundation
+## Modules
 
-| Step | Component | Technology | Status | Doc |
-|------|-----------|------------|--------|-----|
-| 00 | Cloud Infrastructure | AWS EC2 · EBS gp3 · Security Groups · Key Pair | Complete | [`docs/00-aws-deployment.md`](docs/00-aws-deployment.md) |
-| 01 | OS Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Complete | [`docs/01-os-hardening.md`](docs/01-os-hardening.md) |
+### Foundation
+
+| Module | Self-Managed Technology | AWS Native Technology | Status | Doc |
+|--------|-------------------------|-----------------------|--------|-----|
+| Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Security Groups · IMDSv2 · Inspector · SSM · GuardDuty · CloudTrail | Complete (self-managed) | [`modules/hardening/`](modules/hardening/README.md) |
 
 12 steps covering 9 independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
 
-## Services
+### Services
 
-| Step | Service | Technology | Status | Doc |
-|------|---------|------------|--------|-----|
-| 02 | File Transfer | SFTP (OpenSSH subsystem) | Complete | [`docs/02-sftp.md`](docs/02-sftp.md) |
-| 03 | DNS | BIND9 | Planned | [`docs/03-dns-bind9.md`](docs/03-dns-bind9.md) |
-| 04 | DHCP | Kea DHCP | VM only - Planned | [`docs/04-dhcp.md`](docs/04-dhcp.md) |
-| 05 | Web Server | Nginx + HTTPS (self-signed) | Planned | [`docs/05-nginx-https.md`](docs/05-nginx-https.md) |
-| 06 | Reverse Proxy | Nginx (`proxy_pass`) | Planned | [`docs/06-reverse-proxy.md`](docs/06-reverse-proxy.md) |
-| 07 | Directory Server | Samba 4 | Planned | [`docs/07-samba4.md`](docs/07-samba4.md) |
+| Module | Self-Managed Technology | AWS Native Technology | Status | Doc |
+|--------|-------------------------|-----------------------|--------|-----|
+| File Transfer | SFTP (OpenSSH subsystem) | AWS Transfer Family | Complete (self-managed) | [`modules/file-transfer/`](modules/file-transfer/README.md) |
+| DNS | BIND9 | Route 53 Private Hosted Zones | Planned | [`modules/dns/`](modules/dns/README.md) |
+| DHCP | Kea DHCP | N/A — local only | Planned | [`modules/dhcp/`](modules/dhcp/README.md) |
+| Web Server | Nginx + HTTPS · reverse proxy | ALB · ACM · CloudFront | Planned | [`modules/web-server/`](modules/web-server/README.md) |
+| Directory | Samba 4 AD DC | AWS Directory Service (Managed Microsoft AD) | Planned | [`modules/directory/`](modules/directory/README.md) |
 
-Services are deployed in order of complexity — each layer builds on the
-security foundation established before it.
-
-> **Samba 4 dependency:** AD DC mode includes its own internal DNS server
-> that can replace or integrate with BIND9. Review the BIND9 configuration
-> from Step 03 before provisioning Samba — zone delegation or full BIND9
-> replacement may be required. Documented in
-> [`docs/07-samba4.md`](docs/07-samba4.md).
+> **Directory dependency:** Samba 4 AD DC mode includes its own internal DNS
+> server that can replace or integrate with BIND9. Review the DNS module
+> before provisioning the directory — zone delegation or full BIND9
+> replacement may be required.
 
 ---
 
 ## Repository Structure
 ```
-multi-lab/
+build-your-infra/
 ├── CONTRIBUTING.md
 ├── LICENSE
 ├── README.md
-├── configs
-│   ├── aide
-│   ├── audit
-│   ├── fail2ban
-│   ├── limits
-│   ├── logrotate
-│   ├── lynis
-│   ├── modprobe
-│   ├── netplan
-│   ├── pam
-│   ├── rsyslog
-│   ├── ssh
-│   ├── sysctl
-│   ├── ufw
-│   ├── unattended-upgrades
-│   └── wireguard
-├── docs
-│   ├── 00-aws-deployment.md
-│   ├── 01-os-hardening.md
-│   ├── 02-sftp.md
-│   ├── 03-dns-bind9.md
-│   ├── 04-dhcp.md
-│   ├── 05-nginx-https.md
-│   ├── 06-reverse-proxy.md
-│   └── 07-samba4.md
+├── environments
+│   ├── README.md
+│   ├── aws-native
+│   │   └── aws-native-setup.md
+│   ├── local
+│   │   └── local-vm-setup.md
+│   └── vps
+│       └── vps-ec2-setup.md
+├── modules
+│   ├── dhcp
+│   │   ├── README.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       └── self-managed.md
+│   ├── directory
+│   │   ├── README.md
+│   │   ├── aws-native
+│   │   │   ├── automation
+│   │   │   └── aws-native.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       └── self-managed.md
+│   ├── dns
+│   │   ├── README.md
+│   │   ├── aws-native
+│   │   │   ├── automation
+│   │   │   └── aws-native.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       └── self-managed.md
+│   ├── file-transfer
+│   │   ├── README.md
+│   │   ├── aws-native
+│   │   │   ├── automation
+│   │   │   └── aws-native.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       │   └── sshd_config
+│   │       └── self-managed.md
+│   ├── hardening
+│   │   ├── README.md
+│   │   ├── aws-native
+│   │   │   ├── automation
+│   │   │   └── aws-native.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       │   ├── aide
+│   │       │   │   └── 99-hardening
+│   │       │   ├── audit
+│   │       │   │   └── 99-hardening.rules
+│   │       │   ├── fail2ban
+│   │       │   │   ├── fail2ban.d
+│   │       │   │   │   └── allowipv6.conf
+│   │       │   │   └── jail.local
+│   │       │   ├── limits
+│   │       │   │   └── limits.conf
+│   │       │   ├── logrotate
+│   │       │   │   └── hardening-logs
+│   │       │   ├── lynis
+│   │       │   │   └── custom.prf
+│   │       │   ├── modprobe
+│   │       │   │   └── disable-unused-protocols.conf
+│   │       │   ├── netplan
+│   │       │   │   ├── 00-installer-config.yaml
+│   │       │   │   └── no-dhcp.conf
+│   │       │   ├── pam
+│   │       │   │   ├── common-password
+│   │       │   │   └── common-session
+│   │       │   ├── rsyslog
+│   │       │   │   ├── 20-ufw.conf
+│   │       │   │   └── 99-hardening.conf
+│   │       │   ├── ssh
+│   │       │   │   ├── issue.net.template
+│   │       │   │   └── sshd_config
+│   │       │   ├── sysctl
+│   │       │   │   ├── 99-wireguard.conf
+│   │       │   │   └── 99-z-hardening.conf
+│   │       │   ├── ufw
+│   │       │   │   └── sysctl.conf
+│   │       │   ├── unattended-upgrades
+│   │       │   │   ├── 20auto-upgrades
+│   │       │   │   └── 50unattended-upgrades
+│   │       │   └── wireguard
+│   │       │       ├── client-template.conf
+│   │       │       └── wg0.conf
+│   │       └── self-managed.md
+│   └── web-server
+│       ├── README.md
+│       ├── aws-native
+│       │   ├── automation
+│       │   └── aws-native.md
+│       └── self-managed
+│           ├── automation
+│           ├── configs
+│           ├── nginx-https.md
+│           ├── nginx-reverse-proxy.md
+│           └── self-managed.md
 └── snapshots
     └── README.md
 ```
-
-Each subdirectory in `configs/` maps to a service or system component.
-Every file includes a `Deploy to:` header with the exact target path and
-reload command.
 
 📄 Snapshot log → [`snapshots/README.md`](snapshots/README.md)

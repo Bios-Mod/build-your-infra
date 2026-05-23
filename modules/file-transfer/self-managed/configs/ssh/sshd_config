@@ -1,0 +1,32 @@
+# Deploy to:   /etc/ssh/sshd_config  (append to hardening baseline)
+# Apply:       systemctl reload ssh
+# Module:      file-transfer
+# Requires:    hardening/self-managed/configs/ssh/sshd_config applied first
+#
+# Match User block — confines sftpuser to internal SFTP subsystem with chroot jail.
+# Parameters modified from baseline:  none
+#
+# Purpose:     ForceCommand internal-sftp -l VERBOSE enables per-operation syslog
+#              logging (file transfers, listings, renames) for auditd correlation.
+# Note:        Additive block — append only, do not apply standalone.
+#              ChrootDirectory path is explicit (not %u) — single-user deployment.
+#              OpenSSH requires the chroot root and all parent paths to be owned
+#              by root with no group/world write bits. See self-managed.md Step 2.
+
+# ── SFTP — file-transfer ──────────────────────────────────────────────────────
+# Transfer-only access model. sftpuser is confined to /srv/sftp/sftpuser
+# via ChrootDirectory — cannot traverse the filesystem or open a shell.
+#
+# ChrootDirectory ownership rule: the chroot root and every component of
+# its path must be owned by root and not writable by group or other.
+# OpenSSH enforces this strictly — a misconfigured owner causes immediate
+# disconnect with "broken pipe" and no further error detail.
+#
+# ForceCommand internal-sftp: overrides any shell access attempt.
+# The user cannot bypass SFTP even if the nologin shell check is bypassed.
+Match User sftpuser
+    ForceCommand internal-sftp -l VERBOSE
+    ChrootDirectory /srv/sftp/sftpuser
+    AllowTcpForwarding no
+    X11Forwarding no
+    PasswordAuthentication no

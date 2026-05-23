@@ -1,0 +1,50 @@
+# ============================================================
+# Deploy to:  /etc/fail2ban/jail.local
+# Apply:      sudo systemctl restart fail2ban
+# Module:     hardening
+# Requires:   none
+#
+# Fail2Ban jail configuration — SSH, recidive, UFW ban backend
+# Parameters modified from baseline:  none
+#
+# Note:       Never edit jail.conf — it is overwritten on upgrades.
+#             This file is the upgrade-safe override mechanism.
+#             [recidive] jail requires rsyslog routing active
+#             (configs/rsyslog/99-hardening.conf). Without it, the jail
+#             starts but detects nothing.
+# ============================================================
+[DEFAULT]
+# 24 hours ban by default
+bantime  = 86400
+# 5 minute window to count attempts
+findtime = 300
+# Only 3 attempts before banning
+maxretry = 3
+banaction = ufw
+# ignoreip: 10.0.0.0/24 is the WireGuard VPN subnet (Step 5).
+# If WireGuard was NOT deployed, remove the 10.0.0.0/24 entry.
+# Keeping it is harmless but misleading — no VPN traffic exists to whitelist.
+# Ignore your own local IP to avoid banning yourself
+ignoreip = 127.0.0.1/8 192.168.X.X/X 10.0.0.0/24
+
+[sshd]
+enabled  = true
+# mode=aggressive via filter syntax — required for Fail2Ban v1.0.x
+# Combines normal + ddos + extra pattern sets (33 failregex active)
+filter   = sshd[mode=aggressive]
+port     = 22222
+#48 hours for SSH specifically
+bantime  = 172800
+maxretry = 3
+findtime = 300
+
+[recidive]
+# Reads from /var/log/fail2ban.log — requires rsyslog routing in
+# configs/rsyslog/99-hardening.conf to be active. Without it, this jail
+# will start but detect nothing.
+# Repeat offenders: 30 days
+enabled  = true
+logpath  = /var/log/fail2ban.log
+bantime  = 2592000
+findtime = 604800
+maxretry = 3

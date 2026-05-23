@@ -1,0 +1,15 @@
+# Deploy to:   /etc/aide/aide.conf.d/99-hardening  (append to hardening baseline)
+# Apply:       aide --init --config /etc/aide/aide.conf && mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+# Module:      file-transfer
+# Requires:    hardening/self-managed/configs/aide/99-hardening applied first
+#
+# Extends AIDE scope to cover the SFTP chroot root. Excludes uploads/ to avoid
+# false positives from expected transfer activity.
+# Parameters modified from baseline:  none — additive only
+#
+# Note:        Baseline must be regenerated after appending — the current SFTP
+#              directory structure becomes the new trusted state.
+
+# ── SFTP — file-transfer ──────────────────────────────────────────────────────
+/srv/sftp/sftpuser    OwnerMode
+!/srv/sftp/sftpuser/uploads

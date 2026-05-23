@@ -8,9 +8,9 @@ This lab is designed as a modular, community-usable reference. Contributions tha
 
 **Reporting issues**
 Open a GitHub Issue describing:
-- Which step or config file is affected
+- Which module, environment, or config file is affected
 - What the current behaviour is and what you expected
-- Your deployment context (VM, bare metal, or VPS) and architecture (ARM64 or x86_64)
+- Your deployment context (`local`, `vps`, or `aws-native`) and architecture (ARM64 or x86_64)
 
 **Suggesting improvements**
 Open a GitHub Issue before submitting a PR for significant changes — a brief discussion avoids duplicated effort and keeps the lab coherent.
@@ -18,12 +18,16 @@ Open a GitHub Issue before submitting a PR for significant changes — a brief d
 **Submitting a pull request**
 1. Fork the repository and create a branch from `main`
 2. Keep changes focused — one fix or addition per PR
-3. Follow the existing style in `docs/` and `configs/`:
-   - Config files include a header block with at minimum:
+3. Follow the existing conventions:
+   - Config files in `modules/<module>/self-managed/configs/` include a standard header block:
      ```
-     # Deploy to : <target path on server>
-     # Apply     : <reload/restart command>
-     # Perms     : <chmod command if non-default>
+     # Deploy to:  <absolute target path on server>
+     # Reload:     <reload/restart command>
+     # Module:     <module name>
+     # Requires:   <prior module if applicable> / none
+     #
+     # <one-line description>
+     # Parameters modified from baseline:  <param → new value> / none
      ```
    - Doc sections follow the `What was done / Why / Verification` structure
    - Commands are copy-pasteable and tested
@@ -37,12 +41,13 @@ Open a GitHub Issue before submitting a PR for significant changes — a brief d
 - Corrections to existing steps (commands, paths, parameter values)
 - Clarifications to existing documentation
 - Additional verification commands for existing steps
-- Platform-specific notes (VPS provider differences, alternative architectures)
+- Platform-specific notes (provider differences, alternative architectures)
+- AWS Native equivalents or corrections for existing modules
 
 ## What is out of scope
 
-- New service modules (planned in the roadmap — contact via Issue first)
-- Automation scripts (planned for a future phase — see the service deployment order in README.md)
+- New service modules (open an Issue first to align on scope)
+- Automation content under `automation/` (planned for a future phase)
 - GUI-based tools or non-CLI approaches
 
 ---

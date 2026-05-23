@@ -1,0 +1,35 @@
+# ============================================================
+# Deploy to:  /etc/netplan/00-installer-config.yaml
+# Apply:      sudo netplan apply
+# Module:     hardening
+# Requires:   none
+#
+# Static IP configuration — disables DHCP, sets nameservers and default route
+# Parameters modified from baseline:  none
+#
+# Note:       Interface name (enp2s0) is kernel-assigned and varies by hypervisor —
+#             enp2s0 on VMware Fusion/ARM64, commonly ens33/ens32 on VMware
+#             Workstation/x86_64, eth0 on VirtualBox.
+#             Always verify with: ip link
+#             Replace 192.168.X.X placeholders with actual values before deploying.
+#             ⚠️  If deployment requires 'match: macaddress:' (common on some VPS
+#             providers), replace the actual MAC with <your-mac-address> before
+#             committing to the repository.
+# ============================================================
+network:
+  version: 2                    # Netplan schema version — v2 is the current standard
+  renderer: networkd             # Backend: systemd-networkd (server) vs NetworkManager (desktop)
+  ethernets:
+    enp2s0:                      # Interface name — kernel-assigned, PCI slot based
+      dhcp4: no                  # Disable IPv4 DHCP client — address defined statically below
+      dhcp6: no                  # Disable IPv6 DHCP client
+      link-local: []             # Disable fe80:: link-local address — reduces attack surface
+      addresses:
+        - 192.168.X.X/X        # Static IPv4 — /24 = 255.255.255.0, outside router DHCP pool
+      routes:
+        - to: default            # Default route — matches all destinations (0.0.0.0/0)
+          via: 192.168.X.1       # Gateway — router, forwards traffic outside the subnet
+      nameservers:
+        addresses:
+          - 9.9.9.9              # Quad9 primary — no-log, malware-blocking, non-profit
+          - 149.112.112.112      # Quad9 secondary — redundancy

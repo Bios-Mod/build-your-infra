@@ -1,0 +1,10 @@
+# Deploy to:   /etc/audit/rules.d/99-hardening.rules  (append to hardening baseline)
+# Apply:       augenrules --load  (restart auditd first if running with -e 2)
+# Module:      file-transfer
+# Requires:    hardening/self-managed/configs/audit/99-hardening.rules applied first
+#
+# Appends SFTP chroot path monitoring to the existing hardening audit ruleset.
+# Parameters modified from baseline:  none — additive only
+
+# ── SFTP — file-transfer ──────────────────────────────────────────────────────
+-w /srv/sftp/ -p rwa -k sftp_activity

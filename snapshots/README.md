@@ -10,8 +10,8 @@ Named to reflect the exact server state at capture time.
 | # | Name | Taken after | State |
 |---|------|-------------|-------|
 | 1 | `ubuntu-base-install` | Fresh OS installation — no configuration applied | Retained |
-| 2 | `multi-lab-local-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline (Lynis 88). See [`docs/01-os-hardening.md`](../docs/01-os-hardening.md). Permanent base restore point for all service deployments. | Retained |
-| 3 | `multi-lab-local-sftp` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`docs/02-sftp.md`](../docs/02-sftp.md). | Retained |
+| 2 | `multi-lab-local-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline (Lynis 88). See [`modules/hardening/self-managed/self-managed.md`](../modules/hardening/self-managed/self-managed.md). Permanent base restore point for all service deployments. | Retained |
+| 3 | `multi-lab-local-sftp` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`modules/file-transfer/self-managed/self-managed.md`](../modules/file-transfer/self-managed/self-managed.md). | Retained |
 
 ---
 
@@ -57,8 +57,8 @@ Delete intermediate snapshots once the subsequent step is confirmed stable.
 | # | AMI Name | Taken after | State |
 |---|----------|-------------|-------|
 | 1 | `multi-lab-aws-base-install` | Fresh Ubuntu 24.04 ARM64 — first `apt upgrade` only | Retained |
-| 2 | `multi-lab-aws-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline confirmed (Lynis 90). Taken immediately before SFTP deployment (Step 02). Permanent base restore point. | Retained |
-| 3 | `multi-lab-aws-sftp-deployed` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`docs/02-sftp.md`](../docs/02-sftp.md). | Retained |
+| 2 | `multi-lab-aws-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline confirmed (Lynis 90). Taken immediately before file-transfer deployment. Permanent base restore point. See [`modules/hardening/self-managed/self-managed.md`](../modules/hardening/self-managed/self-managed.md). | Retained |
+| 3 | `multi-lab-aws-sftp-deployed` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`modules/file-transfer/self-managed/self-managed.md`](../modules/file-transfer/self-managed/self-managed.md). | Retained |
 
 ---
 

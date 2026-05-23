@@ -1,0 +1,56 @@
+# ============================================================
+# Deploy to:  /etc/logrotate.d/hardening-logs
+# Apply:      sudo logrotate --force /etc/logrotate.d/hardening-logs
+# Module:     hardening
+# Requires:   none
+#
+# Log rotation for hardening-managed logs — auth, ufw, fail2ban, kern
+# Parameters modified from baseline:  none
+#
+# Note:       'create' owner must match the process that writes each file —
+#             syslog:adm for rsyslog-managed logs, root:adm for fail2ban
+#             (writes directly as root).
+# Verify:     sudo logrotate --debug /etc/logrotate.d/hardening-logs
+# ============================================================
+/var/log/auth.log
+/var/log/ufw.log
+{
+    rotate 12
+    weekly
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 640 syslog adm
+    postrotate
+        systemctl reload rsyslog > /dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/fail2ban.log
+{
+    rotate 12
+    weekly
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 640 root adm
+    postrotate
+        systemctl reload rsyslog > /dev/null 2>&1 || true
+    endscript
+}
+
+/var/log/kern.log
+{
+    rotate 12
+    weekly
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 640 syslog adm
+    postrotate
+        systemctl reload rsyslog > /dev/null 2>&1 || true
+    endscript
+}
