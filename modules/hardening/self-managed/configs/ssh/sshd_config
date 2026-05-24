@@ -201,7 +201,7 @@ DebianBanner no
 # Allow client to pass locale environment variables
 AcceptEnv LANG LC_*
 
-# SFTP subsystem — required for Step 02 (SFTP server)
+# SFTP subsystem — required for SFTP server
 Subsystem	sftp	internal-sftp
 
 #Match User anoncvs

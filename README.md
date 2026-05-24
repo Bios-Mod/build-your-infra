@@ -11,7 +11,7 @@
 [![auditd](https://img.shields.io/badge/auditd-active-blue)](modules/hardening/self-managed/self-managed.md)
 [![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](environments/vps/vps-ec2-setup.md)
 
-A practical, step-by-step reference for deploying and hardening infrastructure across three environments: local VM, VPS/EC2, and AWS Native managed services. Each module is implemented at the configuration level, with the reasoning behind every decision explained inline.
+A practical, step-by-step reference for deploying and hardening infrastructure across three environments: local VM, VPS, and AWS Native managed services. Each module is implemented at the configuration level, with the reasoning behind every decision explained inline.
 
 Built and tested on Ubuntu Server 24.04 LTS. No GUI tools. No automation frameworks. Everything via CLI.
 

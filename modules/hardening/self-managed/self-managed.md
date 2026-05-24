@@ -98,10 +98,11 @@ All `cp` commands assume the current directory is the repo root.
 > user does not exist when SSH is reloaded, the session is locked out.
 
 ### What was done
-
 A dedicated non-root admin user is created, added to the required groups,
 assigned a password, and configured with the SSH public key before any
 other hardening is applied.
+
+**Create and configure the admin user:**
 
 ```bash
 # Create user with home directory
@@ -118,8 +119,32 @@ sudo su - <username>
 sudo whoami
 # → root
 exit
+```
 
-# Copy SSH public key from the default AMI user
+**SSH key setup — VM:**
+
+```bash
+# Check for existing Ed25519 key
+ls ~/.ssh/id_ed25519.pub 2>/dev/null || echo "no key found"
+
+# Generate if missing
+ssh-keygen -t ed25519 -C "multi-lab" -f ~/.ssh/id_ed25519
+# → passphrase recommended — protects the private key at rest
+
+# Copy public key to the VM (password auth still active at this stage)
+ssh-copy-id -i ~/.ssh/id_ed25519.pub -p 22 <username>@192.168.X.X
+# → adds the public key to /home/<username>/.ssh/authorized_keys on the VM
+
+# Verify key auth works before proceeding
+ssh -i ~/.ssh/id_ed25519 -p 22 <username>@192.168.X.X
+# → must authenticate without password prompt
+```
+
+**SSH key setup — EC2:**
+
+```bash
+# The key injected at launch lands in /home/ubuntu/.ssh/authorized_keys only.
+# Copy it to the new user — cloud-init is unaware of accounts created post-launch.
 sudo mkdir -p /home/<username>/.ssh
 sudo cp /home/ubuntu/.ssh/authorized_keys /home/<username>/.ssh/authorized_keys
 sudo chown -R <username>:<username> /home/<username>/.ssh
@@ -127,33 +152,29 @@ sudo chmod 700 /home/<username>/.ssh
 sudo chmod 600 /home/<username>/.ssh/authorized_keys
 ```
 
-> **On EC2:** the default AMI user is `ubuntu`. The key injected by AWS at
-> launch is placed only in `/home/ubuntu/.ssh/authorized_keys` — it must be
-> copied manually to any new user since cloud-init is unaware of accounts
-> created after launch. On a local VM this step is not required — the key
-> is configured directly during OS setup.
-
 ### Why
-
 Operating as the default AMI user (`ubuntu`) exposes a predictable username.
 A named user provides an explicit, auditable identity — all sudo actions in
-`/var/log/auth.log` are attributed to it, and `AllowUsers` in SSH whitelists
-exactly that name. A password is required for `sudo` privilege escalation
-even with key-based SSH — this ensures a second factor is always present
-before any privileged operation is executed.
-
-Root login is disabled at the SSH level (Step 3). The `ubuntu` user is left
-intact but unused — removing it risks breaking cloud-init hooks on AWS.
+`/var/log/auth.log` are attributed to it, and `AllowUsers` in Step 3
+whitelists exactly that name. A password is required for `sudo` privilege
+escalation even with key-based SSH — ensuring a second factor is always
+present before any privileged operation. Root login is disabled at the SSH
+level in Step 3. The `ubuntu` user is left intact — removing it risks
+breaking cloud-init hooks on EC2.
 
 ### Verification
+
+> **Open a new terminal and confirm SSH access before proceeding.**
+> Step 3 disables password authentication — an unverified key means permanent
+> lockout without console access.
 
 ```bash
 # Confirm groups — must include sudo and adm
 id <username>
 # → uid=1001(<username>) gid=1001(<username>) groups=...,27(sudo),4(adm)...
 
-# Confirm SSH key works for new user — open a NEW terminal before proceeding
-ssh -i ~/.ssh/<your_key> <username>@<server-ip>
+# Confirm key-based login from a new terminal
+ssh -i ~/.ssh/id_ed25519 -p 22 <username>@<server-ip>
 # → must authenticate successfully
 
 # Confirm authorized_keys ownership and permissions
@@ -204,7 +225,6 @@ sudo systemctl restart unattended-upgrades
 📄 [`configs/unattended-upgrades/20auto-upgrades`](configs/unattended-upgrades/20auto-upgrades)
 
 #### Package integrity & audit tools
-
 Two complementary tools covering package hygiene:
 
 | Tool | Role |
@@ -268,7 +288,8 @@ grep CRON_CHECK /etc/default/debsums
 > public address at the AWS layer. Proceed directly to Step 3.
 
 ### What was done
-Static IP configured via Netplan. Key decisions:
+Replaces the temporary address from the local VM setup with the hardened
+Netplan config. Key decisions:
 - Address chosen **outside the router's DHCP pool** to prevent future conflicts
 - `dhcp4: no` · `dhcp6: no` · `link-local: []` — all dynamic address paths disabled
 - DNS set directly to Quad9 (`9.9.9.9` / `149.112.112.112`), bypassing the router resolver
@@ -749,7 +770,6 @@ sudo wg show
 ## Step 6 — Fail2Ban
 
 ### What was done
-
 `fail2ban` installed, then `jail.local` created as the upgrade-safe override — `jail.conf` is never edited directly. Ban escalation policy across three jails:
 
 | Jail | Trigger | Ban duration |
@@ -1560,6 +1580,16 @@ sudo logrotate --debug /etc/logrotate.d/hardening-logs 2>&1 | grep -E "create|ro
 > requirement being met at runtime, not only in configuration files.
 > This is not a formal CIS audit; it is a verified runtime baseline using Lynis
 > as the audit engine. The badge reflects alignment, not certification.
+>
+> **Hardening index: 88 (VM) · 90 (EC2)**
+> EC2 suppresses two additional false positives not present in the VM
+> environment — see `USB-1000` and `AUTH-9284` below.
+>
+> EC2 scores higher than the local VM not because additional controls are
+> applied manually, but because AWS manages certain checks at the platform
+> level (hypervisor isolation, hardware-backed key storage, instance metadata
+> controls) that Lynis counts as present. The delta is infrastructure, not
+> configuration — both environments apply identical hardening steps.
 
 ### What was done
 Lynis 3.0.9 was run after completing all hardening steps to establish a
@@ -1598,16 +1628,12 @@ passing test whose reason is unknown.
 > No residual warnings. All Lynis observations are either passing controls
 > or intentional deviations documented in
 > [`configs/lynis/custom.prf`](configs/lynis/custom.prf).
->
-> **Hardening index: 88 (VM) · 90 (EC2)**
-> EC2 suppresses two additional false positives not present in the VM
-> environment — see `USB-1000` and `AUTH-9284` below.
 
 | Control | Type | Justification |
 |---|---|---|
 | `PKGS-7388` | False positive | `noble-security` present in DEB822 format — Lynis only parses classic `.list` format |
 | `DEB-0810` | False positive | `apt-listbugs` is Debian-specific — not available in Ubuntu repos |
-| `AUTH-9328` | False positive | `UMASK 027` + `USERGROUPS_ENAB=yes` → effective `0007` — goal met; see Step 9 |
+| `AUTH-9328` | False positive | `UMASK 027` + `USERGROUPS_ENAB=no` → private user groups disabled, UMASK 027 is fully effective, finding does not apply |
 | `FINT-4402` | False positive | AIDE macro `H` resolves to sha256+sha512 — Lynis does not expand macros |
 | `NETW-3200` | False positive | Modules blacklisted via `modprobe.d` — Lynis checks availability, not blacklist status |
 | `FIRE-4513` | False positive | UFW manages iptables via its own chain — Lynis reads raw iptables without UFW context |
