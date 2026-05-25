@@ -71,6 +71,24 @@ S3 → Buckets → `multi-lab-cloudtrail-<account-id>`:
 
 3. **Log file validation:** CloudTrail → Trails → `multi-lab-trail` → Edit → enable *Log file validation*.
 
+**MFA Delete (optional — root only):**
+
+> MFA Delete requires the **root account** to enable — it cannot be set by
+> any IAM user, including `AdministratorAccess`. Evaluate based on your
+> tolerance for using root credentials for a one-time configuration step.
+
+```bash
+# Enable versioning first — MFA Delete requires versioning to be active
+aws s3api put-bucket-versioning \
+  --bucket multi-lab-cloudtrail-<account-id> \
+  --versioning-configuration Status=Enabled,MFADelete=Enabled \
+  --mfa "arn:aws:iam::<account-id>:mfa/root-account-mfa-device <MFA-token>" \
+  --profile multi-lab
+```
+
+Once enabled, object deletion requires the root MFA token on every
+`DeleteObject` call — no IAM policy can override this constraint.
+
 ### Why
 CloudTrail logs are only useful as an audit trail if they cannot be tampered
 with. Block Public Access prevents accidental or misconfigured public exposure.
@@ -78,10 +96,15 @@ The deny-delete bucket policy ensures logs cannot be erased even by the
 operator account — any deletion attempt is itself logged. Log file validation
 generates a digest file signed by AWS for each log delivery, allowing
 cryptographic verification that logs have not been modified after delivery.
+MFA Delete adds a physical second factor to any deletion operation — even
+a fully compromised `AdministratorAccess` account cannot erase logs without
+the root MFA device. The root-only restriction is intentional by AWS design:
+it prevents any automation or scripting from bypassing the control.
 
 ### Verification
 
 **Console**
+
 S3 → `multi-lab-cloudtrail-<account-id>` → Permissions → Block public access: all four *On*.
 
 **CLI**
@@ -96,6 +119,12 @@ aws cloudtrail get-trail \
   --profile multi-lab \
   --query "Trail.LogFileValidationEnabled"
 # → true
+
+# MFA Delete status (if enabled)
+aws s3api get-bucket-versioning \
+  --bucket multi-lab-cloudtrail-<account-id> \
+  --profile multi-lab
+# → "Status": "Enabled", "MFADelete": "Enabled"
 ```
 
 ---
@@ -129,6 +158,29 @@ IAM → Roles → `multi-lab-ec2-role` → Trust relationships — confirm:
 > Additional policies are attached per module as needed (e.g., S3 read for
 > file-transfer). This role is the base — least privilege per module on top.
 
+**Associate the instance profile to the EC2 instance:**
+
+**Console**
+
+EC2 → Instances → `multi-lab-aws` → Actions → Security →
+Modify IAM role → select `multi-lab-ec2-role` → Update IAM role.
+
+**CLI**
+```bash
+# Get the instance ID
+aws ec2 describe-instances \
+  --filters "Name=tag:Name,Values=multi-lab-aws" \
+  --query "Reservations[*].Instances[*].InstanceId" \
+  --output text \
+  --profile multi-lab
+
+# Associate the instance profile
+aws ec2 associate-iam-instance-profile \
+  --instance-id <instance-id> \
+  --iam-instance-profile Name=multi-lab-ec2-role \
+  --profile multi-lab
+```
+
 ### Why
 Attaching user access keys to an instance (via `~/.aws/credentials` or
 environment variables) creates long-lived credentials that cannot be
@@ -148,6 +200,13 @@ aws iam get-instance-profile \
   --profile multi-lab \
   --query "InstanceProfile.Roles.RoleName"
 # → "multi-lab-ec2-role"
+
+# Confirm instance profile is attached
+aws ec2 describe-instances \
+  --instance-id <instance-id> \
+  --query "Reservations[*].Instances[*].IamInstanceProfile.Arn" \
+  --profile multi-lab
+# → "arn:aws:iam::<account-id>:instance-profile/multi-lab-ec2-role"
 ```
 
 ---
@@ -262,6 +321,7 @@ the baseline for anomaly detection.
 ### Verification
 
 **Console**
+
 VPC → Your VPCs → `multi-lab-vpc` → Flow logs — confirm one flow log with status *Active*.
 
 **CLI**
@@ -299,7 +359,8 @@ aws ec2 describe-instances \
   --output text \
   --profile multi-lab
 
-# Enforce IMDSv2 on each instance
+# This lab runs a single instance. For multi-instance environments,
+# pipe describe-instances output into a loop.
 aws ec2 modify-instance-metadata-options \
   --instance-id <instance-id> \
   --http-tokens required \
@@ -337,8 +398,7 @@ attached. Documented VPC endpoint requirements for private subnet instances.
 
 **Console**
 
-Verify the SSM Agent is active on the instance and the instance profile
-from Step 2 is attached.
+Verify the SSM Agent is active on the instance
 
 EC2 → Instances → select instance → Actions → Security → Modify IAM role →
 assign `multi-lab-ec2-role` if not already attached.
@@ -375,6 +435,7 @@ not by key distribution. This is the direct operational replacement for
 ### Verification
 
 **Console**
+
 Systems Manager → Session Manager → Sessions — confirm session history appears
 after starting a session.
 
@@ -464,6 +525,7 @@ public), Config flags it immediately rather than waiting for a manual audit.
 ### Verification
 
 **Console**
+
 Config → Rules — all rules show *Compliant* once resources are configured
 per this guide. *NON_COMPLIANT* findings indicate a gap to investigate.
 
@@ -510,6 +572,7 @@ demonstrating security posture to auditors or potential employers.
 ### Verification
 
 **Console**
+
 Security Hub → Summary — security score visible, findings from GuardDuty and
 Config populated within a few minutes of enablement.
 

@@ -346,10 +346,10 @@ the admin SSH alias (`multi-lab-vps` or `multi-lab-local`).
 ── On the CLIENT machine (~/.ssh/config) ─────────────────────────────────────
 ```bash
 Host multi-lab-sftp
-HostName 10.0.0.1
-User sftpuser
-Port 22222
-IdentityFile ~/.ssh/id_ed25519_sftp
+  HostName 10.0.0.1
+  User sftpuser
+  Port 22222
+  IdentityFile ~/.ssh/id_ed25519_sftp
 ```
 
 > After this, `sftp multi-lab-sftp` is the only command needed.

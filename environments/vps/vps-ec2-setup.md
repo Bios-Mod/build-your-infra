@@ -285,7 +285,6 @@ SSH client alias configured on the host machine and first connection
 verified on the temporary port 22.
 
 On the **host machine**, add to `~/.ssh/config`:
-
 ```bash
 Host multi-lab-aws
 HostName <ELASTIC_IP>
@@ -293,6 +292,7 @@ User ubuntu
 IdentityFile ~/.ssh/id_ed25519
 Port 22 # temporary — updated to 22222 after hardening
 ```
+
 ```bash
 # First connection using SSH
 ssh multi-lab-aws

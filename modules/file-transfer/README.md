@@ -2,6 +2,9 @@
 
 Controlled file transfer with enforced authentication, session isolation, and access scope restriction.
 
+**Requires:** [`modules/hardening/`](../hardening/README.md) fully deployed
+on the target environment before applying this module.
+
 ## Implementations
 
 | Environment | Technology | Status | Doc |

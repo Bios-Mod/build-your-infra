@@ -2,18 +2,35 @@
 
 [![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/self-managed.md)
 [![Lynis EC2](https://img.shields.io/badge/Lynis%20EC2-90-brightgreen?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/self-managed/self-managed.md)
-![CIS Level 1](https://img.shields.io/badge/CIS-Level%201%20Aligned-blue?style=flat-square)
-![Ubuntu 24.04](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange?style=flat-square&logo=ubuntu&logoColor=white)
 [![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)](modules/hardening/self-managed/self-managed.md)
 [![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/self-managed.md)
 [![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)](modules/hardening/self-managed/self-managed.md)
 [![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)](modules/hardening/self-managed/self-managed.md)
-[![auditd](https://img.shields.io/badge/auditd-active-blue)](modules/hardening/self-managed/self-managed.md)
+[![auditd](https://img.shields.io/badge/auditd-active-blue?style=flat-square)](modules/hardening/self-managed/self-managed.md)
+[![GuardDuty](https://img.shields.io/badge/GuardDuty-enabled-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
+[![CloudTrail](https://img.shields.io/badge/CloudTrail-audit-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
+[![Config](https://img.shields.io/badge/AWS%20Config-compliance-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
+[![Security Hub](https://img.shields.io/badge/Security%20Hub-enabled-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
+
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange?style=flat-square&logo=ubuntu&logoColor=white)](environments/local/local-vm-setup.md)
+[![SFTP](https://img.shields.io/badge/SFTP-OpenSSH%20subsystem-blue?style=flat-square)](modules/file-transfer/self-managed/self-managed.md)
+[![BIND9](https://img.shields.io/badge/BIND9-DNS-informational?style=flat-square)](modules/dns/self-managed/self-managed.md)
+[![Nginx](https://img.shields.io/badge/Nginx-HTTPS%20%2B%20proxy-009639?style=flat-square&logo=nginx&logoColor=white)](modules/web-server/self-managed/self-managed.md)
+[![Samba4](https://img.shields.io/badge/Samba4-AD%20DC-blue?style=flat-square)](modules/directory/self-managed/self-managed.md)
+[![Kea DHCP](https://img.shields.io/badge/Kea-DHCP-informational?style=flat-square)](modules/dhcp/self-managed/self-managed.md)
+
 [![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](environments/vps/vps-ec2-setup.md)
+[![SSM](https://img.shields.io/badge/SSM-Session%20Manager-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
+[![Transfer Family](https://img.shields.io/badge/Transfer%20Family-SFTP-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/file-transfer/aws-native/aws-native.md)
+[![Route 53](https://img.shields.io/badge/Route%2053-Private%20DNS-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/dns/aws-native/aws-native.md)
+[![ALB](https://img.shields.io/badge/ALB-Load%20Balancer-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/aws-native.md)
+[![ACM](https://img.shields.io/badge/ACM-TLS%20Certificates-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/aws-native.md)
+[![CloudFront](https://img.shields.io/badge/CloudFront-CDN-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/aws-native.md)
+[![Directory Service](https://img.shields.io/badge/Directory%20Service-Managed%20AD-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/directory/aws-native/aws-native.md)
 
 A practical, step-by-step reference for deploying and hardening infrastructure across three environments: local VM, VPS, and AWS Native managed services. Each module is implemented at the configuration level, with the reasoning behind every decision explained inline.
 
-Built and tested on Ubuntu Server 24.04 LTS. No GUI tools. No automation frameworks. Everything via CLI.
+Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Management Console (where the GUI provides the clearest workflow) and the CLI. No automation frameworks at this stage — automation of deployed modules is planned as a follow-up phase.
 
 ---
 
@@ -68,7 +85,7 @@ hardened base.
 
 | Module | Self-Managed Technology | AWS Native Technology | Status | Doc |
 |--------|-------------------------|-----------------------|--------|-----|
-| File Transfer | SFTP (OpenSSH subsystem) | AWS Transfer Family | Complete (self-managed) | [`modules/file-transfer/`](modules/file-transfer/README.md) |
+| File Transfer | SFTP (OpenSSH subsystem) | AWS Transfer Family | Complete | [`modules/file-transfer/`](modules/file-transfer/README.md) |
 | DNS | BIND9 | Route 53 Private Hosted Zones | Planned | [`modules/dns/`](modules/dns/README.md) |
 | DHCP | Kea DHCP | N/A — local only | Planned | [`modules/dhcp/`](modules/dhcp/README.md) |
 | Web Server | Nginx + HTTPS · reverse proxy | ALB · ACM · CloudFront | Planned | [`modules/web-server/`](modules/web-server/README.md) |

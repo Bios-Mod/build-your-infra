@@ -121,7 +121,7 @@ network:
         - to: default
           via: 192.168.X.1       # replace with your gateway
       nameservers:
-        addresses: [8.8.8.8, 1.1.1.1]
+        addresses: [9.9.9.9, 149.112.112.112]
 ```
 
 Apply the configuration:
@@ -156,9 +156,9 @@ to the VM on the temporary port 22.
 On the **host machine**, add to `~/.ssh/config`:
 ```bash
 Host multi-lab-local
-HostName 192.168.X.X # static IP from Step 4
-User <your_user>
-Port 22 # temporary — updated to 22222 after hardening
+  HostName 192.168.X.X        # static IP from Step 4
+  User <your_user>
+  Port 22                     # temporary — updated to 22222 after hardening
 ```
 
 ```bash

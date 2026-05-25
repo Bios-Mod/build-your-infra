@@ -28,5 +28,9 @@ and is documented separately.
 | `vps` | [`vps/vps-ec2-setup.md`](vps/vps-ec2-setup.md) |
 | `aws-native` | [`aws-native/aws-native-setup.md`](aws-native/aws-native-setup.md) |
 
-Complete the relevant setup guide before applying any module.
+`local` and `vps` share the same module docs and deployment order —
+complete the relevant setup guide, then follow
+[`modules/hardening/self-managed/self-managed.md`](../modules/hardening/self-managed/self-managed.md)
+before applying any other module.
+
 `aws-native-setup.md` is a prerequisite for all `modules/*/aws-native/` docs.
