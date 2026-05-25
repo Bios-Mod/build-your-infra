@@ -5,3 +5,6 @@
 *.pem
 *.p12
 *.pfx
+# Agent context — private working files
+AGENTS.md
+context/
