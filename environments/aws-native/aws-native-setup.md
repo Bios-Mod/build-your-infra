@@ -49,7 +49,8 @@ alert email address is correct.
 
 ### What was done
 - MFA enabled on root account.
-- IAM admin user `multi-lab-admin` created with `AdministratorAccess` and MFA.
+- IAM admin user `multi-lab-admin` created with `AdministratorAccess`, console
+  access, and MFA.
 - Named AWS CLI profile `multi-lab` configured with access keys for this user.
 
 **Console**
@@ -62,13 +63,76 @@ IAM → Dashboard → Security recommendations → Add MFA for root → follow t
 **Create an IAM admin user:**
 1. IAM → Users → Create user.
 2. Username: `multi-lab-admin`.
-3. Attach policy directly: `AdministratorAccess`.
-4. Enable MFA on this user: IAM → Users → `multi-lab-admin` → Security credentials → Assign MFA device.
+3. Skip "Provide user access to the AWS Management Console" — console access
+   is enabled separately after creation (see below).
+4. Attach policy directly:
+   - Policy name: `AdministratorAccess`
+   - Type: AWS managed — job function
+   - ARN: `arn:aws:iam::aws:policies/AdministratorAccess`
+
+> When searching for the policy, several results appear with `AdministratorAccess`
+> in the name (e.g. `AdministratorAccess-Amplify`). Select the one named
+> `AdministratorAccess` exactly — type **AWS managed — job function**.
+> AWS managed policies are maintained by AWS and scoped to a service or job
+> function. Job function policies (like this one) are designed for human
+> operators, not service roles.
 
 > `AdministratorAccess` is used here for the lab operator account only.
 > Service-level permissions are scoped down via IAM roles attached to each
 > AWS service (e.g., the role Transfer Family uses to write to S3, or the
 > instance profile SSM uses). Those roles are defined in each module, not here.
+
+**Enable console access:**
+
+Console access is not active by default when creating an IAM user — it must
+be enabled explicitly after creation.
+
+IAM → Users → `multi-lab-admin` → Security credentials →
+Console sign-in → Enable console access → set a password → save it.
+
+> This is the only time the password is shown. Store it in a password manager.
+
+**Retrieve your Account ID:**
+
+The console login for IAM users requires the 12-digit Account ID (or alias).
+
+AWS Management Console → top-right account menu → Account ID (12 digits).
+
+Optionally create a human-readable alias: IAM → Dashboard →
+AWS Account → Create account alias (e.g. `multi-lab`).
+The login URL becomes: `https://multi-lab.signin.aws.amazon.com/console`
+
+**Enable MFA on `multi-lab-admin`:**
+IAM → Users → `multi-lab-admin` → Security credentials → Assign MFA device →
+follow the wizard. MFA is required as second factor after password on every
+console login.
+
+**Enable IAM access to Billing:**
+
+By default, Billing and Cost Explorer are only accessible to the root account,
+regardless of IAM permissions. This must be explicitly activated once from root.
+
+> Do this while still logged in as root — it cannot be done from the IAM user.
+
+Account menu (top-right) → Account → IAM user and role access to Billing
+information → Edit → ✅ Activate IAM Access → Update.
+
+Once activated, `multi-lab-admin` can access Billing, Cost Explorer, and usage
+data with no additional policy changes — `AdministratorAccess` already covers it.
+
+**Sign in as `multi-lab-admin`:**
+
+Go to `https://<account-id-or-alias>.signin.aws.amazon.com/console` and
+provide:
+- Account ID or alias
+- IAM username: `multi-lab-admin`
+- Password (set above)
+- MFA code (prompted after password)
+
+> The console defaults to the last region used by root, which may differ from
+> the lab region. After login, confirm the region selector (top-right) shows
+> **EU (Ireland) eu-west-1**. All lab resources are scoped to this region —
+> resources in other regions will not be visible.
 
 **AWS CLI setup (if using CLI or Terraform):**
 
@@ -89,18 +153,21 @@ aws configure --profile multi-lab
 > dedicated IAM roles with scoped policies — defined in the automation phase.
 
 ### Why
-Root credentials cannot be scoped, audited per-action, or rotated safely —
-any compromise is a full account compromise. The IAM user with MFA provides
-an auditable identity for all operations. `AdministratorAccess` is intentional
-at this stage: the lab operator needs unrestricted access to deploy each module.
-Scoped-down permissions apply to **service roles** (what AWS services can do),
-not to the operator account. The named CLI profile prevents accidental
-operations against unintended accounts when multiple AWS profiles coexist.
+Root credentials cannot be scoped or rotated safely — any compromise is a
+full account compromise. The IAM user with MFA provides an auditable identity
+for all operations. AWS separates console access (password) from programmatic
+access (access keys) at creation time — both must be enabled explicitly.
+`AdministratorAccess` is intentional for the operator account; scoped-down
+permissions apply to service roles, defined per module. The named CLI profile
+prevents accidental operations against unintended accounts. Billing requires
+a separate one-time root activation — `AdministratorAccess` alone does not
+grant it.
 
 ### Verification
 
 **Console**
-IAM → Users → `multi-lab-admin` → Security credentials — confirm MFA device assigned and access key active.
+IAM → Users → `multi-lab-admin` → Security credentials — confirm MFA device
+assigned, console access enabled, and access key active.
 
 **CLI**
 ```bash
@@ -159,12 +226,16 @@ VPC → Create VPC → select *VPC and more*.
 | Public subnets      | 1 (`10.0.1.0/24`)  |
 | Private subnets     | 1 (`10.0.2.0/24`)  |
 | NAT Gateway         | None               |
+| VPC endpoints       | S3 Gateway         |
 | DNS hostnames       | Enabled            |
 | DNS resolution      | Enabled            |
 
 > **Single AZ:** sufficient for lab purposes. Multi-AZ adds redundancy cost
 > (second NAT Gateway, cross-AZ data transfer) without adding learning value
 > at this stage.
+
+> **VPC endpoints:** S3 Gateway is free and required for S3 reachability from private 
+> subnets without NAT — CloudTrail and Config depend on this.
 
 > The wizard creates the VPC, subnets, Internet Gateway, and route tables
 > automatically. DNS resolution (enableDnsSupport) is required for Route 53
@@ -209,66 +280,122 @@ aws ec2 describe-vpcs \
 ## Step 5 — Base audit services
 
 ### What was done
-- CloudTrail trail `multi-lab-trail` enabled across all regions, logging to S3.
-- AWS Config enabled, recording all resources including global (IAM).
-- GuardDuty enabled.
+Passive observability baseline enabled at the account level: CloudTrail
+(all-region trail), and GuardDuty. AWS Config is documented as a reference
+only — see substep 5.2.
+
+---
+
+### Step 5.1 — CloudTrail
 
 **Console**
 
-Enable once at the account level. These run passively and incur minimal or no
-cost within Free Tier limits.
-
-**CloudTrail:**
 CloudTrail → Create trail:
+
+**5.1.1 — Trail settings**
 - Trail name: `multi-lab-trail`
-- Apply to all regions: **Yes** — captures global service events (IAM, STS, Route 53).
-- S3 bucket: create new → `multi-lab-cloudtrail-<account-id>`
-- Log file SSE-KMS encryption: optional at this stage, applied in the hardening module.
+- Storage location: Create new S3 bucket → `multi-lab-cloudtrail-<account-id>`
+- Log file validation: **Enabled**
+- Log file SSE-KMS encryption: **disabled** at this stage — applied in the hardening module.
 - Enable for all accounts in organization: N/A (single account).
 
-**AWS Config:**
+**5.1.2 — Event types**
+
+> Only Management events are enabled. Data events, Insights events, and
+> Network activity events are **not enabled** — all three generate additional
+> charges. Management events on the first trail are free permanently.
+
+- Event type: **Management events** only
+  - Data events: **off**
+  - Insights events: **off**
+  - Network activity events: **off**
+
+**5.1.3 — Management event configuration**
+- API activity: **Read** ✓ · **Write** ✓
+- Exclude AWS KMS events: **enabled** — KMS generates high-volume read events
+  that add noise without diagnostic value at this lab scale.
+- Exclude Amazon RDS Data API events: **enabled** — RDS not in scope for this lab.
+
+**5.1.4 — Review and create**
+
+Verify on the review screen before confirming:
+- Trail name: `multi-lab-trail`
+- Multi-region: **Yes**
+- S3 bucket: `multi-lab-cloudtrail-<account-id>`
+- Event types: Management events only (Read + Write)
+- Additional charges: **None** — first copy of management events is free.
+
+→ Click **Create trail**.
+
+---
+
+### Step 5.2 — AWS Config (Reference Only — Not Deployed)
+
+> ⚠️ AWS Config has no free tier. Enabling it incurs cost from the first
+> configuration item recorded ($0.003/item · $0.001/rule evaluation).
+> The steps below are **not executed** in this lab and are documented as a
+> reference only. Apply them in environments where cost is not a constraint.
+
 Config → Get started:
 - Record all resources supported in this region: **Yes**
 - Include global resources (IAM): **Yes**
-- S3 bucket: `multi-lab-cloudtrail-<account-id>` (reuse) or create a dedicated bucket.
-- Delivery frequency: 24 hours (default).
+- S3 bucket: `multi-lab-cloudtrail-<account-id>` (reuse existing)
+- Delivery frequency: 24 hours (default)
 
-**GuardDuty:**
-GuardDuty → Get started → Enable GuardDuty.
+Managed rules to enable:
+- `restricted-ssh` — flags Security Groups allowing port 22 from 0.0.0.0/0
+- `s3-bucket-public-read-prohibited` — flags publicly readable buckets
+- `ec2-imdsv2-check` — flags instances not enforcing IMDSv2
+- `root-account-mfa-enabled` — flags root account without MFA
 
-> GuardDuty has a 30-day free trial on first enable per account. After the
-> trial, cost is based on the volume of CloudTrail events, VPC Flow Logs, and
-> DNS logs analyzed. For a lab with minimal activity, cost is negligible.
-> VPC Flow Logs activation and GuardDuty data source configuration are covered
-> in [`modules/hardening/aws-native/aws-native.md`](../../modules/hardening/aws-native/aws-native.md).
+---
+
+### Step 5.3 — GuardDuty
+
+> **Region warning:** The AWS Console automatically switches the active region
+> when navigating between certain global services (IAM, Billing, CloudFront).
+> Before enabling GuardDuty, confirm the region selector (top-right corner)
+> shows **eu-west-1 (Ireland)**. Enabling GuardDuty in the wrong region
+> (commonly us-east-1) creates a billable detector with no value for this lab.
+> If this happens: navigate to the incorrect region → GuardDuty → Settings →
+> Disable GuardDuty → confirm. Then return to eu-west-1 and enable it there.
+
+GuardDuty → Get started → **Enable GuardDuty**. 
+
+No additional configuration required at this stage. VPC Flow Logs activation
+and GuardDuty data source configuration are covered in
+[`modules/hardening/aws-native/aws-native.md`](../../modules/hardening/aws-native/aws-native.md).
+
+> GuardDuty includes a 30-day free trial on first enable per account per
+> region. After the trial, cost is based on volume of CloudTrail management
+> events, VPC Flow Logs, and DNS logs analyzed. For a single-instance lab
+> with minimal activity, post-trial cost is typically under $3/month.
+> **Disable GuardDuty before the 30-day trial expires** if continued cost
+> is not acceptable — reactivation restarts the trial in a new account.
+
+---
 
 ### Why
-These three services form the passive observability baseline — they require no
-ongoing configuration and begin collecting data immediately. CloudTrail is the
-API-level audit log (equivalent to `auditd` at the OS layer): every Create,
-Delete, and Modify call against any AWS service is recorded. AWS Config tracks
-resource state over time and detects configuration drift against defined rules.
-GuardDuty performs ML-based threat detection over CloudTrail, DNS, and (once
-enabled) VPC Flow Logs. Enabling them at setup ensures no events are missed
-from the first provisioning action. **CloudTrail is applied to all regions**
-to capture IAM and STS events, which are global — a single-region trail misses
-them. S3 bucket hardening (Block Public Access, MFA Delete, KMS encryption) is
-applied in the hardening module.
+Passive observability baseline — no ongoing configuration after enabling.
+
+CloudTrail is the API-level audit log (equivalent to `auditd` at the OS layer).
+All-regions is required to capture IAM and STS events, which are global.
+GuardDuty performs ML-based threat detection over CloudTrail, VPC Flow Logs,
+and DNS from day one. AWS Config would add continuous compliance drift
+detection — excluded due to cost constraints, documented in 5.2 as reference.
+S3 bucket hardening and GuardDuty data source configuration are applied in
+the hardening module.
 
 ### Verification
 
 **Console**
-- CloudTrail → Trails → `multi-lab-trail` — Status: *Logging*.
-- Config → Settings — Recording: *On*, global resources included.
-- GuardDuty → Summary — Status: *Enabled*.
+- CloudTrail → Trails → `multi-lab-trail` — Status: *Logging*
+- GuardDuty → Summary — Status: *Enabled*
 
 **CLI**
 ```bash
 aws cloudtrail get-trail-status --name multi-lab-trail --profile multi-lab
 # → "IsLogging": true
-
-aws configservice describe-configuration-recorders --profile multi-lab
-# → "recordingGroup": { "allSupported": true, "includeGlobalResourceTypes": true }
 
 aws guardduty list-detectors --profile multi-lab
 # → "DetectorIds": ["<detector-id>"]
