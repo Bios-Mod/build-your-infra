@@ -76,7 +76,7 @@ hardened base.
 
 | Module | Self-Managed Technology | AWS Native Technology | Status | Doc |
 |--------|-------------------------|-----------------------|--------|-----|
-| Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Security Groups · IMDSv2 · Inspector · SSM · GuardDuty · CloudTrail | Complete (self-managed) | [`modules/hardening/`](modules/hardening/README.md) |
+| Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Security Groups · IMDSv2 · SSM · GuardDuty · CloudTrail | Complete (self-managed) | [`modules/hardening/`](modules/hardening/README.md) |
 
 12 steps covering 9 independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
 

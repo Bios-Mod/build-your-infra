@@ -147,7 +147,7 @@ aws configure --profile multi-lab-admin
 ```
 
 > Never hardcode credentials in scripts or config files. Use the named profile
-> (`--profile multi-lab`) for all CLI and Terraform operations. Add
+> (`--profile multi-lab-admin`) for all CLI and Terraform operations. Add
 > `~/.aws/credentials` to `.gitignore` if the home directory is under version
 > control. Access keys for automation tasks (Terraform, Ansible) must use
 > dedicated IAM roles with scoped policies — defined in the automation phase.
@@ -271,7 +271,7 @@ VPC → Subnets — confirm `10.0.1.0/24` (public) and `10.0.2.0/24` (private) e
 aws ec2 describe-vpcs \
   --filters "Name=tag:Name,Values=multi-lab-vpc" \
   --query "Vpcs.{ID:VpcId,DNS_Hostnames:EnableDnsHostnames,DNS_Resolution:EnableDnsSupport,CIDR:CidrBlock}" \
-  --profile multi-lab
+  --profile multi-lab-admin
 # → DNS_Hostnames: true, DNS_Resolution: true, CIDR: "10.0.0.0/16"
 ```
 
@@ -328,7 +328,7 @@ Verify on the review screen before confirming:
 
 ---
 
-### Step 5.3 — GuardDuty
+### Step 5.2 — GuardDuty
 
 > **Region warning:** The AWS Console automatically switches the active region
 > when navigating between certain global services (IAM, Billing, CloudFront).

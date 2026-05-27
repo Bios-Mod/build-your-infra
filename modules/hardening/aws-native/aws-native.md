@@ -14,7 +14,7 @@ to be completed first.
 | Account & IAM | Root locked · MFA on operator account · EC2 instance profiles · no credentials on disk |
 | Network | Security Groups default-deny · no public SSH · VPC Flow Logs |
 | Instance | IMDSv2 enforced · SSM Session Manager · encrypted EBS |
-| Detection & audit | GuardDuty · Inspector · CloudTrail hardening · Security Hub |
+| Detection & audit | GuardDuty · CloudTrail hardening · Security Hub |
 
 ---
 
@@ -28,7 +28,6 @@ to be completed first.
 | sysctl / AppArmor | IMDSv2 + instance profile scoping |
 | auditd | CloudTrail (API layer) |
 | Fail2Ban + rkhunter | GuardDuty (ML threat detection) |
-| debsums / apt CVE tracking | AWS Inspector (CVE scanning) |
 | rsyslog aggregation | Security Hub (finding aggregation) |
 
 ---
@@ -473,7 +472,7 @@ after starting a session.
 **CLI**
 ```bash
 aws ssm describe-instance-information \
-  --profile multi-lab \
+  --profile multi-lab-admin \
   --query "InstanceInformationList[*].{ID:InstanceId,PingStatus:PingStatus,AgentVersion:AgentVersion}"
 # → PingStatus: "Online" for target instance
 ```
@@ -513,7 +512,7 @@ DETECTOR=$(aws guardduty list-detectors --query "DetectorIds" --output text --pr
 
 aws guardduty get-detector \
   --detector-id $DETECTOR \
-  --profile multi-lab \
+  --profile multi-lab-admin \
   --query "DataSources"
 # → CloudTrail.Status: "ENABLED", DNSLogs.Status: "ENABLED",
 #   FlowLogs.Status: "ENABLED", S3Logs.Status: "ENABLED"
@@ -535,21 +534,19 @@ Standards to enable:
 - **AWS Foundational Security Best Practices** — enable.
 - **CIS AWS Foundations Benchmark** — enable.
 
-> Security Hub aggregates findings from GuardDuty and Inspector into
-> a single normalized view. Enabling it after the previous steps means findings
-> from all sources are immediately visible. The two standards above run
-> automated checks against the controls configured in this guide and score
-> overall security posture as a percentage.
+> Security Hub aggregates findings from GuardDuty into a single normalized
+> view. Enabling it after the previous steps means findings are immediately
+> visible. The two standards above run automated checks against the controls
+> configured in this guide and score overall security posture as a percentage.
 
 ### Why
-GuardDuty and Inspector each produce findings in their own consoles
-with different formats. Security Hub normalizes all findings into the ASFF
-(Amazon Security Finding Format) and provides a unified dashboard with a
-security score. This is the operational equivalent of a SIEM aggregation
-layer — it replaces the need to monitor three separate services and provides
-a single pane to triage, prioritize, and track remediation. CIS AWS Foundations
-Benchmark provides an industry-standard compliance baseline relevant for
-demonstrating security posture to auditors or potential employers.
+GuardDuty produces findings in its own console and format. Security Hub
+normalizes all findings into the ASFF (Amazon Security Finding Format) and
+provides a unified dashboard with a security score. This is the operational
+equivalent of a SIEM aggregation layer — it centralizes detection output and
+provides a single pane to triage, prioritize, and track remediation. CIS AWS
+Foundations Benchmark provides an industry-standard compliance baseline
+relevant for demonstrating security posture to auditors or potential employers.
 
 ### Verification
 
@@ -559,7 +556,7 @@ Security Hub → Summary — security score visible, findings from GuardDuty wit
 
 **CLI**
 ```bash
-aws securityhub describe-hub --profile multi-lab
+aws securityhub describe-hub --profile multi-lab-admin
 # → "HubArn": "arn:aws:securityhub:eu-west-1:<account-id>:hub/default",
 #   "AutoEnableControls": true
 ```
