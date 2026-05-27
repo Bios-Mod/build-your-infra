@@ -9,7 +9,6 @@
 [![auditd](https://img.shields.io/badge/auditd-active-blue?style=flat-square)](modules/hardening/self-managed/self-managed.md)
 [![GuardDuty](https://img.shields.io/badge/GuardDuty-enabled-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
 [![CloudTrail](https://img.shields.io/badge/CloudTrail-audit-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
-[![Config](https://img.shields.io/badge/AWS%20Config-compliance-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
 [![Security Hub](https://img.shields.io/badge/Security%20Hub-enabled-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
 
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange?style=flat-square&logo=ubuntu&logoColor=white)](environments/local/local-vm-setup.md)

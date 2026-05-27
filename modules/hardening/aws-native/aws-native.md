@@ -14,7 +14,7 @@ to be completed first.
 | Account & IAM | Root locked · MFA on operator account · EC2 instance profiles · no credentials on disk |
 | Network | Security Groups default-deny · no public SSH · VPC Flow Logs |
 | Instance | IMDSv2 enforced · SSM Session Manager · encrypted EBS |
-| Detection & audit | GuardDuty · Inspector · CloudTrail hardening · AWS Config rules · Security Hub |
+| Detection & audit | GuardDuty · Inspector · CloudTrail hardening · Security Hub |
 
 ---
 
@@ -27,7 +27,6 @@ to be completed first.
 | WireGuard (remote access) | SSM Session Manager + private subnets |
 | sysctl / AppArmor | IMDSv2 + instance profile scoping |
 | auditd | CloudTrail (API layer) |
-| Lynis | AWS Config conformance packs (CIS AWS Foundations) |
 | Fail2Ban + rkhunter | GuardDuty (ML threat detection) |
 | debsums / apt CVE tracking | AWS Inspector (CVE scanning) |
 | rsyslog aggregation | Security Hub (finding aggregation) |
@@ -49,23 +48,21 @@ prevents log tampering or silent deletion.
 S3 → Buckets → `multi-lab-cloudtrail-<account-id>`:
 
 1. **Block Public Access:** Permissions → Block public access → enable all four options → Save.
-2. **Bucket policy — deny delete:** Permissions → Bucket policy → add:
+2. **Bucket policy — deny delete:** Permissions → Bucket policy → open the
+   existing policy. CloudTrail created it automatically with two statements
+   (`GetBucketAcl` and `PutObject`) — do not replace them. Add the following
+   object inside the existing `Statement` array:
 
 ```json
 {
-  "Version": "2012-10-17",
-  "Statement": [
-    {
-      "Sid": "DenyLogDeletion",
-      "Effect": "Deny",
-      "Principal": "*",
-      "Action": [
-        "s3:DeleteObject",
-        "s3:DeleteObjectVersion"
-      ],
-      "Resource": "arn:aws:s3:::multi-lab-cloudtrail-<account-id>/AWSLogs/*"
-    }
-  ]
+  "Sid": "DenyLogDeletion",
+  "Effect": "Deny",
+  "Principal": "*",
+  "Action": [
+    "s3:DeleteObject",
+    "s3:DeleteObjectVersion"
+  ],
+  "Resource": "arn:aws:s3:::multi-lab-cloudtrail-<account-id>/AWSLogs/*"
 }
 ```
 
@@ -73,33 +70,41 @@ S3 → Buckets → `multi-lab-cloudtrail-<account-id>`:
 
 **MFA Delete (optional — root only):**
 
-> MFA Delete requires the **root account** to enable — it cannot be set by
-> any IAM user, including `AdministratorAccess`. Evaluate based on your
-> tolerance for using root credentials for a one-time configuration step.
+> MFA Delete requires the **root account** — it cannot be set by any IAM user,
+> including `AdministratorAccess`. Evaluate based on your tolerance for using
+> root credentials for a one-time configuration step.
+>
+> MFA Delete and versioning are activated in the same API call — they are not
+> independent controls.
+
+**Pre-requisite — locate the root MFA device ARN:**
+
+AWS Console (as root) → IAM → Security credentials → Multi-factor authentication → copy the ARN of the active MFA device.
+Format: `arn:aws:iam::<account-id>:mfa/root-account-mfa-device`
+
+**Enable versioning + MFA Delete (CLI — root credentials required):**
+
+> The `--profile multi-lab` IAM user cannot authorize this call even with
+> `AdministratorAccess`. Run as root — either via root access keys (delete
+> them immediately after) or configure a temporary root profile.
 
 ```bash
-# Enable versioning first — MFA Delete requires versioning to be active
 aws s3api put-bucket-versioning \
   --bucket multi-lab-cloudtrail-<account-id> \
   --versioning-configuration Status=Enabled,MFADelete=Enabled \
-  --mfa "arn:aws:iam::<account-id>:mfa/root-account-mfa-device <MFA-token>" \
-  --profile multi-lab
+  --mfa "<root-mfa-device-arn> <current-totp-token>"
 ```
 
-Once enabled, object deletion requires the root MFA token on every
-`DeleteObject` call — no IAM policy can override this constraint.
+Once enabled, any `DeleteObject` or `DeleteObjectVersion` call against this
+bucket requires the root MFA token — no IAM policy can override this constraint.
 
 ### Why
-CloudTrail logs are only useful as an audit trail if they cannot be tampered
-with. Block Public Access prevents accidental or misconfigured public exposure.
-The deny-delete bucket policy ensures logs cannot be erased even by the
-operator account — any deletion attempt is itself logged. Log file validation
-generates a digest file signed by AWS for each log delivery, allowing
-cryptographic verification that logs have not been modified after delivery.
-MFA Delete adds a physical second factor to any deletion operation — even
-a fully compromised `AdministratorAccess` account cannot erase logs without
-the root MFA device. The root-only restriction is intentional by AWS design:
-it prevents any automation or scripting from bypassing the control.
+An audit trail is only valid if it cannot be tampered with. Block Public Access
+prevents accidental exposure. The deny-delete policy ensures logs cannot be
+erased even by the operator account — any attempt is itself logged. Log file
+validation provides cryptographic proof that logs were not modified after
+delivery. MFA Delete raises the bar further: deletion requires the physical
+root MFA device, which no IAM policy or compromised credential can bypass.
 
 ### Verification
 
@@ -111,19 +116,21 @@ S3 → `multi-lab-cloudtrail-<account-id>` → Permissions → Block public acce
 ```bash
 aws s3api get-bucket-policy \
   --bucket multi-lab-cloudtrail-<account-id> \
-  --profile multi-lab
-# → returns policy JSON with DenyLogDeletion statement
+  --profile multi-lab-admin \
+  --query Policy \
+  --output text | python3 -m json.tool
+# → returns formatted policy JSON — confirm DenyLogDeletion statement is present
 
 aws cloudtrail get-trail \
   --name multi-lab-trail \
-  --profile multi-lab \
+  --profile multi-lab-admin \
   --query "Trail.LogFileValidationEnabled"
 # → true
 
 # MFA Delete status (if enabled)
 aws s3api get-bucket-versioning \
   --bucket multi-lab-cloudtrail-<account-id> \
-  --profile multi-lab
+  --profile multi-lab-admin
 # → "Status": "Enabled", "MFADelete": "Enabled"
 ```
 
@@ -149,9 +156,14 @@ IAM → Roles → `multi-lab-ec2-role` → Trust relationships — confirm:
 
 ```json
 {
-  "Effect": "Allow",
-  "Principal": { "Service": "ec2.amazonaws.com" },
-  "Action": "sts:AssumeRole"
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": { "Service": "ec2.amazonaws.com" },
+      "Action": "sts:AssumeRole"
+    }
+  ]
 }
 ```
 
@@ -172,13 +184,13 @@ aws ec2 describe-instances \
   --filters "Name=tag:Name,Values=multi-lab-aws" \
   --query "Reservations[*].Instances[*].InstanceId" \
   --output text \
-  --profile multi-lab
+  --profile multi-lab-admin
 
 # Associate the instance profile
 aws ec2 associate-iam-instance-profile \
   --instance-id <instance-id> \
   --iam-instance-profile Name=multi-lab-ec2-role \
-  --profile multi-lab
+  --profile multi-lab-admin
 ```
 
 ### Why
@@ -197,15 +209,15 @@ and receive session commands.
 ```bash
 aws iam get-instance-profile \
   --instance-profile-name multi-lab-ec2-role \
-  --profile multi-lab \
-  --query "InstanceProfile.Roles.RoleName"
+  --profile multi-lab-admin \
+  --query "InstanceProfile.Roles[0].RoleName"
 # → "multi-lab-ec2-role"
 
 # Confirm instance profile is attached
 aws ec2 describe-instances \
   --instance-id <instance-id> \
   --query "Reservations[*].Instances[*].IamInstanceProfile.Arn" \
-  --profile multi-lab
+  --profile multi-lab-admin
 # → "arn:aws:iam::<account-id>:instance-profile/multi-lab-ec2-role"
 ```
 
@@ -246,9 +258,9 @@ policy visible and auditable.
 aws ec2 describe-security-groups \
   --filters "Name=vpc-id,Values=<multi-lab-vpc-id>" \
              "Name=group-name,Values=default" \
-  --query "SecurityGroups.{Inbound:IpPermissions,Outbound:IpPermissionsEgress}" \
-  --profile multi-lab
-# → Inbound: [], Outbound: []
+  --query "SecurityGroups[0].{Inbound:IpPermissions,Outbound:IpPermissionsEgress}" \
+  --profile multi-lab-admin
+# → {"Inbound": [], "Outbound": []}
 ```
 
 ---
@@ -256,25 +268,17 @@ aws ec2 describe-security-groups \
 ## Step 4 — VPC Flow Logs
 
 ### What was done
-Enabled VPC Flow Logs on `multi-lab-vpc` capturing all traffic (accepted and
-rejected), delivered to CloudWatch Logs at `/aws/vpc/multi-lab-vpc`.
+Created IAM role `multi-lab-vpc-flow-logs-role` and enabled VPC Flow Logs on
+`multi-lab-vpc` capturing all traffic, delivered to CloudWatch Logs at
+`/aws/vpc/multi-lab-vpc`.
 
-**Console**
+**1. Create the IAM role for Flow Logs delivery**
 
-VPC → Your VPCs → `multi-lab-vpc` → Flow logs → Create flow log:
-
-| Parameter | Value |
-|---|---|
-| Filter | All (accept + reject) |
-| Destination | CloudWatch Logs |
-| Log group | `/aws/vpc/multi-lab-vpc` |
-| IAM role | `multi-lab-vpc-flow-logs-role` (create below) |
-| Log format | Default |
-
-**Create the IAM role for Flow Logs delivery:**
+VPC Flow Logs is an AWS service that writes logs to CloudWatch on your behalf —
+it requires an IAM role to do so.
 
 IAM → Roles → Create role:
-- Trusted entity: Custom trust policy:
+- Trusted entity type: **Custom trust policy** → paste:
 
 ```json
 {
@@ -287,7 +291,13 @@ IAM → Roles → Create role:
 }
 ```
 
-- Permissions: inline policy:
+- Permissions step: leave empty → skip to next.
+- Role name: `multi-lab-vpc-flow-logs-role` → **Create role**.
+
+Once created, attach the inline policy:
+
+IAM → Roles → `multi-lab-vpc-flow-logs-role` → Permissions → Add permissions
+→ Create inline policy → JSON tab → paste:
 
 ```json
 {
@@ -306,17 +316,28 @@ IAM → Roles → Create role:
 }
 ```
 
-- Role name: `multi-lab-vpc-flow-logs-role`
+Policy name: `multi-lab-flow-logs-policy` → **Create policy**.
+
+**2. Enable VPC Flow Logs**
+
+VPC → Your VPCs → `multi-lab-vpc` → Flow logs → Create flow log:
+
+| Parameter | Value |
+|---|---|
+| Filter | All (accept + reject) |
+| Destination | CloudWatch Logs |
+| Log group | `/aws/vpc/multi-lab-vpc` |
+| IAM role | `multi-lab-vpc-flow-logs-role` |
+| Log format | Default |
 
 ### Why
-VPC Flow Logs are the network-layer equivalent of `ufw` logging + rsyslog.
-They record source IP, destination IP, port, protocol, and accept/reject
-decision for every network flow through the VPC. This is the primary data
-source for GuardDuty network threat detection — without Flow Logs, GuardDuty
-cannot detect port scanning, lateral movement, or C2 beaconing at the network
-layer. Capturing both accepted and rejected traffic is essential: rejected
-traffic reveals reconnaissance and attack attempts; accepted traffic provides
-the baseline for anomaly detection.
+VPC Flow Logs are the network-layer equivalent of `ufw` logging + rsyslog —
+they record source IP, destination IP, port, protocol, and accept/reject
+decision for every flow through the VPC. They are the primary data source for
+GuardDuty network threat detection: without them, GuardDuty cannot detect port
+scanning, lateral movement, or C2 beaconing. Capturing both accepted and
+rejected traffic is essential — rejected traffic reveals reconnaissance;
+accepted traffic provides the anomaly detection baseline.
 
 ### Verification
 
@@ -328,8 +349,8 @@ VPC → Your VPCs → `multi-lab-vpc` → Flow logs — confirm one flow log wit
 ```bash
 aws ec2 describe-flow-logs \
   --filter "Name=resource-id,Values=<multi-lab-vpc-id>" \
-  --query "FlowLogs.{Status:FlowLogStatus,Destination:LogDestination,Filter:TrafficType}" \
-  --profile multi-lab
+  --query "FlowLogs[*].{Status:FlowLogStatus,Destination:LogGroupName,Filter:TrafficType}" \
+  --profile multi-lab-admin
 # → Status: "ACTIVE", Filter: "ALL"
 ```
 
@@ -343,8 +364,17 @@ on all existing instances.
 
 **Console — account-level default**
 
-EC2 → Settings (under Account Attributes) → Data protection and security →
-IMDSv2 default: set to *Required* → Save.
+EC2 → Settings (under Account Attributes) → Data protection and security → **Manage**:
+
+| Field | Value |
+|---|---|
+| Instance metadata service | **Enable** |
+| Metadata version | **V2 only (token required)** |
+| IPv6 endpoint | No change |
+| Tags in instance metadata | No change |
+| Allowed PUT hops | No change |
+
+Save → **Update**.
 
 > This sets the account-level default. Any new EC2 instance launched after
 > this point will have IMDSv2 required unless explicitly overridden.
@@ -357,7 +387,7 @@ IMDSv2 default: set to *Required* → Save.
 aws ec2 describe-instances \
   --query "Reservations[*].Instances[*].InstanceId" \
   --output text \
-  --profile multi-lab
+  --profile multi-lab-admin
 
 # This lab runs a single instance. For multi-instance environments,
 # pipe describe-instances output into a loop.
@@ -365,18 +395,19 @@ aws ec2 modify-instance-metadata-options \
   --instance-id <instance-id> \
   --http-tokens required \
   --http-endpoint enabled \
-  --profile multi-lab
+  --profile multi-lab-admin
 ```
 
 ### Why
-The EC2 Instance Metadata Service (IMDS) at `169.254.169.254` serves
-temporary IAM credentials to the instance. IMDSv1 responds to any HTTP GET
-from any process on the instance — including a web application exploited via
-SSRF. An attacker with SSRF can retrieve the instance role credentials and
-pivot to any AWS resource the role can access. IMDSv2 requires a PUT request
-with a session token before any metadata can be read — a two-step flow that
-SSRF cannot complete because SSRF typically allows only GET requests or
-cannot follow the required HTTP method sequence.
+IMDS (`169.254.169.254`) is a link-local endpoint — internal to the instance
+only, never reachable from the internet. It serves temporary IAM credentials
+to processes running on the instance.
+
+IMDSv1 responds to any HTTP GET from any local process. An SSRF vulnerability
+in a web application is enough for an attacker to retrieve the instance role
+credentials and pivot to any AWS resource the role can access. IMDSv2 requires
+a PUT request to obtain a session token before any metadata can be read — a
+two-step flow that SSRF cannot complete.
 
 ### Verification
 
@@ -384,7 +415,7 @@ cannot follow the required HTTP method sequence.
 ```bash
 aws ec2 describe-instances \
   --query "Reservations[*].Instances[*].{ID:InstanceId,HttpTokens:MetadataOptions.HttpTokens}" \
-  --profile multi-lab
+  --profile multi-lab-admin
 # → HttpTokens: "required" for all instances
 ```
 
@@ -419,7 +450,7 @@ assign `multi-lab-ec2-role` if not already attached.
 ```bash
 aws ssm start-session \
   --target <instance-id> \
-  --profile multi-lab
+  --profile multi-lab-admin
 # → opens an interactive shell session via SSM — no SSH port required
 ```
 
@@ -490,56 +521,7 @@ aws guardduty get-detector \
 
 ---
 
-## Step 8 — AWS Config rules
-
-### What was done
-Added seven AWS Config managed rules covering IAM, EC2, VPC, CloudTrail,
-and S3 baseline compliance checks.
-
-**Console**
-
-Config → Rules → Add rule — add the following managed rules:
-
-| Rule | What it checks |
-|---|---|
-| `mfa-enabled-for-iam-console-access` | IAM users with console access have MFA |
-| `root-account-mfa-enabled` | Root account has MFA active |
-| `ec2-imdsv2-check` | All EC2 instances have IMDSv2 required |
-| `vpc-flow-logs-enabled` | VPC Flow Logs active on all VPCs |
-| `cloud-trail-enabled` | CloudTrail trail active |
-| `s3-bucket-public-access-prohibited` | No S3 bucket allows public access |
-| `ec2-instance-no-public-ip` | Instances in private subnet have no public IP |
-
-> Config rules evaluate continuously. Any deviation from the above triggers
-> a *NON_COMPLIANT* finding visible in Config → Rules and aggregated in
-> Security Hub (Step 9).
-
-### Why
-AWS Config rules are the automated equivalent of a Lynis audit — they
-continuously evaluate resource configuration against defined controls and flag
-deviations without manual inspection. These seven rules codify the controls
-applied in the previous steps: if any future change breaks the baseline (e.g.,
-an instance is launched without IMDSv2, or a bucket accidentally becomes
-public), Config flags it immediately rather than waiting for a manual audit.
-
-### Verification
-
-**Console**
-
-Config → Rules — all rules show *Compliant* once resources are configured
-per this guide. *NON_COMPLIANT* findings indicate a gap to investigate.
-
-**CLI**
-```bash
-aws configservice describe-compliance-by-config-rule \
-  --profile multi-lab \
-  --query "ComplianceByConfigRules[*].{Rule:ConfigRuleName,Status:Compliance.ComplianceType}"
-# → all rules: "COMPLIANT"
-```
-
----
-
-## Step 9 — Security Hub
+## Step 8 — Security Hub
 
 ### What was done
 Enabled Security Hub with AWS Foundational Security Best Practices and CIS
@@ -553,14 +535,14 @@ Standards to enable:
 - **AWS Foundational Security Best Practices** — enable.
 - **CIS AWS Foundations Benchmark** — enable.
 
-> Security Hub aggregates findings from GuardDuty, Inspector, and Config into
+> Security Hub aggregates findings from GuardDuty and Inspector into
 > a single normalized view. Enabling it after the previous steps means findings
 > from all sources are immediately visible. The two standards above run
 > automated checks against the controls configured in this guide and score
 > overall security posture as a percentage.
 
 ### Why
-GuardDuty, Inspector, and Config each produce findings in their own consoles
+GuardDuty and Inspector each produce findings in their own consoles
 with different formats. Security Hub normalizes all findings into the ASFF
 (Amazon Security Finding Format) and provides a unified dashboard with a
 security score. This is the operational equivalent of a SIEM aggregation
@@ -573,8 +555,7 @@ demonstrating security posture to auditors or potential employers.
 
 **Console**
 
-Security Hub → Summary — security score visible, findings from GuardDuty and
-Config populated within a few minutes of enablement.
+Security Hub → Summary — security score visible, findings from GuardDuty within a few minutes of enablement.
 
 **CLI**
 ```bash

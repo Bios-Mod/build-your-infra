@@ -139,7 +139,7 @@ provide:
 **CLI**
 
 ```bash
-aws configure --profile multi-lab
+aws configure --profile multi-lab-admin
 # AWS Access Key ID:     <key generated in IAM → Users → multi-lab-admin → Security credentials>
 # AWS Secret Access Key: <secret>
 # Default region name:   eu-west-1
@@ -171,7 +171,7 @@ assigned, console access enabled, and access key active.
 
 **CLI**
 ```bash
-aws sts get-caller-identity --profile multi-lab
+aws sts get-caller-identity --profile multi-lab-admin
 # → "UserId": "...", "Account": "<account-id>", "Arn": "arn:aws:iam::<account-id>:user/multi-lab-admin"
 ```
 
@@ -235,7 +235,7 @@ VPC → Create VPC → select *VPC and more*.
 > at this stage.
 
 > **VPC endpoints:** S3 Gateway is free and required for S3 reachability from private 
-> subnets without NAT — CloudTrail and Config depend on this.
+> subnets without NAT — CloudTrail depends on this.
 
 > The wizard creates the VPC, subnets, Internet Gateway, and route tables
 > automatically. DNS resolution (enableDnsSupport) is required for Route 53
@@ -281,8 +281,7 @@ aws ec2 describe-vpcs \
 
 ### What was done
 Passive observability baseline enabled at the account level: CloudTrail
-(all-region trail), and GuardDuty. AWS Config is documented as a reference
-only — see substep 5.2.
+(all-region trail) and GuardDuty.
 
 ---
 
@@ -329,27 +328,6 @@ Verify on the review screen before confirming:
 
 ---
 
-### Step 5.2 — AWS Config (Reference Only — Not Deployed)
-
-> ⚠️ AWS Config has no free tier. Enabling it incurs cost from the first
-> configuration item recorded ($0.003/item · $0.001/rule evaluation).
-> The steps below are **not executed** in this lab and are documented as a
-> reference only. Apply them in environments where cost is not a constraint.
-
-Config → Get started:
-- Record all resources supported in this region: **Yes**
-- Include global resources (IAM): **Yes**
-- S3 bucket: `multi-lab-cloudtrail-<account-id>` (reuse existing)
-- Delivery frequency: 24 hours (default)
-
-Managed rules to enable:
-- `restricted-ssh` — flags Security Groups allowing port 22 from 0.0.0.0/0
-- `s3-bucket-public-read-prohibited` — flags publicly readable buckets
-- `ec2-imdsv2-check` — flags instances not enforcing IMDSv2
-- `root-account-mfa-enabled` — flags root account without MFA
-
----
-
 ### Step 5.3 — GuardDuty
 
 > **Region warning:** The AWS Console automatically switches the active region
@@ -381,8 +359,7 @@ Passive observability baseline — no ongoing configuration after enabling.
 CloudTrail is the API-level audit log (equivalent to `auditd` at the OS layer).
 All-regions is required to capture IAM and STS events, which are global.
 GuardDuty performs ML-based threat detection over CloudTrail, VPC Flow Logs,
-and DNS from day one. AWS Config would add continuous compliance drift
-detection — excluded due to cost constraints, documented in 5.2 as reference.
+and DNS from day one. 
 S3 bucket hardening and GuardDuty data source configuration are applied in
 the hardening module.
 
@@ -397,7 +374,7 @@ the hardening module.
 aws cloudtrail get-trail-status --name multi-lab-trail --profile multi-lab
 # → "IsLogging": true
 
-aws guardduty list-detectors --profile multi-lab
+aws guardduty list-detectors --profile multi-lab-admin
 # → "DetectorIds": ["<detector-id>"]
 ```
 

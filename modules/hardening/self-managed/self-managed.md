@@ -377,16 +377,16 @@ sudo grep -r "PasswordAuthentication\|PermitRootLogin\|PubkeyAuthentication" \
 
 Deploy the config, create the banner, and remove unused host key material from disk:
 
-> **Cloud Provider Note:** On EC2, verify that `cloud-init` or any provider
-> configuration does not override the intended SSH settings on reboot. Confirm
-> the effective configuration after the restart and again after a reboot test.
-
 > **Critical operational note (Preventing Lockout):**
 > Before restarting the SSH daemon, keep a recovery path open until the new
 > port is confirmed from a second session or console access.
 
 > **Note:** When changing the SSH port (`Port 22222`), use a full restart
 > after validating the config and enable the service so it persists across reboot.
+
+> **Cloud Provider Note:** On EC2 and VPS, verify that `cloud-init` does not
+> override SSH settings or `authorized_keys` on reboot. Confirm the effective
+> configuration after restart and after a reboot test.
 
 ```bash
 sudo cp modules/hardening/self-managed/configs/ssh/sshd_config /etc/ssh/sshd_config
@@ -435,11 +435,6 @@ Key decisions — each directive is documented inline in the config:
 > identification banner — reduces information leakage without affecting
 > functionality.
 
-> **Cloud Provider Note (cloud-init):** On a VPS, `cloud-init` often manages SSH keys
-> and `sshd_config` automatically. Verify that your provider's cloud-init modules are
-> not configured to overwrite your hardened SSH settings or the
-> `.ssh/authorized_keys` file upon reboot.
-
 ### Why
 SSH is the primary attack vector on internet-facing servers. Disabling
 password authentication makes brute-force attacks irrelevant — with no
@@ -457,6 +452,7 @@ reducing Fail2Ban workload. All actual security is provided by key-only
 authentication, Fail2Ban, and UFW.
 
 ### Verification
+
 ```bash
 # Effective merged config — reads all files including drop-ins
 sudo sshd -T | grep -E "allowtcpforwarding|allowagentforwarding|tcpkeepalive|loglevel|maxauthtries|maxsessions|strictmodes|banner|maxstartups"
@@ -504,6 +500,62 @@ ls /etc/ssh/ssh_host_*
 # Service enabled for reboot persistence
 systemctl is-enabled ssh
 # → enabled
+```
+
+---
+
+### 3.1 — EC2: SSM Session Manager Access
+
+> **EC2 only.** SSM Session Manager replaces SSH as the primary shell access
+> method — no inbound port required, no key distribution needed. Requires
+> the aws-native hardening baseline:
+> [`modules/hardening/aws-native/aws-native.md`](../../aws-native/aws-native.md)
+> Steps 2 and 6 must be completed before SSM access is available.
+
+#### What was done
+
+Session Manager plugin installed on the local machine and SSM shell access
+verified against the EC2 instance.
+
+**Install the Session Manager plugin — local machine (one-time):**
+
+```bash
+# macOS
+brew install --cask session-manager-plugin
+
+# Linux (x86_64)
+wget https://s3.amazonaws.com/session-manager-downloads/plugin/latest/ubuntu_64bit/session-manager-plugin.deb
+sudo dpkg -i session-manager-plugin.deb
+rm session-manager-plugin.deb
+```
+
+**Start a session:**
+
+**Console**
+
+Systems Manager → Session Manager → Start session →
+select `<instance-id>` → Start session.
+
+**CLI**
+
+```bash
+aws ssm start-session \
+  --target <instance-id> \
+  --profile multi-lab-admin
+# → opens an interactive shell — no SSH port or key required
+```
+
+#### Verification
+
+```bash
+# Agent registered and reachable
+aws ssm describe-instance-information \
+  --profile multi-lab-admin \
+  --query "InstanceInformationList[*].{ID:InstanceId,Status:PingStatus}"
+# → PingStatus: "Online"
+
+# Session logged automatically — no manual action required
+# Console: Systems Manager → Session Manager → Session history
 ```
 
 ---
@@ -579,8 +631,15 @@ sudo ufw status verbose | grep Logging
 WireGuard configured as a VPN perimeter layer. SSH access restricted to the
 VPN interface — port 22222 is no longer reachable from the public internet.
 
-**VPN subnet:** server `10.0.0.1`, clients from `.2` onward. One `[Peer]`
+**VPN subnet:** server `172.16.0.1`, clients from `.2` onward. One `[Peer]`
 block per device, unique IP per peer.
+
+> ⚠️ **CIDR conflict — EC2:** The VPN subnet must not overlap with the VPC CIDR.
+> If the VPC uses `10.0.0.0/16`, AWS injects DHCP routes for the entire block
+> at boot — including `10.0.0.0/24` — overriding the WireGuard routes and
+> breaking tunnel traffic silently (handshake succeeds, no data passes).
+> Use `172.16.0.0/24` to avoid this. The `192.168.0.0/16` range is also
+> commonly used by home routers — avoid it for client-facing deployments.
 
 #### Server
 
@@ -648,12 +707,12 @@ the VPN subnet:
 
 | Field | Source | Example |
 |---|---|---|
-| `[Interface] Address` | Assign manually — unique per client | `10.0.0.2/24` |
+| `[Interface] Address` | Assign manually — unique per client | `172.16.0.2/32` |
 | `[Interface] PrivateKey` | Generated on server, transferred once, then deleted | `<client-private-key>` |
 | `[Interface] DNS` | Pre-filled — Quad9 | `9.9.9.9` |
 | `[Peer] PublicKey` | `/etc/wireguard/server_public.key` on the server | `<server-public-key>` |
 | `[Peer] Endpoint` | LAN IP (VM) or public IP (VPS) + port | `192.168.X.X:51820` |
-| `[Peer] AllowedIPs` | Split tunnel — VPN subnet only | `10.0.0.0/24` |
+| `[Peer] AllowedIPs` | Split tunnel — VPN subnet only | `172.16.0.0/24` |
 | `[Peer] PersistentKeepalive` | Pre-filled — required behind NAT | `25` |
 
 📄 [`configs/wireguard/client-template.conf`](configs/wireguard/client-template.conf)
@@ -705,8 +764,8 @@ home network without requiring an inbound-reachable IP on either the Mac or the 
 
 | Peer | VPN address | Endpoint |
 |---|---|---|
-| Mac | `10.0.0.2` | `<EIP>:51820` |
-| VM (VMware) | `10.0.0.3` | `<EIP>:51820` |
+| Mac | `172.16.0.2` | `<EIP>:51820` |
+| VM (VMware) | `172.16.0.3` | `<EIP>:51820` |
 
 > **`wg0.conf` and `client-template.conf`** do not require changes — the
 > `Endpoint` field in the client template already uses a placeholder. Fill it
@@ -743,10 +802,10 @@ sudo ufw status numbered
 # → NO open rule for 22222/tcp to Anywhere
 
 # Client — ping server VPN IP with tunnel active
-ping 10.0.0.1
+ping 172.16.0.1
 
 # Client — SSH via VPN
-ssh -p 22222 <username>@10.0.0.1
+ssh -p 22222 <username>@172.16.0.1
 
 # Negative test — SSH must be unreachable without WireGuard
 # EC2 only: do NOT run wg-quick down from inside the tunnel.
@@ -787,7 +846,7 @@ Key decisions:
 `ignoreip` whitelists loopback, the LAN subnet, and the WireGuard VPN subnet.
 
 > **VM:** include your LAN subnet (`192.168.X.X/X`) in `ignoreip`.
-> **VPS with no trusted LAN:** keep only `127.0.0.1/8 ::1` and `10.0.0.0/24`
+> **VPS with no trusted LAN:** keep only `127.0.0.1/8 ::1` and `172.16.0.0/24`
 > (WireGuard subnet). Remove the LAN entry if WireGuard was not deployed.
 > **Cloud note:** In EC2, avoid whitelisting a dynamic home IP in `ignoreip`.
 > Keep only loopback unless you have a stable private access path such as
@@ -1010,6 +1069,45 @@ sudo apt purge apport apport-core-dump-handler apport-symptoms python3-apport -y
 sudo apt autoremove --purge -y
 ```
 
+> **EC2 — SSM Agent migration (required before purging snapd):** On EC2,
+> `amazon-ssm-agent` ships pre-installed as a snap. Purging snapd without
+> migrating the agent first permanently removes SSM Session Manager access —
+> the only shell path that requires no open inbound port.
+> Migrate to the apt package before proceeding:
+
+```bash
+# Remove snap IPC socket leftovers to prevent address-in-use errors on first start
+sudo rm -rf /var/lib/amazon/ssm/ipc/
+
+# Download and install the apt package — replaces the snap-managed agent
+# ARM64 (Graviton):
+wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_arm64/amazon-ssm-agent.deb
+# x86_64:
+# wget https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_amd64/amazon-ssm-agent.deb
+
+sudo dpkg -i amazon-ssm-agent.deb
+sudo systemctl enable amazon-ssm-agent
+sudo systemctl start amazon-ssm-agent
+rm amazon-ssm-agent.deb
+```
+
+> If `dpkg` aborts with *"installed by snap, please use snap to update or
+> uninstall"*, snap metadata is still present. Remove it and retry:
+> ```bash
+> sudo rm -rf /var/lib/snapd
+> sudo dpkg -i amazon-ssm-agent.deb
+> ```
+
+> Verify the agent is online before purging snapd:
+> ```bash
+> sudo systemctl status amazon-ssm-agent   # → active (running)
+> # From local machine (AWS CLI required):
+> aws ssm describe-instance-information \
+>   --profile multi-lab-admin \
+>   --query "InstanceInformationList[*].{ID:InstanceId,Status:PingStatus}"
+> # → PingStatus: "Online"
+> ```
+
 **snapd** removed and pinned to prevent silent reinstallation as a future
 package dependency:
 
@@ -1047,7 +1145,8 @@ configuration alone to constrain them.
 > | Hardware abstraction | `udisks2`, `ModemManager`, `bluetooth` | Mask — no physical hardware |
 > | Crash reporting / telemetry | `apport`, `ubuntu-advantage-esm-apps` | Purge |
 > | D-Bus activated package managers | `packagekit`, `snapd` | Mask / purge |
-> | Cloud provisioning agents | `cloud-init`, `amazon-ssm-agent` | Keep on EC2 — evaluate elsewhere |
+> | Cloud provisioning agents | `cloud-init` | Keep on EC2 — evaluate elsewhere |
+> | SSM Agent | `amazon-ssm-agent` | Migrate to apt before purging snapd — see block above |
 >
 > The target is the minimum set required to run the lab's services. No fixed number —
 > any service not justified by a deployed component is a candidate for removal.
@@ -1068,14 +1167,18 @@ systemctl status udisks2            # → masked; vendor preset: enabled
 
 sudo sysctl --system                # → reload sysctl
 sysctl fs.suid_dumpable             # → fs.suid_dumpable = 0
-# sysctl --system reloads all files from /usr/lib/sysctl.d/, /run/sysctl.d/, and 
-# /etc/sysctl.d/ in order. Run it any time a package removal may have 
+# sysctl --system reloads all files from /usr/lib/sysctl.d/, /run/sysctl.d/, and
+# /etc/sysctl.d/ in order. Run it any time a package removal may have
 # altered runtime kernel parameters — apport is a known example.
 
 dpkg -l | grep apport               # → no output
 
 apt-mark showhold | grep snapd      # → snapd
 snap list 2>&1                      # → Command 'snap' not found
+
+# SSM Agent — apt package active, snap gone
+sudo systemctl is-active amazon-ssm-agent   # → active
+dpkg -l | grep amazon-ssm-agent             # → ii  amazon-ssm-agent ...
 ```
 
 ---

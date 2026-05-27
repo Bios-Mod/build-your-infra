@@ -144,7 +144,7 @@ EC2 → Security Groups → Create security group:
 | Type       | Protocol | Port  | Source            | Description                         |
 |------------|----------|-------|-------------------|-------------------------------------|
 | Custom TCP | TCP      | 22    | My IP (`/32`)     | Temporary — pre-hardening only      |
-| Custom TCP | TCP      | 22222 | My IP (`/32`)     | SSH — post-hardening                |
+| Custom TCP | TCP      | 22222 | My IP (`/32`)     | Temporary — pre-hardening (if use wireguard)                |
 | Custom UDP | UDP      | 51820 | 0.0.0.0/0, ::/0   | WireGuard VPN                       |
 
 **Outbound rules:**

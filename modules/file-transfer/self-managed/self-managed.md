@@ -346,7 +346,7 @@ the admin SSH alias (`multi-lab-vps` or `multi-lab-local`).
 ── On the CLIENT machine (~/.ssh/config) ─────────────────────────────────────
 ```bash
 Host multi-lab-sftp
-  HostName 10.0.0.1
+  HostName 172.16.0.1
   User sftpuser
   Port 22222
   IdentityFile ~/.ssh/id_ed25519_sftp
@@ -368,7 +368,7 @@ or key.
 sftp multi-lab-sftp
 
 # SFTP — explicit flags (no config block required)
-sftp -i ~/.ssh/id_ed25519_sftp -P 22222 -o "StrictHostKeyChecking=accept-new" sftpuser@10.0.0.1
+sftp -i ~/.ssh/id_ed25519_sftp -P 22222 -o "StrictHostKeyChecking=accept-new" sftpuser@172.16.0.1
 
 # Verify chroot confinement — must not be able to traverse above uploads/
 sftp> cd /

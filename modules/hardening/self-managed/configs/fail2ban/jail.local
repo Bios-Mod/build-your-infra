@@ -21,11 +21,11 @@ findtime = 300
 # Only 3 attempts before banning
 maxretry = 3
 banaction = ufw
-# ignoreip: 10.0.0.0/24 is the WireGuard VPN subnet (Step 5).
-# If WireGuard was NOT deployed, remove the 10.0.0.0/24 entry.
+# ignoreip: 172.16.0.0/24 is the WireGuard VPN subnet (Step 5).
+# If WireGuard was NOT deployed, remove the 172.16.0.0/24 entry.
 # Keeping it is harmless but misleading — no VPN traffic exists to whitelist.
 # Ignore your own local IP to avoid banning yourself
-ignoreip = 127.0.0.1/8 192.168.X.X/X 10.0.0.0/24
+ignoreip = 127.0.0.1/8 192.168.X.X/X 172.16.0.0/24
 
 [sshd]
 enabled  = true
