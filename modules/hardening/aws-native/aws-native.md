@@ -5,6 +5,29 @@ compute layer. Requires the base environment defined in
 [aws-native-setup.md](../../../environments/aws-native/aws-native-setup.md)
 to be completed first.
 
+> **Cost notice — billable services:** this module enables services with
+> different billing models. Review current AWS pricing before deploying.
+> Conditions below are accurate as of the time this lab was built and may
+> change.
+>
+> | Service | Free Tier / Trial | Post-trial behavior |
+> |---|---|---|
+> | GuardDuty | 30-day free trial on first enable per account per region | Billed based on volume of data sources analyzed (CloudTrail events, VPC Flow Logs, DNS logs). At single-instance lab scale, cost is typically low. **Disable before the trial expires** if ongoing cost is not acceptable — reactivation restarts the trial only on a new account. |
+> | Security Hub | 30-day free trial | Billed per security check and finding ingested. At lab scale with two standards enabled, cost is minimal. |
+> | VPC Flow Logs | Free to generate | Billed for CloudWatch Logs ingestion and storage. At single-instance lab scale with low traffic, cost is negligible. |
+> | CloudTrail | First management events trail is permanently free | Data events, Insights events, and Network activity events generate additional charges — none are enabled in this module. |
+>
+> **Services not applied — Inspector and Config:**
+> AWS Inspector (automated vulnerability scanning) and AWS Config
+> (continuous resource configuration recording) were evaluated for this
+> module and intentionally excluded. Both services begin billing from the
+> moment they are enabled — Inspector per instance scanned, Config per
+> configuration item recorded — with no free trial. The security coverage
+> they provide (vulnerability CVE scanning and configuration drift detection)
+> is relevant at production scale but exceeds the learning objectives of this
+> lab. They are documented here as known services in the hardening stack for
+> reference.
+
 ---
 
 ## Scope
