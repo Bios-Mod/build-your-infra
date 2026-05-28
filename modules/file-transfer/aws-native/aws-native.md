@@ -264,6 +264,26 @@ subnet of `multi-lab-vpc`.
 > moment it is created. Complete Steps 5–7 without pause and proceed
 > directly to the teardown step after verification.
 
+**Pre-requisite — Allocate an Elastic IP (Console):**
+
+> An Elastic IP is required when using a VPC endpoint with Public access.
+> One EIP must exist per selected Availability Zone before the server can
+> be created. Allocate it now — the wizard will not create it for you.
+
+EC2 → Elastic IPs → Allocate Elastic IP address:
+
+| Parameter | Value |
+|---|---|
+| Network Border Group | `eu-west-1` |
+| Public IPv4 address pool | Amazon's pool of IPv4 addresses |
+
+→ **Allocate** — note the allocated IP address.
+
+> **Cost:** EIPs are free while associated to a running resource. An
+> unassociated EIP incurs a $0.005/hour charge. Transfer Family associates
+> the EIP automatically at server creation — it remains associated (free)
+> until the server is deleted. Add EIP release to the teardown step.
+
 **Console**
 
 AWS Transfer Family → Servers → Create server:
@@ -292,10 +312,14 @@ AWS Transfer Family → Servers → Create server:
 
 | Parameter | Value |
 |---|---|
-| Endpoint type | VPC |
-| VPC | `multi-lab-vpc` |
-| Subnet | `10.0.1.0/24` (public) |
-| Security Group | `multi-lab-transfer-sg` |
+| Endpoint type    | VPC                         |
+| Access           | Internet Facing             |
+| VPC              | `multi-lab-vpc`             |
+| IP address type  | IPv4                        |
+| Availability Zones | `eu-west-1<x>` — select the AZ matching subnet `10.0.1.0/24` (one AZ only) |
+| Elastic IP         | select the EIP allocated in the pre-requisite above                   |
+| Subnet           | `10.0.1.0/24` (public)      |
+| Security Group   | `multi-lab-transfer-sg`     |
 
 > **VPC endpoint type** places the Transfer Family endpoint inside the VPC
 > with a private or public-facing address. Using the public subnet with an
@@ -311,19 +335,72 @@ AWS Transfer Family → Servers → Create server:
 
 **Page 5 — Configure additional settings:**
 
+> The CloudWatch logging section does not have an explicit enable/disable
+> toggle — logging is activated by assigning a log group and a role.
+> Leave both fields empty to disable logging entirely. For this lab, both
+> are required.
+
+**CloudWatch Logs — create the log group inline:**
+
+Open the CloudWatch log group link inside the logging section to open
+CloudWatch in a new tab:
+
+CloudWatch → Log groups → Create log group:
+
 | Parameter | Value |
 |---|---|
-| CloudWatch logging | Enabled |
+| Log group name | `/aws/transfer/multi-lab-transfer` |
+| Retention | 1 month (for this lab) |
+| Log class | Standard |
+
+> **Log class — Standard vs. Infrequent Access:**
+> Standard — full CloudWatch functionality: Insights queries, metric filters, 
+> alarms, subscriptions, and live tail. Higher ingestion cost ($0.50/GB).
+> 
+> Infrequent Access — ~50% cheaper ingestion ($0.25/GB) but disables metric filters, 
+> alarms, live tail, and subscription filters. Only basic log viewing and Insights 
+> queries are available.
+> 
+> For this lab, choose Standard — Transfer Family SFTP activity logs are low volume 
+> (negligible cost), and Standard preserves the option to add metric filters or alarms
+> in future hardening steps without recreating the log group. Infrequent Access makes 
+> sense for high-volume application logs where those features are not needed.
+
+→ **Create** — close the tab and return to the Transfer Family wizard.
+
+Back in the Transfer Family wizard → CloudWatch log group field →
+click the **refresh icon** → select `/aws/transfer/multi-lab-transfer`.
+
+**Page 5 parameters:**
+
+| Parameter | Value |
+|---|---|
 | CloudWatch log group | `/aws/transfer/multi-lab-transfer` |
-| Logging role | Create a new role → accept the suggested name |
+| Logging role | Leave empty — only required when using Managed Workflows |
+| Managed workflows | Leave empty (out of scope for this module) |
 | Security policy | `TransferSecurityPolicy-2024-01` |
 | Server Host Key | Leave default (AWS-generated) |
 
+**Additional optional fields — Page 5:**
+
+| Parameter | Value | Reason |
+|---|---|---|
+| Optimized directories | Leave default (disabled) | Relevant only for buckets with >100k objects or deep prefix hierarchies — not applicable for a lab environment |
+| Pre-authentication display banner | Leave empty | Optional branding/warning message shown before login — out of scope |
+| SetStat option | Leave default (disabled) | Ignore SETSTAT enables compatibility with clients that send unsupported SFTP attribute commands — not needed for standard clients |
+| TLS session resumption | N/A (greyed out) | Only available when FTPS is enabled in Step 1 — this server uses SFTP only |
+| Passive IP (PASV) | N/A (greyed out) | Only available when FTP or FTPS is enabled in Step 1 — this server uses SFTP only |
+
+> **Logging role:** the field is disabled unless a Managed Workflow is
+> assigned. For standard SFTP logging, Transfer Family writes to the
+> selected log group using an internal service-linked role — no explicit
+> IAM role is needed here. The `multi-lab-transfer-role` created in
+> Step 2 covers S3 bucket access, not CloudWatch delivery.
+>
 > **Security policy `TransferSecurityPolicy-2024-01`:** restricts the
-> allowed cryptographic algorithms for the SFTP handshake. The 2024-01
-> policy disables weak ciphers and MACs present in older compatibility
-> policies. Always select the most recent policy unless legacy client
-> support is required.
+> allowed cryptographic algorithms for the SFTP handshake. Always select
+> the most recent policy unless legacy client support is required.
+
 
 **Page 6 — Review and create:** confirm all settings → **Create server**.
 
@@ -390,10 +467,17 @@ Transfer Family → Servers → `<server-id>` → Users → Add user:
 |---|---|
 | Username | `sftpuser` |
 | Role | `multi-lab-transfer-role` |
-| Home directory | Restricted |
-| S3 bucket | `multi-lab-transfer-<account-id>` |
-| Home directory mapping — entry | `/uploads` |
+| Policy | None — role permissions apply without restriction |
+| Home directory — S3 bucket | `multi-lab-transfer-<account-id>` + Restricted |
+| Optional folder | `uploads` |
 | SSH public key | paste output of `cat ~/.ssh/id_ed25519_transfer.pub` |
+
+> **Policy (session policy):** an optional inline policy that further
+> restricts the role's permissions for this specific user. Permissions
+> granted by the role but not present in the session policy are denied.
+> Leave empty to apply the full role permissions as-is. Use session
+> policies when multiple users share a single role but require isolated
+> access to per-user S3 prefixes — not needed for a single-user lab setup.
 
 > **Restricted home directory:** maps the logical user's root (`/`) to the
 > S3 prefix `/uploads` inside the bucket. The user cannot navigate above
@@ -422,8 +506,12 @@ aws transfer describe-user \
   --server-id <server-id> \
   --user-name sftpuser \
   --profile multi-lab-admin \
-  --query "User.{Role:Role,HomeDirectory:HomeDirectory,HomeDirectoryType:HomeDirectoryType}"
-# → HomeDirectoryType: "LOGICAL", Role: "arn:aws:iam::<account-id>:role/multi-lab-transfer-role"
+  --query "User.{Role:Role,HomeDirectoryType:HomeDirectoryType,Mappings:HomeDirectoryMappings}"
+# → {
+#     "Role": "arn:aws:iam::541801281490:role/multi-lab-transfer-role",
+#     "HomeDirectoryType": "LOGICAL",
+#     "Mappings": [{"Entry": "/", "Target": "/multi-lab-transfer-541801281490/uploads"}]
+#   }
 ```
 
 ---
@@ -463,14 +551,15 @@ sftp multi-lab-transfer
 # Verify prefix confinement — root must show only uploads/
 sftp> ls
 # → uploads/
+sftp> exit
 
-# End-to-end transfer test
+# End-to-end transfer test - Execute this in client machine
 echo "transfer-family-test" > /tmp/transfer_test.txt
 sftp multi-lab-transfer
-sftp> put /tmp/transfer_test.txt uploads/
-sftp> ls uploads/
+sftp> put /tmp/transfer_test.txt
+sftp> ls 
 # → transfer_test.txt
-sftp> rm uploads/transfer_test.txt
+sftp> rm transfer_test.txt
 sftp> bye
 
 # Confirm object in S3
@@ -486,8 +575,8 @@ rm /tmp/transfer_test.txt
 
 **Console**
 
-CloudWatch → Log groups → `/aws/transfer/multi-lab-transfer` → confirm log
-stream exists and contains session events from the SFTP connection above.
+CloudWatch → Log Management → Log groups → `/aws/transfer/multi-lab-transfer` → confirm log
+stream exists and contains session events from the SFTP connection above. (Select the local timezone for coherence with the time)
 
 **CLI**
 ```bash
@@ -528,6 +617,15 @@ Transfer Family → Servers → `<server-id>` → Actions → **Delete** → con
 > (hourly). S3, CloudWatch Logs, and IAM resources continue to exist — they
 > are not deleted by removing the server.
 
+**Release the Elastic IP (Console):**
+
+> Transfer Family disassociates the EIP automatically when the server is
+> deleted. An unassociated EIP accrues $0.005/hour from that moment —
+> release it immediately.
+
+EC2 → Elastic IPs → select the EIP allocated in Step 4 →
+Actions → **Release Elastic IP address** → confirm.
+
 **CLI — empty and delete S3 bucket (optional — removes storage cost):**
 
 ```bash
@@ -551,6 +649,12 @@ aws s3api delete-bucket \
   --bucket multi-lab-transfer-<account-id> \
   --region eu-west-1 \
   --profile multi-lab-admin
+
+# Confirm EIP released
+aws ec2 describe-addresses \
+  --profile multi-lab-admin \
+  --query "Addresses[?Domain=='vpc'].{IP:PublicIp,AssociationId:AssociationId}"
+# → [] (empty — EIP released) 
 ```
 
 > Within the S3 Free Tier (5 GB / 12 months), keeping the empty bucket
@@ -574,15 +678,19 @@ aws transfer list-servers \
   --query "Servers[*].ServerId"
 # → [] (empty — server deleted)
 
-# Confirm billing is no longer accumulating
+# Confirm billing stopped — adjust dates to current day
 aws ce get-cost-and-usage \
-  --time-period Start=$(date -u +%Y-%m-%d),End=$(date -u -d "+1 day" +%Y-%m-%d) \
+  --time-period Start=<YYYY-MM-DD>,End=<YYYY-MM-DD+1> \
   --granularity DAILY \
   --metrics BlendedCost \
   --filter '{"Dimensions":{"Key":"SERVICE","Values":["AWS Transfer Family"]}}' \
   --profile multi-lab-admin
-# → Amount should be $0.00 or reflect only the session just concluded
+# → Amount reflects only the session just concluded — no ongoing charges
 ```
+
+> Cost Explorer data has up to 24h latency — the current day's
+> charges may not appear immediately. Use the Billing Dashboard in the
+> console for a real-time estimate.
 
 ---
 
