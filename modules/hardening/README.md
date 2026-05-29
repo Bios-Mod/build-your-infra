@@ -10,9 +10,9 @@ of one does not compromise the system.
 
 ## Implementations
 
-| Environment | Approach | Status | Doc |
-|-------------|----------|--------|-----|
-| self-managed | UFW · SSH · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · AIDE · Lynis | Complete | [self-managed.md](self-managed/self-managed.md) |
-| aws-native | Security Groups · IMDSv2 · SSM · GuardDuty · CloudTrail | Complete | [aws-native.md](aws-native/aws-native.md) |
+| Environment | Approach | Doc |
+|-------------|----------|-----|
+| self-managed | UFW · SSH · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · AIDE · Lynis | [self-managed.md](self-managed/self-managed.md) |
+| aws-native | Security Groups · IMDSv2 · SSM · GuardDuty · CloudTrail | [aws-native.md](aws-native/aws-native.md) |
 
 Lynis hardening index: **88** (local VM) · **90** (EC2 self-managed)

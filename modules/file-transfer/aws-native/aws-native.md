@@ -693,5 +693,3 @@ aws ce get-cost-and-usage \
 > console for a real-time estimate.
 
 ---
-
-**Next:** [`modules/dns/aws-native/aws-native.md`](../../modules/dns/aws-native/aws-native.md)

@@ -585,5 +585,3 @@ aws securityhub describe-hub --profile multi-lab-admin
 ```
 
 ---
-
-**Next:** [`modules/file-transfer/aws-native/aws-native.md`](../../modules/file-transfer/aws-native/aws-native.md)

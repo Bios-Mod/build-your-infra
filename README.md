@@ -74,21 +74,21 @@ hardened base.
 
 ### Foundation
 
-| Module | Self-Managed Technology | AWS Native Technology | Status | Doc |
-|--------|-------------------------|-----------------------|--------|-----|
-| Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Security Groups · IMDSv2 · SSM · GuardDuty · CloudTrail | Complete (self-managed) | [`modules/hardening/`](modules/hardening/README.md) |
+| Module | Self-Managed Technology | AWS Native Technology | Doc |
+|--------|-------------------------|-----------------------|-----|
+| Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Security Groups · IMDSv2 · SSM · GuardDuty · CloudTrail | [`modules/hardening/`](modules/hardening/README.md) |
 
 12 steps covering 9 independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
 
 ### Services
 
-| Module | Self-Managed Technology | AWS Native Technology | Status | Doc |
-|--------|-------------------------|-----------------------|--------|-----|
-| File Transfer | SFTP (OpenSSH subsystem) | AWS Transfer Family | Complete | [`modules/file-transfer/`](modules/file-transfer/README.md) |
-| DNS | BIND9 | Route 53 Private Hosted Zones | Planned | [`modules/dns/`](modules/dns/README.md) |
+| Module | Self-Managed Technology | AWS Native Technology | Doc |
+|--------|-------------------------|-----------------------|-----|
+| File Transfer | SFTP (OpenSSH subsystem) | AWS Transfer Family | [`modules/file-transfer/`](modules/file-transfer/README.md) |
+| DNS | BIND9 | Route 53 Private Hosted Zones | [`modules/dns/`](modules/dns/README.md) |
 | DHCP | Kea DHCP | N/A — local only | Planned | [`modules/dhcp/`](modules/dhcp/README.md) |
-| Web Server | Nginx + HTTPS · reverse proxy | ALB · ACM · CloudFront | Planned | [`modules/web-server/`](modules/web-server/README.md) |
-| Directory | Samba 4 AD DC | AWS Directory Service (Managed Microsoft AD) | Planned | [`modules/directory/`](modules/directory/README.md) |
+| Web Server | Nginx + HTTPS · reverse proxy | ALB · ACM · CloudFront | [`modules/web-server/`](modules/web-server/README.md) |
+| Directory | Samba 4 AD DC | AWS Directory Service (Managed Microsoft AD) | [`modules/directory/`](modules/directory/README.md) |
 
 > **Directory dependency:** Samba 4 AD DC mode includes its own internal DNS
 > server that can replace or integrate with BIND9. Review the DNS module
