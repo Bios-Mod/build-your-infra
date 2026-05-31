@@ -1,0 +1,16 @@
+# Deploy to:   /etc/aide/aide.conf.d/99-hardening  (append to hardening baseline)
+# Apply:       sudo tee -a /etc/aide/aide.conf.d/99-hardening < ~/build-your-infra/modules/dns/self-managed/configs/aide/99-hardening
+# Module:      dns
+# Requires:    modules/hardening/self-managed/configs/aide/99-hardening applied first
+#
+# Extends AIDE scope to cover BIND9 config and zone files. Excludes /var/cache/bind
+# to avoid false positives from runtime journal and cache writes.
+# Parameters modified from baseline:  none — additive only
+#
+# Note:        Baseline must be regenerated after appending — current BIND9
+#              directory state becomes the new trusted snapshot.
+
+# ── DNS — BIND9 config and zone file integrity ────────────────────────────────
+/etc/bind        CONTENT_EX
+/etc/bind/zones  CONTENT_EX
+!/var/cache/bind

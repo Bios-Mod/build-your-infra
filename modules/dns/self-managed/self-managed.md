@@ -228,8 +228,8 @@ sudo ufw status verbose | grep 53
 # → 53/tcp ... ALLOW IN ... wg0
 
 # Query from a WireGuard peer must resolve
-dig @<WG_SERVER_IP> ns1.lab.internal A +short
-# → <SERVER_IP>
+dig @172.16.0.1 ns1.lab.internal A +short
+# → 172.16.0.1
 ```
 
 ---
@@ -243,11 +243,7 @@ and zone directories. Zone file tampering is a high-value attack vector —
 auditd provides an independent record of any modification.
 
 ```bash
-sudo tee -a /etc/audit/rules.d/99-hardening.rules > /dev/null << 'EOF'
-# DNS — Step 6: monitor BIND9 config and zone file changes
--w /etc/bind/ -p wa -k dns_config
--w /var/lib/bind/ -p wa -k dns_config
-EOF
+sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/dns/self-managed/configs/audit/99-hardening.rules
 
 sudo augenrules --load
 sudo systemctl restart auditd
@@ -290,12 +286,7 @@ scope. The cache directory is excluded to prevent expected runtime writes
 from generating false positives.
 
 ```bash
-sudo tee -a /etc/aide/aide.conf.d/99-hardening > /dev/null << 'EOF'
-# DNS — Step 7: BIND9 config and zone integrity
-/etc/bind      CONTENT_EX
-/etc/bind/zones  CONTENT_EX
-!/var/cache/bind
-EOF
+sudo tee -a /etc/aide/aide.conf.d/99-hardening < ~/build-your-infra/modules/dns/self-managed/configs/aide/99-hardening
 
 sudo aide --init --config /etc/aide/aide.conf
 sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
@@ -346,14 +337,12 @@ matches the host role.
 ```bash
 sudo mkdir -p /etc/systemd/resolved.conf.d/
 
-sudo tee /etc/systemd/resolved.conf.d/99-local-dns.conf > /dev/null << 'EOF'
-[Resolve]
-DNS=127.0.0.1
-Domains=lab.internal
-EOF
+sudo cp ~/build-your-infra/modules/dns/self-managed/configs/resolved/99-local-dns.conf /etc/systemd/resolved.conf.d/99-local-dns.conf
 
 sudo systemctl restart systemd-resolved
 ```
+
+📄 [`configs/resolved/99-local-dns.conf`](configs/resolved/99-local-dns.conf) — create at `/etc/systemd/resolved.conf.d/99-local-dns.conf`
 
 **WireGuard peers (local VM and additional clients):**
 

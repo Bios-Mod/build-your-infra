@@ -197,16 +197,13 @@ the only modification to a previously deployed configuration file in this
 module — the rest of the hardening baseline is unchanged.
 
 ```bash
-sudo cp ~/build-your-infra/modules/file-transfer/self-managed/configs/sshd_config /tmp/sshd_config_ft
-
-# Append the file-transfer block to the deployed hardening baseline
-sudo tee -a /etc/ssh/sshd_config < /tmp/sshd_config_ft
+sudo tee -a /etc/ssh/sshd_config < ~/build-your-infra/modules/file-transfer/self-managed/configs/ssh/sshd_config
 
 sudo sshd -t
 sudo systemctl reload ssh
 ```
 
-📄 [`configs/ssh/sshd_config`](configs/ssh/sshd_config) — append to `/etc/ssh/sshd_config`
+📄 [`configs/ssh/sshd_config`](modules/file-transfer/self-managed/configs/ssh/sshd_config) — append to `/etc/ssh/sshd_config`
 
 > **`AllowTcpForwarding no` and `X11Forwarding no`:** both are already set
 > globally by the hardening baseline. They are repeated inside the `Match User`
@@ -249,10 +246,7 @@ A dedicated audit rule monitors file operations under the SFTP chroot path.
 The rule is appended to the existing hardening ruleset and then loaded.
 
 ```bash
-sudo tee -a /etc/audit/rules.d/99-hardening.rules > /dev/null << 'EOF'
-# SFTP — Step 5: file operations inside the SFTP chroot
--w /srv/sftp/ -p rwa -k sftp_activity
-EOF
+sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/file-transfer/self-managed/configs/audit/99-hardening.rules
 
 sudo systemctl restart auditd
 sudo augenrules --load
@@ -262,7 +256,7 @@ sudo reboot now
 > **Immutable mode:** if auditd is running with `-e 2`, restart it before
 > reloading the ruleset — the reboot at the end of this step handles this.
 
-📄 [`configs/audit/99-hardening.rules`](configs/audit/99-hardening.rules) — append to `/etc/audit/rules.d/99-hardening.rules`
+📄 [`configs/audit/99-hardening.rules`](modules/file-transfer/self-managed/configs/audit/99-hardening.rules) — append to `/etc/audit/rules.d/99-hardening.rules`
 
 ### Why
 
@@ -295,12 +289,7 @@ The SFTP chroot root is added to the AIDE monitoring scope. The writable
 activity from generating constant false positives.
 
 ```bash
-sudo tee -a /etc/aide/aide.conf.d/99-hardening > /dev/null << 'EOF'
-# SFTP chroot root — monitor ownership and permission changes
-/srv/sftp/sftpuser    OwnerMode
-# Writable upload directory — excluded from integrity checks
-!/srv/sftp/sftpuser/uploads
-EOF
+sudo tee -a /etc/aide/aide.conf.d/99-hardening < ~/build-your-infra/modules/file-transfer/self-managed/configs/aide/99-hardening
 
 sudo aide --init --config /etc/aide/aide.conf
 sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
@@ -312,7 +301,7 @@ sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
 > **Baseline regeneration:** after extending the AIDE scope, regenerate the
 > database so the current SFTP structure becomes the new trusted baseline.
 
-📄 [`configs/aide/99-hardening`](configs/aide/99-hardening) — append to `/etc/aide/aide.conf.d/99-hardening`
+📄 [`configs/aide/99-hardening`](modules/file-transfer/self-managed/configs/aide/99-hardening) — append to `/etc/aide/aide.conf.d/99-hardening`
 
 ### Why
 

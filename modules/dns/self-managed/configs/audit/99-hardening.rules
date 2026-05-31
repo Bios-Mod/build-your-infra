@@ -1,0 +1,14 @@
+# Deploy to:   /etc/audit/rules.d/99-hardening.rules  (append to hardening baseline)
+# Apply:       sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/dns/self-managed/configs/audit/99-hardening.rules
+# Module:      dns
+# Requires:    modules/hardening/self-managed/configs/audit/99-hardening.rules applied first
+#
+# Appends BIND9 config and zone file write monitoring to the existing hardening audit ruleset.
+# Parameters modified from baseline:  none — additive only
+#
+# Note:        auditd emits a warning on load if /var/lib/bind does not exist yet.
+#              This is expected if BIND9 has never been started — warning clears after first run.
+
+# ── DNS — BIND9 config and zone file monitoring ───────────────────────────────
+-w /etc/bind/ -p wa -k dns_config
+-w /var/lib/bind/ -p wa -k dns_config

@@ -1,4 +1,4 @@
-// Deploy to:   /etc/bind/named.conf.local  (append)
+// Deploy to:   /etc/bind/named.conf.local  (replace)
 // Apply:       systemctl reload named
 // Module:      dns
 // Requires:    configs/bind/named.conf.options applied first
