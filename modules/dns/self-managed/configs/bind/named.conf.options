@@ -1,0 +1,46 @@
+// Deploy to:   /etc/bind/named.conf.options  (replaces file — not additive)
+// Apply:       systemctl reload named
+// Module:      dns
+// Requires:    hardening/self-managed complete
+//
+// Global BIND9 options — restricts listener, recursion, and queries to lab-net ACL.
+// Parameters modified from baseline:  full replacement of Ubuntu default options block
+//
+// Purpose:     Prevents open resolver abuse by scoping recursion to lab-net.
+//              Version disclosure disabled. DNSSEC validation enabled.
+// Platform:    Ubuntu 24.04 LTS — BIND9 9.18.x
+// Note:        Replace <WG_SERVER_IP> with the WireGuard interface IP before applying
+//              (e.g. 172.16.0.1). listen-on-v6 is disabled — lab is IPv4 only.
+// Verify:      named-checkconf && ss -ulnp | grep named
+
+acl "lab-net" {
+    127.0.0.0/8;
+    10.0.0.0/8;
+    172.16.0.0/12;
+};
+
+options {
+    directory "/var/cache/bind";
+
+    // Listen only on loopback and the primary lab interface
+    listen-on { 127.0.0.1; <SERVER_IP>; };
+    listen-on-v6 { none; };
+
+    // Restrict recursion and queries to lab network
+    allow-recursion { lab-net; };
+    allow-query     { lab-net; };
+    allow-transfer  { none; };
+
+    // External forwarders — fallback only
+    forwarders {
+        9.9.9.9;
+        149.112.112.112;
+    };
+    forward only;
+
+    // DNSSEC
+    dnssec-validation auto;
+
+    // Disable version disclosure
+    version "not available";
+};

@@ -1,0 +1,14 @@
+$TTL    604800
+@   IN  SOA ns1.lab.internal. admin.lab.internal. (
+                  2026053001 ; Serial
+                  604800     ; Refresh
+                  86400      ; Retry
+                  2419200    ; Expire
+                  604800 )   ; Negative cache TTL
+
+; Name servers
+@       IN  NS  ns1.lab.internal.
+
+; A records — WireGuard tunnel IPs
+ns1     IN  A   172.16.0.1   ; EC2 — DNS server and WireGuard hub
+vps     IN  A   172.16.0.1   ; EC2 — semantic alias for service access

@@ -1,0 +1,25 @@
+// Deploy to:   /etc/bind/named.conf.local  (append)
+// Apply:       systemctl reload named
+// Module:      dns
+// Requires:    configs/bind/named.conf.options applied first
+//
+// Forward and reverse zone declarations for lab.internal and 172.16.0.0/24.
+// Parameters modified from baseline:  none — additive block only
+//
+// Note:        Reverse zone name follows BIND9 convention — network address
+//              reversed for in-addr.arpa: 0.16.172.in-addr.arpa.
+//              Zone files must exist before reloading named.
+
+// lab.internal — forward zone
+zone "lab.internal" {
+    type master;
+    file "/etc/bind/zones/db.lab.internal";
+    allow-query { lab-net; };
+};
+
+// Reverse zone — 172.16.0.0/24 (WireGuard tunnel subnet)
+zone "0.16.172.in-addr.arpa" {
+    type master;
+    file "/etc/bind/zones/db.172.16.0";
+    allow-query { lab-net; };
+};
