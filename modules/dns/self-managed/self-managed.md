@@ -265,6 +265,8 @@ scanning the full audit log.
 ### Verification
 
 ```bash
+sudo reboot now
+
 sudo auditctl -l | grep dns_config
 # → -w /etc/bind/ -p wa -k dns_config
 # → -w /var/lib/bind/ -p wa -k dns_config
@@ -334,28 +336,45 @@ matches the host role.
 
 **EC2:**
 
+On EC2, `systemd-resolved` receives DNS from the VPC DHCP server at the
+interface level — a drop-in in `resolved.conf.d/` is overridden by the DHCP
+lease on `ens5`. The correct configuration point is Netplan.
+
+Deploy a Netplan overlay that adds BIND9 and preserves the VPC resolver as
+fallback — `50-cloud-init.yaml` is left untouched:
+
 ```bash
-sudo mkdir -p /etc/systemd/resolved.conf.d/
-
-sudo cp ~/build-your-infra/modules/dns/self-managed/configs/resolved/99-local-dns.conf /etc/systemd/resolved.conf.d/99-local-dns.conf
-
-sudo systemctl restart systemd-resolved
+sudo cp ~/build-your-infra/modules/dns/self-managed/configs/netplan/51-dns-lab.yaml /etc/netplan/51-dns-lab.yaml
+sudo chmod 600 /etc/netplan/51-dns-lab.yaml
+sudo netplan apply
 ```
 
-📄 [`configs/resolved/99-local-dns.conf`](configs/resolved/99-local-dns.conf) — create at `/etc/systemd/resolved.conf.d/99-local-dns.conf`
+📄 [`configs/netplan/51-dns-lab.yaml`](modules/dns/self-managed/configs/netplan/51-dns-lab.yaml) — create at `/etc/netplan/51-dns-lab.yaml`
 
 **WireGuard peers (local VM and additional clients):**
 
-Add `DNS = 172.16.0.1` to the `[Interface]` block of the WireGuard client
-config on each peer — `systemd-resolved` picks it up automatically when the
-tunnel comes up.
+Edit `DNS` in the `[Interface]` block of each peer's `/etc/wireguard/wg0.conf`,
+replacing the Quad9 value set at hardening time:
 
-```ini
-[Interface]
-Address = 172.16.0.x/32
-DNS = 172.16.0.1
-...
+```bash
+# Replace DNS values from previous states 
+sudo sed -i 's/^DNS\s*=.*/DNS = 172.16.0.1/' /etc/wireguard/wg0.conf
+
+sudo wg-quick down wg0 && sudo wg-quick up wg0
 ```
+
+The `Domains=lab.internal` scope is handled automatically by `systemd-resolved`
+on Linux peers via the tunnel's DNS — no additional config required.
+On macOS, `lab.internal` resolves as long as the tunnel is active and
+`DNS = 172.16.0.1` is set.
+
+> **macOS DNS fallback:** WireGuard on macOS does not fall back to the system
+> resolver if the configured DNS is unreachable. On Mac clients where the EC2
+> server may be offline, remove the `DNS =` line from `wg0.conf` — `lab.internal`
+> resolution is then only available when the tunnel is active and the server
+> is reachable, but internet access is never affected by server state.
+> Linux peers handle this correctly via interface-level DNS priority and fall
+> back to the physical interface resolver automatically.
 
 > **Tunnel dependency:** `lab.internal` resolution on client nodes requires
 > an active WireGuard tunnel. If the tunnel is down, only external DNS
@@ -375,9 +394,9 @@ without installing any additional software on client nodes.
 **EC2 — from the server (`multi-lab-vps`):**
 
 ```bash
-resolvectl status | grep -E "DNS Servers|DNS Domain"
-# → DNS Servers: 127.0.0.1
-# → DNS Domain:  lab.internal
+resolvectl status ens5 | grep -E "DNS Servers|DNS Domain"
+# → DNS Servers: 127.0.0.1 10.0.0.2
+# → DNS Domain:  lab.internal eu-west-1.compute.internal
 
 dig ns1.lab.internal +short
 # → 172.16.0.1
@@ -386,7 +405,7 @@ dig google.com +short
 # → <valid IP>
 ```
 
-**WireGuard peer — from the client (Mac or local VM, tunnel active):**
+**WireGuard peer — from the client (tunnel active):**
 
 ```bash
 resolvectl status | grep -E "DNS Servers|DNS Domain"

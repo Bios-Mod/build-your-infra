@@ -1,0 +1,19 @@
+# Deploy to:   /etc/netplan/51-dns-lab.yaml  (new file)
+# Apply:       sudo chmod 600 /etc/netplan/51-dns-lab.yaml && sudo netplan apply
+# Module:      dns
+# Requires:    none
+#
+# Netplan overlay: routes lab.internal queries to local BIND9.
+# Separate file from 50-cloud-init.yaml — not overwritten by cloud-init.
+# Parameters modified from baseline:  nameservers.addresses, nameservers.search
+#
+# Note:        10.0.0.2 is the VPC resolver — kept as fallback for external names.
+#              127.0.0.1 must be first — resolved uses priority order.
+
+network:
+  version: 2
+  ethernets:
+    ens5:
+      nameservers:
+        addresses: [127.0.0.1, 10.0.0.2]
+        search: [lab.internal]

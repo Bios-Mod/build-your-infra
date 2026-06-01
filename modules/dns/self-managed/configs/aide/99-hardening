@@ -11,6 +11,6 @@
 #              directory state becomes the new trusted snapshot.
 
 # ── DNS — BIND9 config and zone file integrity ────────────────────────────────
-/etc/bind        CONTENT_EX
-/etc/bind/zones  CONTENT_EX
+/etc/bind        CONTENTEX
+/etc/bind/zones  CONTENTEX
 !/var/cache/bind
