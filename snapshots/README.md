@@ -59,6 +59,7 @@ Delete intermediate snapshots once the subsequent step is confirmed stable.
 | 1 | `multi-lab-aws-base-install` | Fresh Ubuntu 24.04 ARM64 — first `apt upgrade` only | Retained |
 | 2 | `multi-lab-aws-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline confirmed (Lynis 90). Taken immediately before file-transfer deployment. Permanent base restore point. See [`modules/hardening/self-managed/self-managed.md`](../modules/hardening/self-managed/self-managed.md). | Retained |
 | 3 | `multi-lab-aws-sftp-deployed` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`modules/file-transfer/self-managed/self-managed.md`](../modules/file-transfer/self-managed/self-managed.md). | Retained |
+| 4 | `multi-lab-aws-dns-deployed` | DNS deployed and verified — hardened OS + SFTP + BIND9 authoritative resolver for `lab.internal`. Netplan overlay for VPC DNS coexistence. See [`modules/dns/self-managed/self-managed.md`](../modules/dns/self-managed/self-managed.md). | Retained |
 
 ---
 

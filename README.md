@@ -22,7 +22,7 @@
 [![SSM](https://img.shields.io/badge/SSM-Session%20Manager-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
 [![Transfer Family](https://img.shields.io/badge/Transfer%20Family-SFTP-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/file-transfer/aws-native/aws-native.md)
 [![Route 53](https://img.shields.io/badge/Route%2053-Private%20DNS-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/dns/aws-native/aws-native.md)
-[![ALB](https://img.shields.io/badge/ALB-Load%20Balancer-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/aws-native.md)
+[![S3](https://img.shields.io/badge/S3-Static%20Origin-FF9900?style=flat-square&logo=amazons3&logoColor=white)](modules/web-server/aws-native/aws-native.md)
 [![ACM](https://img.shields.io/badge/ACM-TLS%20Certificates-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/aws-native.md)
 [![CloudFront](https://img.shields.io/badge/CloudFront-CDN-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/aws-native.md)
 [![Directory Service](https://img.shields.io/badge/Directory%20Service-Managed%20AD-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/directory/aws-native/aws-native.md)
@@ -86,9 +86,9 @@ hardened base.
 |--------|-------------------------|-----------------------|-----|
 | File Transfer | SFTP (OpenSSH subsystem) | AWS Transfer Family | [`modules/file-transfer/`](modules/file-transfer/README.md) |
 | DNS | BIND9 | Route 53 Private Hosted Zones | [`modules/dns/`](modules/dns/README.md) |
-| DHCP | Kea DHCP | N/A — local only | Planned | [`modules/dhcp/`](modules/dhcp/README.md) |
-| Web Server | Nginx + HTTPS · reverse proxy | ALB · ACM · CloudFront | [`modules/web-server/`](modules/web-server/README.md) |
+| Web Server | Nginx + HTTPS · reverse proxy | S3 · CloudFront · ACM | [`modules/web-server/`](modules/web-server/README.md) |
 | Directory | Samba 4 AD DC | AWS Directory Service (Managed Microsoft AD) | [`modules/directory/`](modules/directory/README.md) |
+| DHCP | Kea DHCP | N/A — local only | Planned | [`modules/dhcp/`](modules/dhcp/README.md) |
 
 > **Directory dependency:** Samba 4 AD DC mode includes its own internal DNS
 > server that can replace or integrate with BIND9. Review the DNS module

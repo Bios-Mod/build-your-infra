@@ -1,0 +1,168 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>build-your-infra · lab</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: #0d1117;
+      color: #e6edf3;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .card {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 12px;
+      padding: 3rem 3.5rem;
+      max-width: 600px;
+      width: 100%;
+      text-align: center;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #1f6feb22;
+      border: 1px solid #1f6feb;
+      color: #58a6ff;
+      font-size: 0.75rem;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      color: #f0f6fc;
+      margin-bottom: 0.5rem;
+      letter-spacing: -0.02em;
+    }
+
+    h1 span { color: #58a6ff; }
+
+    .subtitle {
+      font-size: 0.95rem;
+      color: #8b949e;
+      margin-bottom: 2.5rem;
+      line-height: 1.6;
+    }
+
+    .stack {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 2.5rem;
+    }
+
+    .stack-item {
+      background: #0d1117;
+      border: 1px solid #30363d;
+      border-radius: 8px;
+      padding: 0.75rem 0.5rem;
+      font-size: 0.8rem;
+      color: #8b949e;
+    }
+
+    .stack-item strong {
+      display: block;
+      color: #e6edf3;
+      font-size: 0.85rem;
+      margin-bottom: 0.2rem;
+    }
+
+    .status {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      color: #3fb950;
+    }
+
+    .dot {
+      width: 8px;
+      height: 8px;
+      background: #3fb950;
+      border-radius: 50%;
+      animation: pulse 2s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+
+    footer {
+      margin-top: 2rem;
+      font-size: 0.75rem;
+      color: #484f58;
+    }
+
+    footer a {
+      color: #58a6ff;
+      text-decoration: none;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <div class="badge">Infrastructure Lab</div>
+    <h1>build-your-<span>infra</span></h1>
+    <p class="subtitle">
+      Functional infrastructure lab — self-managed and AWS native.<br />
+      Web server module · TLS termination · reverse proxy · CDN delivery.
+    </p>
+
+    <div class="stack">
+      <div class="stack-item">
+        <strong>CloudFront</strong>
+        CDN + edge TLS
+      </div>
+      <div class="stack-item">
+        <strong>ALB</strong>
+        Load balancer
+      </div>
+      <div class="stack-item">
+        <strong>ACM</strong>
+        TLS certificate
+      </div>
+      <div class="stack-item">
+        <strong>Nginx</strong>
+        Reverse proxy
+      </div>
+      <div class="stack-item">
+        <strong>Ubuntu 24.04</strong>
+        EC2 · ARM64
+      </div>
+      <div class="stack-item">
+        <strong>eu-west-1</strong>
+        Ireland
+      </div>
+    </div>
+
+    <div class="status">
+      <div class="dot"></div>
+      Stack operational
+    </div>
+  </div>
+
+  <footer>
+    <a href="https://github.com/Bios-Mod/build-your-infra" target="_blank">
+      github.com/Bios-Mod/build-your-infra
+    </a>
+  </footer>
+</body>
+</html>
