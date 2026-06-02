@@ -1,0 +1,14 @@
+# Deploy to:   /etc/aide/aide.conf.d/99-hardening  (append to hardening baseline)
+# Apply:       aide --init --config /etc/aide/aide.conf && mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+# Module:      web-server
+# Requires:    hardening/self-managed/configs/aide/99-hardening applied first
+#
+# Extends AIDE scope to cover the Nginx configuration directory and TLS certificate paths.
+# Parameters modified from baseline:  none — additive only
+#
+# Note:        Baseline must be regenerated after appending — the current Nginx
+#              and certificate state becomes the new trusted state.
+
+# ── NGINX — web-server ────────────────────────────────────────────────────────
+/etc/nginx           CONTENTEX
+/etc/nginx/ssl       CONTENTEX

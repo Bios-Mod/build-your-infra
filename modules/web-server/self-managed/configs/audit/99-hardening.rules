@@ -1,0 +1,11 @@
+# Deploy to:   /etc/audit/rules.d/99-hardening.rules  (append to hardening baseline)
+# Apply:       augenrules --load  (restart auditd first if running with -e 2)
+# Module:      web-server
+# Requires:    hardening/self-managed/configs/audit/99-hardening.rules applied first
+#
+# Appends Nginx config and TLS certificate path monitoring to the existing hardening audit ruleset.
+# Parameters modified from baseline:  none — additive only
+
+# ── NGINX — web-server ────────────────────────────────────────────────────────
+-w /etc/nginx/ -p wa -k nginx_config
+-w /etc/nginx/ssl/ -p wa -k nginx_config

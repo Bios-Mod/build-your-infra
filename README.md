@@ -100,111 +100,100 @@ hardened base.
 ## Repository Structure
 ```
 build-your-infra/
+├── AGENTS.md
+├── context
+│   ├── current-iteration.md
+│   └── decision-log.md
 ├── CONTRIBUTING.md
-├── LICENSE
-├── README.md
 ├── environments
-│   ├── README.md
-│   ├── aws-native
-│   │   └── aws-native-setup.md
-│   ├── local
-│   │   └── local-vm-setup.md
-│   └── vps
-│       └── vps-ec2-setup.md
+│   ├── aws-native
+│   │   └── aws-native-setup.md
+│   ├── local
+│   │   └── local-vm-setup.md
+│   ├── README.md
+│   └── vps
+│       └── vps-ec2-setup.md
+├── LICENSE
 ├── modules
-│   ├── dhcp
-│   │   ├── README.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       └── self-managed.md
-│   ├── directory
-│   │   ├── README.md
-│   │   ├── aws-native
-│   │   │   ├── automation
-│   │   │   └── aws-native.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       └── self-managed.md
-│   ├── dns
-│   │   ├── README.md
-│   │   ├── aws-native
-│   │   │   ├── automation
-│   │   │   └── aws-native.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       └── self-managed.md
-│   ├── file-transfer
-│   │   ├── README.md
-│   │   ├── aws-native
-│   │   │   ├── automation
-│   │   │   └── aws-native.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       │   └── sshd_config
-│   │       └── self-managed.md
-│   ├── hardening
-│   │   ├── README.md
-│   │   ├── aws-native
-│   │   │   ├── automation
-│   │   │   └── aws-native.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       │   ├── aide
-│   │       │   │   └── 99-hardening
-│   │       │   ├── audit
-│   │       │   │   └── 99-hardening.rules
-│   │       │   ├── fail2ban
-│   │       │   │   ├── fail2ban.d
-│   │       │   │   │   └── allowipv6.conf
-│   │       │   │   └── jail.local
-│   │       │   ├── limits
-│   │       │   │   └── limits.conf
-│   │       │   ├── logrotate
-│   │       │   │   └── hardening-logs
-│   │       │   ├── lynis
-│   │       │   │   └── custom.prf
-│   │       │   ├── modprobe
-│   │       │   │   └── disable-unused-protocols.conf
-│   │       │   ├── netplan
-│   │       │   │   ├── 00-installer-config.yaml
-│   │       │   │   └── no-dhcp.conf
-│   │       │   ├── pam
-│   │       │   │   ├── common-password
-│   │       │   │   └── common-session
-│   │       │   ├── rsyslog
-│   │       │   │   ├── 20-ufw.conf
-│   │       │   │   └── 99-hardening.conf
-│   │       │   ├── ssh
-│   │       │   │   ├── issue.net.template
-│   │       │   │   └── sshd_config
-│   │       │   ├── sysctl
-│   │       │   │   ├── 99-wireguard.conf
-│   │       │   │   └── 99-z-hardening.conf
-│   │       │   ├── ufw
-│   │       │   │   └── sysctl.conf
-│   │       │   ├── unattended-upgrades
-│   │       │   │   ├── 20auto-upgrades
-│   │       │   │   └── 50unattended-upgrades
-│   │       │   └── wireguard
-│   │       │       ├── client-template.conf
-│   │       │       └── wg0.conf
-│   │       └── self-managed.md
-│   └── web-server
-│       ├── README.md
-│       ├── aws-native
-│       │   ├── automation
-│       │   └── aws-native.md
-│       └── self-managed
-│           ├── automation
-│           ├── configs
-│           ├── nginx-https.md
-│           ├── nginx-reverse-proxy.md
-│           └── self-managed.md
+│   ├── dhcp
+│   │   ├── README.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       └── self-managed.md
+│   ├── directory
+│   │   ├── aws-native
+│   │   │   ├── automation
+│   │   │   └── aws-native.md
+│   │   ├── README.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       └── self-managed.md
+│   ├── dns
+│   │   ├── aws-native
+│   │   │   ├── automation
+│   │   │   └── aws-native.md
+│   │   ├── README.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       │   ├── aide
+│   │       │   ├── audit
+│   │       │   ├── bind
+│   │       │   └── netplan
+│   │       └── self-managed.md
+│   ├── file-transfer
+│   │   ├── aws-native
+│   │   │   ├── automation
+│   │   │   └── aws-native.md
+│   │   ├── README.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       │   ├── aide
+│   │       │   ├── audit
+│   │       │   └── ssh
+│   │       └── self-managed.md
+│   ├── hardening
+│   │   ├── aws-native
+│   │   │   ├── automation
+│   │   │   └── aws-native.md
+│   │   ├── README.md
+│   │   └── self-managed
+│   │       ├── automation
+│   │       ├── configs
+│   │       │   ├── aide
+│   │       │   ├── audit
+│   │       │   ├── fail2ban
+│   │       │   ├── limits
+│   │       │   ├── logrotate
+│   │       │   ├── lynis
+│   │       │   ├── modprobe
+│   │       │   ├── netplan
+│   │       │   ├── pam
+│   │       │   ├── rsyslog
+│   │       │   ├── ssh
+│   │       │   ├── sysctl
+│   │       │   ├── ufw
+│   │       │   ├── unattended-upgrades
+│   │       │   └── wireguard
+│   │       └── self-managed.md
+│   └── web-server
+│       ├── aws-native
+│       │   ├── automation
+│       │   └── aws-native.md
+│       ├── html
+│       │   └── index.html
+│       ├── README.md
+│       └── self-managed
+│           ├── automation
+│           ├── configs
+│           │   ├── aide
+│           │   ├── audit
+│           │   └── nginx
+│           └── self-managed.md
+├── README.md
 └── snapshots
     └── README.md
 ```
