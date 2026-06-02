@@ -12,6 +12,7 @@ Named to reflect the exact server state at capture time.
 | 1 | `ubuntu-base-install` | Fresh OS installation — no configuration applied | Retained |
 | 2 | `multi-lab-local-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline (Lynis 88). See [`modules/hardening/self-managed/self-managed.md`](../modules/hardening/self-managed/self-managed.md). Permanent base restore point for all service deployments. | Retained |
 | 3 | `multi-lab-local-sftp` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`modules/file-transfer/self-managed/self-managed.md`](../modules/file-transfer/self-managed/self-managed.md). | Retained |
+| 4 | `multi-lab-local-web-server` | Web server deployed and verified — hardened OS + SFTP + Nginx HTTPS + reverse proxy. Self-signed certificate (VM). See [`modules/web-server/self-managed/self-managed.md`](../modules/web-server/self-managed/self-managed.md). | Retained |
 
 ---
 
@@ -60,6 +61,7 @@ Delete intermediate snapshots once the subsequent step is confirmed stable.
 | 2 | `multi-lab-aws-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline confirmed (Lynis 90). Taken immediately before file-transfer deployment. Permanent base restore point. See [`modules/hardening/self-managed/self-managed.md`](../modules/hardening/self-managed/self-managed.md). | Retained |
 | 3 | `multi-lab-aws-sftp-deployed` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`modules/file-transfer/self-managed/self-managed.md`](../modules/file-transfer/self-managed/self-managed.md). | Retained |
 | 4 | `multi-lab-aws-dns-deployed` | DNS deployed and verified — hardened OS + SFTP + BIND9 authoritative resolver for `lab.internal`. Netplan overlay for VPC DNS coexistence. See [`modules/dns/self-managed/self-managed.md`](../modules/dns/self-managed/self-managed.md). | Retained |
+| 5 | `multi-lab-aws-web-server-deployed` | Web server deployed and verified — hardened OS + SFTP + BIND9 + Nginx HTTPS + reverse proxy. Let's Encrypt certificate via Certbot. See [`modules/web-server/self-managed/self-managed.md`](../modules/web-server/self-managed/self-managed.md). | Retained |
 
 ---
 
