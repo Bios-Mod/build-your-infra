@@ -129,6 +129,12 @@ build-your-infra/
 │   │   └── self-managed
 │   │       ├── automation
 │   │       ├── configs
+│   │       │   ├── aide
+│   │       │   ├── audit
+│   │       │   ├── bind
+│   │       │   ├── krb5
+│   │       │   ├── resolv.conf
+│   │       │   └── samba
 │   │       └── self-managed.md
 │   ├── dns
 │   │   ├── aws-native

@@ -1,0 +1,12 @@
+# Deploy to:   /etc/audit/rules.d/99-hardening.rules
+# Apply:       sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/directory/self-managed/configs/audit/99-hardening.rules
+# Module:      directory
+# Requires:    hardening (auditd deployed with immutable ruleset disabled)
+#
+# Appends directory service audit rules to the hardening ruleset.
+# Parameters modified from baseline:  adds samba_config, samba_db, samba_keytab watch rules
+
+# ── DIRECTORY — Samba 4 AD DC file integrity monitoring ──────────────────────────
+-w /etc/samba/ -p wa -k samba_config
+-w /var/lib/samba/private/ -p wa -k samba_db
+-w /var/lib/samba/bind-dns/dns.keytab -p rwa -k samba_keytab

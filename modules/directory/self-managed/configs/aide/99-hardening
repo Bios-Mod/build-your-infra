@@ -1,0 +1,12 @@
+# Deploy to:   /etc/aide/aide.conf.d/99-hardening
+# Apply:       sudo tee -a /etc/aide/aide.conf.d/99-hardening < ~/build-your-infra/modules/directory/self-managed/configs/aide/99-hardening
+# Module:      directory
+# Requires:    hardening (AIDE deployed with existing baseline)
+#
+# Extends the AIDE monitoring scope to include Samba AD DC paths.
+# Parameters modified from baseline:  adds /etc/samba and /var/lib/samba/private
+
+# ── DIRECTORY — Samba 4 AD DC integrity scope ─────────────────────────────────────
+/etc/samba/                CONTENTEX
+/var/lib/samba/private/    CONTENTEX
+/var/lib/samba/bind-dns/   CONTENTEX

@@ -62,6 +62,7 @@ Delete intermediate snapshots once the subsequent step is confirmed stable.
 | 3 | `multi-lab-aws-sftp-deployed` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`modules/file-transfer/self-managed/self-managed.md`](../modules/file-transfer/self-managed/self-managed.md). | Retained |
 | 4 | `multi-lab-aws-dns-deployed` | DNS deployed and verified — hardened OS + SFTP + BIND9 authoritative resolver for `lab.internal`. Netplan overlay for VPC DNS coexistence. See [`modules/dns/self-managed/self-managed.md`](../modules/dns/self-managed/self-managed.md). | Retained |
 | 5 | `multi-lab-aws-web-server-deployed` | Web server deployed and verified — hardened OS + SFTP + BIND9 + Nginx HTTPS + reverse proxy. Let's Encrypt certificate via Certbot. See [`modules/web-server/self-managed/self-managed.md`](../modules/web-server/self-managed/self-managed.md). | Retained |
+| 6 | `multi-lab-aws-active-directory` | Samba AD DC deployed — hardened OS + SFTP + BIND9 + Nginx + Samba 4.19 AD DC for `multilab.internal`. DNS via SAMBA_INTERNAL, Kerberos verified. SMB2 file serving blocked by known Samba 4.19.5 bug on aarch64 (privilege.ldb crash). See `modules/active-directory/self-managed/self-managed.md`. | Retained |
 
 ---
 
