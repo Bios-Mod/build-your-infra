@@ -1,0 +1,11 @@
+# Deploy to:   /etc/aide/aide.conf.d/99-hardening
+# Apply:       sudo tee -a /etc/aide/aide.conf.d/99-hardening < ~/build-your-infra/modules/dhcp/self-managed/configs/aide/99-hardening
+# Module:      dhcp
+# Requires:    modules/hardening/ — 99-hardening AIDE baseline must exist
+#
+# AIDE scope extension — Kea DHCP configuration directory
+# Parameters modified from baseline: adds /etc/kea watch, excludes lease db
+
+# ── DHCP — Kea configuration integrity ───────────────────────────────────────
+/etc/kea    CONTENTEX
+!/var/lib/kea/kea-leases4.csv

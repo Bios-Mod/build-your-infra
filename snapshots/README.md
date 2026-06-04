@@ -13,6 +13,7 @@ Named to reflect the exact server state at capture time.
 | 2 | `multi-lab-local-complete-hardening` | Full OS hardening completed — CIS Level 1 baseline (Lynis 88). See [`modules/hardening/self-managed/self-managed.md`](../modules/hardening/self-managed/self-managed.md). Permanent base restore point for all service deployments. | Retained |
 | 3 | `multi-lab-local-sftp` | SFTP deployed and verified — hardened OS + SFTP baseline. See [`modules/file-transfer/self-managed/self-managed.md`](../modules/file-transfer/self-managed/self-managed.md). | Retained |
 | 4 | `multi-lab-local-web-server` | Web server deployed and verified — hardened OS + SFTP + Nginx HTTPS + reverse proxy. Self-signed certificate (VM). See [`modules/web-server/self-managed/self-managed.md`](../modules/web-server/self-managed/self-managed.md). | Retained |
+| 5 | `multi-lab-local-dhcp` | Kea DHCP deployed and verified — hardened OS + SFTP + Nginx HTTPS + DHCP server for `192.168.1.0/24`. Dynamic pool `.100–.200`, MAC reservation, DNS option pointing to `172.16.0.1` (EC2 BIND9 over WireGuard). nmap broadcast-dhcp-discover confirmed correct option delivery. See [`modules/dhcp/self-managed/self-managed.md`](../modules/dhcp/self-managed/self-managed.md). | Retained |
 
 ---
 

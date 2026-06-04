@@ -1,0 +1,10 @@
+# Deploy to:   /etc/audit/rules.d/99-hardening.rules
+# Apply:       sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/dhcp/self-managed/configs/audit/99-hardening.rules
+# Module:      dhcp
+# Requires:    modules/hardening/ — 99-hardening.rules baseline must exist
+#
+# Audit rule — Kea lease database write monitoring
+# Parameters modified from baseline: appends dhcp_lease watch rule
+
+# ── DHCP — Kea lease database activity ───────────────────────────────────────
+-w /var/lib/kea/kea-leases4.csv -p wa -k dhcp_lease

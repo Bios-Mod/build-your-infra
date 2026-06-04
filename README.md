@@ -35,13 +35,13 @@ Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Manage
 
 ## Environments
 
-| Component     | Local (VM)                                        | VPS / EC2                                       | AWS Native                          |
-|---------------|---------------------------------------------------|-------------------------------------------------|-------------------------------------|
-| OS            | Ubuntu Server 24.04 LTS                           | Ubuntu Server 24.04 LTS                         | Managed (per service)               |
-| Architecture  | ARM64 (Apple Silicon) / x86_64                    | ARM64 (Graviton2)                               | —                                   |
-| Deployment    | VMware Fusion / VirtualBox · Bridged network      | EC2 t4g.micro · eu-west-1                       | AWS managed services · eu-west-1    |
-| Network       | Static IP · LAN                                   | Elastic IP · VPC                                | VPC · private subnets               |
-| Remote Access | SSH Ed25519 · port 22222 · WireGuard VPN          | SSH Ed25519 · port 22222 · WireGuard VPN        | SSM Session Manager / service APIs  |
+| Component | Local (VM) | VPS / EC2 | AWS Native |
+|---|---|---|---|
+| OS | Ubuntu Server 24.04 LTS | Ubuntu Server 24.04 LTS | Managed (per service) |
+| Architecture | ARM64 (Apple Silicon) / x86_64 | ARM64(Graviton2) | — |
+| Deployment | VMware Fusion / VirtualBox · Bridged network | EC2 t4g.micro · eu-west-1 | AWS managed services · eu-west-1 |
+| Network | Static IP · LAN | Elastic IP · VPC | VPC · private subnets |
+| Remote Access | SSH Ed25519 · port 22222 · WireGuard VPN | SSH Ed25519 · port 22222 · WireGuard VPN | SSM Session Manager / service APIs |
 
 `local` and `vps` follow the same self-managed hardening baseline. `aws-native`
 replaces each service with its AWS managed equivalent — no OS to manage.
@@ -88,7 +88,7 @@ hardened base.
 | DNS | BIND9 | Route 53 Private Hosted Zones | [`modules/dns/`](modules/dns/README.md) |
 | Web Server | Nginx + HTTPS · reverse proxy | S3 · CloudFront · ACM | [`modules/web-server/`](modules/web-server/README.md) |
 | Directory | Samba 4 AD DC | AWS Directory Service (Managed Microsoft AD) | [`modules/directory/`](modules/directory/README.md) |
-| DHCP | Kea DHCP | N/A — local only | Planned | [`modules/dhcp/`](modules/dhcp/README.md) |
+| DHCP | Kea DHCP | N/A — local only | [`modules/dhcp/`](modules/dhcp/README.md) |
 
 > **Directory dependency:** Samba 4 AD DC mode includes its own internal DNS
 > server that can replace or integrate with BIND9. Review the DNS module
