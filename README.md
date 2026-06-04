@@ -120,6 +120,9 @@ build-your-infra/
 │   │   └── self-managed
 │   │       ├── automation
 │   │       ├── configs
+│   │       │   ├── aide
+│   │       │   ├── audit
+│   │       │   └── kea
 │   │       └── self-managed.md
 │   ├── directory
 │   │   ├── aws-native
