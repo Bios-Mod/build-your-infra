@@ -95,6 +95,8 @@ hardened base.
 > before provisioning the directory — zone delegation or full BIND9
 > replacement may be required.
 
+**Automation soon**
+
 ---
 
 ## Repository Structure

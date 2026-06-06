@@ -1,0 +1,3 @@
+# Exclude from GitHub language detection
+*.html linguist-documentation=true
+# *.md linguist-documentation=true
