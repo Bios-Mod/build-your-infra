@@ -1,3 +1,5 @@
+![build-your-infra banner](./banner.png)
+
 # build-your-infra — Multi-Environment Infrastructure Lab
 
 [![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/self-managed.md)
