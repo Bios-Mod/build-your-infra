@@ -80,7 +80,7 @@ hardened base.
 |--------|-------------------------|-----------------------|-----|
 | Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Security Groups · IMDSv2 · SSM · GuardDuty · CloudTrail | [`modules/hardening/`](modules/hardening/README.md) |
 
-12 steps covering 9 independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
+12 steps covering independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
 
 ### Services
 
