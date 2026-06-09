@@ -97,7 +97,12 @@ hardened base.
 > before provisioning the directory — zone delegation or full BIND9
 > replacement may be required.
 
-**Automation soon**
+> **Automation phase — planned next:** Each module already includes an
+> `automation/` directory reserved for this. The upcoming phase will cover
+> Ansible playbooks for self-managed deployments and Terraform / AWS CLI
+> scripts for AWS Native provisioning. The goal is to reproduce any
+> environment from scratch without manual steps — same decisions, same
+> hardening baseline, codified.
 
 ---
 
