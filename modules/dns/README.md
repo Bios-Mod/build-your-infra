@@ -19,3 +19,5 @@ Internal name resolution for lab services and clients, with controlled recursion
 > **Directory dependency:** Samba 4 AD DC includes its own internal DNS server that can > replace or integrate with BIND9. Review this module and its zone structure before 
 > provisioning the directory module — zone delegation or full BIND9 replacement may be 
 > required.
+
+**Docker equivalent:** BIND9 containerized — [`containerize-your-infra/modules/dns`](https://github.com/Bios-Mod/containerize-your-infra/tree/main/modules/dns)

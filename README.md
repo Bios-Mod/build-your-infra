@@ -33,6 +33,10 @@ A practical, step-by-step reference for deploying and hardening infrastructure a
 
 Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Management Console (where the GUI provides the clearest workflow) and the CLI. No automation frameworks at this stage — automation of deployed modules is planned as a follow-up phase.
 
+The same services are also deployed as Docker containers in [containerize-your-infra](https://github.com/Bios-Mod/containerize-your-infra) — a parallel lab covering the same stack with a different primitive.
+
+---
+
 ---
 
 ## Environments
