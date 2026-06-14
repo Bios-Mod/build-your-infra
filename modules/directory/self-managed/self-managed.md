@@ -8,7 +8,7 @@
 
 This document covers the deployment of Samba 4 as an Active Directory Domain
 Controller on top of the hardened OS baseline established in
-`modules/hardening/self-managed/self-managed.md`.
+[`modules/hardening/self-managed/self-managed.md`](../../hardening/self-managed/self-managed.md).
 
 The directory service introduces domain authentication, LDAP, Kerberos, and
 integrated DNS into the lab. Samba 4 in DC mode replaces standalone file-level
@@ -18,14 +18,14 @@ Windows Server AD, implemented entirely on Linux.
 > **Prerequisite — DNS:** the `dns` module must be fully deployed and validated
 > before provisioning Samba 4. Samba AD DS requires a functioning DNS
 > infrastructure to register SRV records, resolve DC names, and support
-> Kerberos ticket exchange. Review `modules/dns/self-managed/self-managed.md`
+> Kerberos ticket exchange. Review [`modules/dns/self-managed/self-managed.md`](../../dns/self-managed/self-managed.md)
 > before proceeding.
 >
-> **Prerequisite — Hardening:** the `hardening` module must be fully deployed.
+> **Prerequisite — Hardening:** the [`hardening`](../../hardening/self-managed/self-managed.md) module must be fully deployed.
 > The firewall rules, AppArmor enforcement, auditd, and AIDE baseline extended
 > here all depend on the hardening configuration.
 
-> **Additive configs:** the configuration files in `configs/` publish only the
+> **Additive configs:** the configuration files in [`configs/`](../self-managed/configs/) publish only the
 > block or full file added by this module. Each config references the repo path
 > directly — never inlined. Apply patterns are either `sudo cp` (full-file
 > replace) or `sudo tee -a` (block append), as specified per step.
@@ -79,7 +79,7 @@ sudo cp ~/build-your-infra/modules/directory/self-managed/configs/resolv.conf /e
 sudo chattr +i /etc/resolv.conf
 ```
 
-📄 `configs/resolv.conf` — replace `/etc/resolv.conf`
+📄 [`configs/resolv.conf`](configs/resolv.conf) — replace `/etc/resolv.conf`
 
 ### Why
 
@@ -190,7 +190,7 @@ After provisioning, `samba-tool` generates:
 - `/var/lib/samba/bind-dns/` — the BIND9 DLZ zone data files
 - `/var/lib/samba/private/` — Kerberos keytab, AD database (LDB), TLS certs
 
-📄 `configs/samba/smb.conf` — review only; `samba-tool` generates this file automatically. The config in `configs/` is the post-provision reference copy.
+📄 [`configs/samba/smb.conf`](configs/samba/smb.conf) — review only; `samba-tool` generates this file automatically. The config in `configs/` is the post-provision reference copy.
 
 ### Why
 
@@ -255,7 +255,7 @@ EOF
 sudo chattr +i /etc/resolv.conf
 ```
 
-📄 `configs/resolv.conf` — replace `/etc/resolv.conf`
+📄 [`configs/resolv.conf`](configs/resolv.conf) — replace `/etc/resolv.conf`
 
 ### Why
 
@@ -290,7 +290,7 @@ to `/var/lib/samba/private/krb5.conf` — this is copied to the system location.
 sudo cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
 ```
 
-📄 `configs/krb5/krb5.conf` — replace `/etc/krb5.conf` (reference copy; the authoritative source is `/var/lib/samba/private/krb5.conf`)
+📄 [`configs/krb5/krb5.conf`](configs/krb5/krb5.conf) — replace `/etc/krb5.conf` (reference copy; the authoritative source is `/var/lib/samba/private/krb5.conf`)
 
 ### Why
 
@@ -497,7 +497,7 @@ sudo reboot now
 > **Immutable mode:** if auditd is running with `-e 2`, restart it before
 > reloading the ruleset — the reboot at the end of this step handles this.
 
-📄 `configs/audit/99-hardening.rules` — append to `/etc/audit/rules.d/99-hardening.rules`
+📄 [`configs/audit/99-hardening.rules`](configs/audit/99-hardening.rules) — append to `/etc/audit/rules.d/99-hardening.rules`
 
 ### Why
 
@@ -544,7 +544,7 @@ sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
 > database so the current Samba state becomes the new trusted baseline. Running
 > `aide --check` before regeneration will report differences — this is expected.
 
-📄 `configs/aide/99-hardening` — append to `/etc/aide/aide.conf.d/99-hardening`
+📄 [`configs/aide/99-hardening`](configs/aide/99-hardening) — append to `/etc/aide/aide.conf.d/99-hardening`
 
 ### Why
 

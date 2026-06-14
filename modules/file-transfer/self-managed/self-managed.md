@@ -203,7 +203,7 @@ sudo sshd -t
 sudo systemctl reload ssh
 ```
 
-📄 [`configs/ssh/sshd_config`](modules/file-transfer/self-managed/configs/ssh/sshd_config) — append to `/etc/ssh/sshd_config`
+📄 [`configs/ssh/sshd_config`](configs/ssh/sshd_config) — append to `/etc/ssh/sshd_config`
 
 > **`AllowTcpForwarding no` and `X11Forwarding no`:** both are already set
 > globally by the hardening baseline. They are repeated inside the `Match User`
@@ -256,7 +256,7 @@ sudo reboot now
 > **Immutable mode:** if auditd is running with `-e 2`, restart it before
 > reloading the ruleset — the reboot at the end of this step handles this.
 
-📄 [`configs/audit/99-hardening.rules`](modules/file-transfer/self-managed/configs/audit/99-hardening.rules) — append to `/etc/audit/rules.d/99-hardening.rules`
+📄 [`configs/audit/99-hardening.rules`](configs/audit/99-hardening.rules) — append to `/etc/audit/rules.d/99-hardening.rules`
 
 ### Why
 
@@ -301,7 +301,7 @@ sudo mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
 > **Baseline regeneration:** after extending the AIDE scope, regenerate the
 > database so the current SFTP structure becomes the new trusted baseline.
 
-📄 [`configs/aide/99-hardening`](modules/file-transfer/self-managed/configs/aide/99-hardening) — append to `/etc/aide/aide.conf.d/99-hardening`
+📄 [`configs/aide/99-hardening`](configs/aide/99-hardening) — append to `/etc/aide/aide.conf.d/99-hardening`
 
 ### Why
 

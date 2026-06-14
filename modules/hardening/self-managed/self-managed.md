@@ -221,8 +221,8 @@ sudo cp modules/hardening/self-managed/configs/unattended-upgrades/20auto-upgrad
 sudo systemctl restart unattended-upgrades
 ```
 
-📄 [`configs/unattended-upgrades/50unattended-upgrades`](modules/hardening/self-managed/configs/unattended-upgrades/50unattended-upgrades)
-📄 [`configs/unattended-upgrades/20auto-upgrades`](modules/hardening/self-managed/configs/unattended-upgrades/20auto-upgrades)
+📄 [`configs/unattended-upgrades/50unattended-upgrades`](configs/unattended-upgrades/50unattended-upgrades)
+📄 [`configs/unattended-upgrades/20auto-upgrades`](configs/unattended-upgrades/20auto-upgrades)
 
 #### Package integrity & audit tools
 Two complementary tools covering package hygiene:
@@ -299,7 +299,7 @@ sudo cp modules/hardening/self-managed/configs/netplan/00-installer-config.yaml 
 sudo netplan apply
 ```
 
-📄 [`configs/netplan/00-installer-config.yaml`](modules/hardening/self-managed/configs/netplan/00-installer-config.yaml)
+📄 [`configs/netplan/00-installer-config.yaml`](configs/netplan/00-installer-config.yaml)
 
 
 > **Deployment notes:**
@@ -333,7 +333,7 @@ sudo systemctl daemon-reload
 sudo systemctl restart systemd-networkd
 ```
 
-📄 [`configs/netplan/no-dhcp.conf`](modules/hardening/self-managed/configs/netplan/no-dhcp.conf)
+📄 [`configs/netplan/no-dhcp.conf`](configs/netplan/no-dhcp.conf)
 
 ### Why
 A static IP is a prerequisite for every service that follows — DNS, DHCP,
@@ -408,8 +408,8 @@ sudo systemctl is-enabled ssh
 > sudo cp /etc/issue.net /etc/issue
 > ```
 
-📄 [`configs/ssh/sshd_config`](modules/hardening/self-managed/configs/ssh/sshd_config)
-📄 [`configs/ssh/issue.net.template`](modules/hardening/self-managed/configs/ssh/issue.net.template)
+📄 [`configs/ssh/sshd_config`](configs/ssh/sshd_config)
+📄 [`configs/ssh/issue.net.template`](configs/ssh/issue.net.template)
 
 Key decisions — each directive is documented inline in the config:
 
@@ -579,7 +579,7 @@ UFW applies `/etc/ufw/sysctl.conf` on every reload, **after** all
 was corrected from `0` to `1` in that file to stay consistent with the
 hardening baseline set in Step 7.
 
-📄 [`configs/ufw/sysctl.conf`](modules/hardening/self-managed/configs/ufw/sysctl.conf)
+📄 [`configs/ufw/sysctl.conf`](configs/ufw/sysctl.conf)
 
 ### Why
 All inbound traffic is blocked by default — ports are opened only when a
@@ -655,7 +655,7 @@ sudo chmod 600 /etc/wireguard/server_private.key
 wg genkey | tee mac_private.key | wg pubkey > mac_public.key
 ```
 
-📄 [`configs/wireguard/wg0.conf`](modules/hardening/self-managed/configs/wireguard/wg0.conf)
+📄 [`configs/wireguard/wg0.conf`](configs/wireguard/wg0.conf)
 
 ```bash
 sudo cp modules/hardening/self-managed/configs/wireguard/wg0.conf /etc/wireguard/wg0.conf
@@ -698,7 +698,7 @@ sudo sysctl --system | grep ip_forward
 # → net.ipv4.ip_forward = 1
 ```
 
-📄 [`configs/sysctl/99-wireguard.conf`](modules/hardening/self-managed/configs/sysctl/99-wireguard.conf)
+📄 [`configs/sysctl/99-wireguard.conf`](configs/sysctl/99-wireguard.conf)
 
 #### Client setup
 
@@ -715,7 +715,7 @@ the VPN subnet:
 | `[Peer] AllowedIPs` | Split tunnel — VPN subnet only | `172.16.0.0/24` |
 | `[Peer] PersistentKeepalive` | Pre-filled — required behind NAT | `25` |
 
-📄 [`configs/wireguard/client-template.conf`](modules/hardening/self-managed/configs/wireguard/client-template.conf)
+📄 [`configs/wireguard/client-template.conf`](configs/wireguard/client-template.conf)
 
 ##### macOS
 ```bash
@@ -865,8 +865,8 @@ sudo cp modules/hardening/self-managed/configs/fail2ban/fail2ban.d/allowipv6.con
 sudo systemctl restart fail2ban
 ```
 
-📄 [`configs/fail2ban/jail.local`](modules/hardening/self-managed/configs/fail2ban/jail.local)
-📄 [`configs/fail2ban/fail2ban.d/allowipv6.conf`](modules/hardening/self-managed/configs/fail2ban/fail2ban.d/allowipv6.conf)
+📄 [`configs/fail2ban/jail.local`](configs/fail2ban/jail.local)
+📄 [`configs/fail2ban/fail2ban.d/allowipv6.conf`](configs/fail2ban/fail2ban.d/allowipv6.conf)
 
 ### Why
 Fail2Ban operates at the application layer, complementing UFW at the network
@@ -927,7 +927,7 @@ sudo sysctl --system
 > system-provided `99-*` file.
 
 📄 Full config with inline comments →
-[`configs/sysctl/99-z-hardening.conf`](modules/hardening/self-managed/configs/sysctl/99-z-hardening.conf)
+[`configs/sysctl/99-z-hardening.conf`](configs/sysctl/99-z-hardening.conf)
 
 ### Why
 The kernel exposes information and capabilities by default that facilitate
@@ -1240,8 +1240,8 @@ condition attacks against the global `/tmp`.
 > invocations (triggered by package installs) may overwrite these files.
 > Re-apply the configs after any PAM package upgrade.
 
-📄 [`configs/pam/common-password`](modules/hardening/self-managed/configs/pam/common-password)
-📄 [`configs/pam/common-session`](modules/hardening/self-managed/configs/pam/common-session)
+📄 [`configs/pam/common-password`](configs/pam/common-password)
+📄 [`configs/pam/common-session`](configs/pam/common-session)
 
 **Core dumps** — disabled at two independent layers:
 
@@ -1257,7 +1257,7 @@ sudo cp modules/hardening/self-managed/configs/limits/limits.conf /etc/security/
 > `limits.conf` applies to new login sessions only — verify in a freshly
 > opened SSH session.
 
-📄 [`configs/limits/limits.conf`](modules/hardening/self-managed/configs/limits/limits.conf)
+📄 [`configs/limits/limits.conf`](configs/limits/limits.conf)
 
 #### Why
 Restrictive permissions limit lateral movement if a process is compromised —
@@ -1330,7 +1330,7 @@ sudo cp modules/hardening/self-managed/configs/modprobe/disable-unused-protocols
 sudo update-initramfs -u
 ```
 
-📄 [`configs/modprobe/disable-unused-protocols.conf`](modules/hardening/self-managed/configs/modprobe/disable-unused-protocols.conf)
+📄 [`configs/modprobe/disable-unused-protocols.conf`](configs/modprobe/disable-unused-protocols.conf)
 
 #### Why
 Unused protocol stacks are a direct kernel-level attack surface. Blacklisting
@@ -1483,7 +1483,7 @@ sudo augenrules --load
 > renameat2 only — unlink and rename do not exist in the aarch64 ABI
 > and must not appear in the rules or auditd silently stops parsing.
 
-📄 [`configs/audit/99-hardening.rules`](modules/hardening/self-managed/configs/audit/99-hardening.rules)
+📄 [`configs/audit/99-hardening.rules`](configs/audit/99-hardening.rules)
 
 **AIDE**
 
@@ -1512,7 +1512,7 @@ Enable daily automated check:
 sudo sed -i 's/^#\?CRON_DAILY_RUN=.*/CRON_DAILY_RUN=yes/' /etc/default/aide
 ```
 
-📄 [`configs/aide/99-hardening`](modules/hardening/self-managed/configs/aide/99-hardening)
+📄 [`configs/aide/99-hardening`](configs/aide/99-hardening)
 
 ### Why
 auditd catches what an attacker does in real time — privilege escalation,
@@ -1623,9 +1623,9 @@ sudo systemctl restart rsyslog
 ```
 
 📄 Configs:
-- [`configs/rsyslog/20-ufw.conf`](modules/hardening/self-managed/configs/rsyslog/20-ufw.conf)
-- [`configs/rsyslog/99-hardening.conf`](modules/hardening/self-managed/configs/rsyslog/99-hardening.conf)
-- [`configs/logrotate/hardening-logs`](modules/hardening/self-managed/configs/logrotate/hardening-logs)
+- [`configs/rsyslog/20-ufw.conf`](configs/rsyslog/20-ufw.conf)
+- [`configs/rsyslog/99-hardening.conf`](configs/rsyslog/99-hardening.conf)
+- [`configs/logrotate/hardening-logs`](configs/logrotate/hardening-logs)
 
 ### Why
 auditd and rsyslog are complementary — auditd records syscall-level events
@@ -1715,7 +1715,7 @@ sudo cp modules/hardening/self-managed/configs/lynis/custom.prf /etc/lynis/custo
 sudo lynis audit system --profile /etc/lynis/custom.prf
 ```
 
-📄 Custom profile → [`configs/lynis/custom.prf`](modules/hardening/self-managed/configs/lynis/custom.prf)
+📄 Custom profile → [`configs/lynis/custom.prf`](configs/lynis/custom.prf)
 
 ### Why
 Running Lynis post-hardening serves two purposes: it validates that all
@@ -1774,9 +1774,4 @@ Once hardening was complete, a `complete-hardening` snapshot was taken as
 the base restore point for all subsequent configurations — every service
 deployed on this lab builds on top of this secure baseline.
 
-> **VM-specific:** applies to VMware Fusion / VirtualBox deployments.
-> On VPS, use your provider's snapshot/backup mechanism
-> before proceeding to service deployment.
-
 ---
-
