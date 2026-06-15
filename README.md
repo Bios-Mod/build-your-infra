@@ -33,7 +33,16 @@ A practical, step-by-step reference for deploying and hardening infrastructure a
 
 Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Management Console (where the GUI provides the clearest workflow) and the CLI. No automation frameworks at this stage — automation of deployed modules is planned as a follow-up phase.
 
-The same services are also deployed as Docker containers in [containerize-your-infra](https://github.com/Bios-Mod/containerize-your-infra) — a parallel lab covering the same stack with a different primitive.
+The same services are also deployed as Docker containers in
+[containerize-your-infra](https://github.com/Bios-Mod/containerize-your-infra)
+— a parallel lab covering the same stack at a different level of abstraction.
+That repo documents the containerized equivalent of each module here:
+Nginx, BIND9, SFTP, and reverse proxy via Traefik v3, deployed with Docker
+Engine and Compose v2 across dev (OrbStack on macOS) and prod
+(Ubuntu 24.04 LTS · EC2 t4g.micro) environments.
+
+The automation phase of both repos is coordinated: Terraform for AWS
+infrastructure provisioning — planned as the next step in both repositories.
 
 ---
 
