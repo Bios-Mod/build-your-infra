@@ -14,6 +14,9 @@ context/
 *.tfstate
 *.tfstate.*
 terraform.tfvars
+import.tf
+main.tf
+output.tf
 *.tfvars.json
 
 # Terraform — lock file for local execution state

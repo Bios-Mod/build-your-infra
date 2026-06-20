@@ -98,11 +98,18 @@ sudo systemctl reload named
 
 ### Why
 
-Locking the listen address prevents BIND9 from accepting queries on the
-public interface. The `lab-net` ACL ensures that external hosts (including
-the public EC2 IP) cannot use this server as a resolver — this is the primary
-protection against open resolver abuse, which would allow DNS amplification
-attacks.
+The `lab-net` ACL restricts recursion and queries to trusted lab addresses —
+loopback, the WireGuard subnet, and the VPC CIDR. This is the primary
+protection against open resolver abuse and DNS amplification attacks.
+
+Listening on `any` rather than a fixed IP makes the configuration portable
+across AMI redeployments — the primary interface IP changes every time a new
+EC2 instance is launched from a snapshot. Binding to a hardcoded IP would
+require manual intervention after every redeploy. Security is not weakened
+by this: `listen-on` controls which interfaces BIND9 binds to, but
+`allow-query` and `allow-recursion` in the `lab-net` ACL enforce who can
+actually use the resolver, regardless of which interface received the query.
+External hosts reaching port 53 will receive `REFUSED`.
 
 ### Verification
 
@@ -417,6 +424,68 @@ dig vps.lab.internal +short
 
 dig google.com +short
 # → <valid IP>
+```
+
+---
+
+## Step 8 — Pre-AMI cleanup (EC2 only)
+
+### What was done
+
+Before taking the AMI snapshot, sanitize `/etc/resolv.conf` to remove any
+VPC-assigned nameserver IPs written during the current instance lifecycle.
+These IPs are subnet-specific — freezing them into the AMI causes DNS
+timeouts when the image is launched into a new instance with a different
+internal IP.
+
+Unlock, sanitize, and re-lock:
+
+```bash
+sudo chattr -i /etc/resolv.conf
+sudo sed -i '/nameserver 10\./d' /etc/resolv.conf
+sudo chattr +i /etc/resolv.conf
+```
+
+The AMI is created with `/etc/resolv.conf` unlocked intentionally — locking
+it before the snapshot would freeze an empty or partial state. The lock must
+be re-applied after the first boot of any instance launched from this image.
+
+**Re-apply the lock after first SSH into a new instance:**
+
+```bash
+sudo chattr +i /etc/resolv.conf
+```
+
+> **Terraform automation:** when deploying this AMI via the self-managed
+> Terraform stack, this command can be added to `user_data` to apply
+> automatically on first boot — eliminating the manual step entirely.
+
+### Why
+
+`/etc/resolv.conf` is locked with `chattr +i` as part of the hardening
+baseline — it is required for the Lynis score. Creating an AMI from a
+running instance bakes the current file state into the image, including
+the VPC DHCP-assigned nameserver. On the next launch, `systemd-resolved`
+and Netplan apply their configuration on top — but the stale IP must not
+be present in the file before that process runs. Removing it pre-snapshot
+ensures every instance launched from this AMI starts with a clean resolver
+state. The `chattr +i` lock is re-applied immediately after first boot to
+restore the full hardening baseline.
+
+### Verification
+
+```bash
+# Confirm stale VPC nameservers are gone
+cat /etc/resolv.conf
+# → no nameserver 10.x.x.x lines
+
+# Confirm file is unlocked before taking the AMI
+sudo lsattr /etc/resolv.conf
+# → ------------------- /etc/resolv.conf
+
+# After first boot of a new instance — confirm lock is restored
+sudo lsattr /etc/resolv.conf
+# → ----i-------------- /etc/resolv.conf
 ```
 
 ---

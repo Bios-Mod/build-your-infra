@@ -1,0 +1,74 @@
+# Deploy to:   stacks/full-infra/self-managed/terraform/
+# Apply:       cp import.tf.example import.tf — replace all placeholders with real IDs
+# Module:      stacks/full-infra/self-managed
+# Requires:    AWS resource IDs collected from Step 1 of self-managed-automation.md
+#
+# Provider block + import blocks for Phase 1 import cycle.
+# main.tf does not exist at this phase — this file is the sole entry point.
+# Delete after terraform apply completes and main.tf is activated.
+# Parameters modified from baseline: none
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+  required_version = ">= 1.15.6"
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+import {
+  to = aws_vpc.main
+  id = "vpc-xxxxxxxxxxxxxxxxx"
+}
+
+import {
+  to = aws_subnet.public
+  id = "subnet-xxxxxxxxxxxxxxxxx"
+}
+
+import {
+  to = aws_internet_gateway.main
+  id = "igw-xxxxxxxxxxxxxxxxx"
+}
+
+import {
+  to = aws_route_table.public
+  id = "rtb-xxxxxxxxxxxxxxxxx"
+}
+
+import {
+  to = aws_route_table_association.public
+  id = "subnet-xxxxxxxxxxxxxxxxx/rtb-xxxxxxxxxxxxxxxxx"
+}
+
+import {
+  to = aws_security_group.main
+  id = "sg-xxxxxxxxxxxxxxxxx"
+}
+
+import {
+  to = aws_key_pair.main
+  id = "multi-lab-key"
+}
+
+import {
+  to = aws_instance.main
+  id = "i-xxxxxxxxxxxxxxxxx"
+}
+
+import {
+  to = aws_eip.main
+  id = "eipalloc-xxxxxxxxxxxxxxxxx"
+}
+
+import {
+  to = aws_eip_association.main
+  id = "eipassoc-xxxxxxxxxxxxxxxxx"
+}

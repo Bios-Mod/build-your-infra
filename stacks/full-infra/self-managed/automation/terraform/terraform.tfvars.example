@@ -1,0 +1,13 @@
+# Deploy to:   stacks/full-infra/self-managed/terraform/
+# Apply:       cp terraform.tfvars.example terraform.tfvars — replace all placeholders
+# Module:      stacks/full-infra/self-managed
+# Requires:    variables.tf
+#
+# Input values for the self-managed stack.
+# Fill in before running terraform init.
+# This file is gitignored and never committed.
+# Parameters modified from baseline: none
+
+instance_type = "t4g.micro"
+ami_id        = "ami-xxxxxxxxxxxxxxxxx"   # multi-lab-aws-active-directory AMI ID
+key_name      = "multi-lab-key"
