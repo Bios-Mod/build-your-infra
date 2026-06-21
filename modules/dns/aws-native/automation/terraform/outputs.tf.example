@@ -1,0 +1,42 @@
+# Deploy to:   modules/dns/aws-native/automation/terraform/outputs.tf
+# Apply:       rename outputs.tf.example to outputs.tf after import cycle (Step 6)
+# Module:      dns / aws-native / automation
+# Requires:    main.tf in place and terraform apply completed
+#
+# Output values for the DNS aws-native Terraform module.
+# Parameters modified from baseline:  none — outputs are read-only
+
+output "hosted_zone_id" {
+  description = "Route 53 Private Hosted Zone ID."
+  value       = aws_route53_zone.internal.zone_id
+}
+
+output "hosted_zone_name" {
+  description = "Domain name of the Private Hosted Zone."
+  value       = aws_route53_zone.internal.name
+}
+
+output "ec2_record_fqdn" {
+  description = "Fully qualified domain name of the EC2 A record."
+  value       = aws_route53_record.ec2.fqdn
+}
+
+output "resolver_query_log_config_id" {
+  description = "Route 53 Resolver Query Log configuration ID."
+  value       = aws_route53_resolver_query_log_config.main.id
+}
+
+output "resolver_query_log_config_arn" {
+  description = "ARN of the Route 53 Resolver Query Log configuration."
+  value       = aws_route53_resolver_query_log_config.main.arn
+}
+
+output "dns_query_log_group_name" {
+  description = "CloudWatch Logs group name receiving Route 53 Resolver query logs."
+  value       = aws_cloudwatch_log_group.dns_query_logs.name
+}
+
+output "dns_query_log_group_arn" {
+  description = "ARN of the CloudWatch Logs group for DNS query logs."
+  value       = aws_cloudwatch_log_group.dns_query_logs.arn
+}

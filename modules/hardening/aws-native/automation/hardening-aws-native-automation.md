@@ -177,8 +177,8 @@ cp terraform.tfvars.example terraform.tfvars
 Edit `import.tf` and replace every placeholder with the real resource ID.
 Edit `terraform.tfvars` and fill in the values for your environment.
 
-📄 [`modules/hardening/aws-native/automation/terraform/import.tf.example`](import.tf.example)
-📄 [`modules/hardening/aws-native/automation/terraform/terraform.tfvars.example`](terraform.tfvars.example)
+📄 [`modules/hardening/aws-native/automation/terraform/import.tf.example`](terraform/import.tf.example)
+📄 [`modules/hardening/aws-native/automation/terraform/terraform.tfvars.example`](terraform/terraform.tfvars.example)
 
 ### Why
 
@@ -343,8 +343,8 @@ terraform validate
 terraform apply "hardening.tfplan"
 ```
 
-📄 [`modules/hardening/aws-native/automation/terraform/main.tf.example`](main.tf.example)
-📄 [`modules/hardening/aws-native/automation/terraform/outputs.tf.example`](outputs.tf.example)
+📄 [`modules/hardening/aws-native/automation/terraform/main.tf.example`](terraform/main.tf.example)
+📄 [`modules/hardening/aws-native/automation/terraform/outputs.tf.example`](terraform/outputs.tf.example)
 
 ### Why
 

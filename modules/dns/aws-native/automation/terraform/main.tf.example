@@ -1,0 +1,70 @@
+# Deploy to:   modules/dns/aws-native/automation/terraform/
+# Apply:       cp main.tf.example main.tf — activate after import cycle is complete
+# Module:      modules/dns/aws-native
+# Requires:    terraform.tfvars, state populated via import cycle (see dns-aws-native-automation.md)
+#
+# Full DNS resource definition for the dns aws-native module.
+# Do not rename to main.tf until import.tf has been applied and deleted.
+# Parameters modified from baseline: none
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+  required_version = ">= 1.15.6"
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+# Dynamic discovery — VPC is managed by the hardening module, not owned here
+data "aws_vpc" "main" {
+  filter {
+    name   = "tag:Name"
+    values = [var.vpc_name]
+  }
+}
+
+# ── ROUTE 53 PRIVATE HOSTED ZONE ─────────────────────────────────────────────
+
+resource "aws_route53_zone" "internal" {
+  name    = var.zone_name
+  comment = "Private hosted zone for multi-lab-vpc internal name resolution"
+
+  vpc {
+    vpc_id = data.aws_vpc.main.id
+  }
+}
+
+# ── DNS RECORDS ───────────────────────────────────────────────────────────────
+
+resource "aws_route53_record" "ec2" {
+  zone_id = aws_route53_zone.internal.zone_id
+  name    = "ec2.${var.zone_name}"
+  type    = "A"
+  ttl     = var.a_record_ttl
+
+  records = [var.ec2_private_ip]
+}
+
+# ── RESOLVER QUERY LOGGING ────────────────────────────────────────────────────
+
+resource "aws_cloudwatch_log_group" "dns_query_logs" {
+  name              = var.log_group_name
+  retention_in_days = var.log_retention_days
+}
+
+resource "aws_route53_resolver_query_log_config" "main" {
+  name            = var.query_log_config_name
+  destination_arn = aws_cloudwatch_log_group.dns_query_logs.arn
+}
+
+resource "aws_route53_resolver_query_log_config_association" "main" {
+  resolver_query_log_config_id = aws_route53_resolver_query_log_config.main.id
+  resource_id                  = data.aws_vpc.main.id
+}

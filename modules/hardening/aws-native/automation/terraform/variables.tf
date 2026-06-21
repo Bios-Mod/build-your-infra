@@ -18,10 +18,13 @@ variable "aws_profile" {
   default     = "multi-lab-admin"
 }
 
-variable "vpc_id" {
-  description = "ID of multi-lab-vpc — used for default SG lookup and Flow Logs"
-  type        = string
-}
+# Comentado hasta que se crea 
+# ya que no se puede dar un id de un recurso que no existe 
+
+# variable "vpc_id" {
+#   description = "ID of multi-lab-vpc — used for default SG lookup and Flow Logs"
+#   type        = string
+# }
 
 variable "cloudtrail_bucket_name" {
   description = "Name of the S3 bucket receiving CloudTrail logs"

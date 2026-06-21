@@ -1,0 +1,17 @@
+# Deploy to:   modules/dns/aws-native/automation/terraform/terraform.tfvars
+# Apply:       copy to terraform.tfvars and fill in values — never commit terraform.tfvars
+# Module:      dns / aws-native / automation
+# Requires:    Step 1 completed — private IP retrieved from EC2 instance
+#
+# Variable values for the DNS aws-native Terraform module.
+# Parameters modified from baseline:  ec2_private_ip — environment-specific
+
+aws_region            = "eu-west-1"
+aws_profile           = "multi-lab-admin"
+vpc_name              = "multi-lab-vpc"
+zone_name             = "multi-lab.internal"
+ec2_private_ip        = "<multi-lab-aws private IP>"   # 10.0.x.x
+a_record_ttl          = 300
+log_group_name        = "/aws/route53/multi-lab-vpc"
+log_retention_days    = 30
+query_log_config_name = "multi-lab-resolver-logging"

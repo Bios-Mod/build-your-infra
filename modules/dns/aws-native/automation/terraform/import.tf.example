@@ -1,0 +1,35 @@
+# Deploy to:   modules/dns/aws-native/automation/terraform/import.tf
+# Apply:       copy to import.tf, fill in IDs, delete after terraform apply
+# Module:      dns / aws-native / automation
+# Requires:    aws-native.md steps completed — all resources must exist
+#
+# Import blocks for all Route 53 DNS resources managed by this module.
+# Parameters modified from baseline:  none — IDs are environment-specific
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+  required_version = ">= 1.15.6"
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+# Route 53 Private Hosted Zone
+import {
+  to = aws_route53_zone.internal
+  id = "<hosted-zone-id>"   # Z0XXXXXXXXXXXXXXXXX
+}
+
+# A record — ec2.multi-lab.internal
+# Import ID format: <ZONE_ID>_<FQDN>_<TYPE>
+import {
+  to = aws_route53_record.ec2
+  id = "<hosted-zone-id>_ec2.multi-lab.internal_A"
+}

@@ -143,8 +143,8 @@ Edit `import.tf` and replace every placeholder with the real resource ID.
 Edit `terraform.tfvars` and fill in the values for your environment —
 `ami_id` must match the `multi-lab-aws-active-directory` AMI ID in `eu-west-1`.
 
-📄 [`stacks/full-infra/self-managed/automation/terraform/import.tf.example`](automation/terraform/import.tf.example)
-📄 [`stacks/full-infra/self-managed/automation/terraform/terraform.tfvars.example`](automation/terraform/terraform.tfvars.example)
+📄 [`stacks/full-infra/self-managed/automation/terraform/import.tf.example`](terraform/import.tf.example)
+📄 [`stacks/full-infra/self-managed/automation/terraform/terraform.tfvars.example`](terraform/terraform.tfvars.example)
 
 ### Why
 
@@ -364,8 +364,8 @@ terraform plan
 > Instance access unaffected.
 > - **change** `aws_eip` — adds name tag.
 
-📄 [`stacks/full-infra/self-managed/automation/terraform/main.tf.example`](automation/terraform/main.tf.example)
-📄 [`stacks/full-infra/self-managed/automation/terraform/outputs.tf.example`](automation/terraform/outputs.tf.example)
+📄 [`stacks/full-infra/self-managed/automation/terraform/main.tf.example`](terraform/main.tf.example)
+📄 [`stacks/full-infra/self-managed/automation/terraform/outputs.tf.example`](terraform/outputs.tf.example)
 
 ```bash
 terraform apply -auto-approve
