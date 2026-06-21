@@ -1,0 +1,42 @@
+# Deploy to:   modules/file-transfer/aws-native/automation/terraform/
+# Apply:       copy to import.tf, fill in IDs, delete after apply
+# Module:      file-transfer / aws-native
+# Requires:    aws-native.md fully applied — all resources must exist before import
+#
+# Import blocks for all pre-existing Transfer Family resources.
+# Parameters modified from baseline: none
+
+terraform {
+  required_version = ">= 1.15.6"
+
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+# ── Persistent layer ──────────────────────────────────────────────────────────
+
+# NOTE: S3 Bucket resources do not exist in live infra. 
+# They will be natively created via main.tf instead of imported.
+
+# ACTIVE IMPORT: Pre-existing IAM Infrastructure discovered via AWS CLI
+import {
+  to = aws_iam_role.transfer
+  id = "multi-lab-transfer-role"
+}
+
+import {
+  to = aws_iam_role_policy.transfer_s3
+  id = "multi-lab-transfer-role:multi-lab-transfer-s3-policy"
+}
+
+# NOTE: Network and Monitoring resources do not exist in live infra.
+# They will be natively created via main.tf instead of imported.

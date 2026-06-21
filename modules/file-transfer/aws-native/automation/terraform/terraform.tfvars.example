@@ -1,0 +1,17 @@
+# Deploy to:   modules/file-transfer/aws-native/automation/terraform/
+# Apply:       copy to terraform.tfvars and fill in real values — never commit terraform.tfvars
+# Module:      file-transfer / aws-native
+# Requires:    none
+#
+# Variable values for the file-transfer aws-native Terraform module.
+# Parameters modified from baseline: none
+
+aws_region        = "eu-west-1"
+aws_profile       = "multi-lab-admin"
+
+account_id        = "<12-digit-account-id>"
+operator_ip       = "<your-public-ip>/32"
+vpc_id            = "<multi-lab-vpc-id>"
+subnet_id         = "<public-subnet-id>"
+eip_allocation_id = "<eip-allocation-id>"
+sftp_public_key   = "<paste-full-ssh-public-key>"
