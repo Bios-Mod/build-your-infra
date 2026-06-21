@@ -1,0 +1,12 @@
+# Deploy to:   modules/hardening/aws-native/automation/terraform/
+# Apply:       cp terraform.tfvars.example terraform.tfvars — replace all placeholders
+# Module:      modules/hardening/aws-native
+# Requires:    variables.tf
+#
+# Input values for the hardening aws-native module.
+# Fill in before running terraform init.
+# This file is gitignored and never committed.
+# Parameters modified from baseline: none
+
+vpc_id                 = "vpc-xxxxxxxxxxxxxxxxx"
+cloudtrail_bucket_name = "multi-lab-cloudtrail-xxxxxxxxxxxx"

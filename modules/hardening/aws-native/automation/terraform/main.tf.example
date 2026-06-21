@@ -1,0 +1,325 @@
+# Deploy to:   modules/hardening/aws-native/automation/terraform/
+# Apply:       cp main.tf.example main.tf — activate after import cycle is complete
+# Module:      modules/hardening/aws-native
+# Requires:    terraform.tfvars, state populated via import cycle (see hardening-aws-native-automation.md)
+#
+# Full security control definition for the hardening aws-native module.
+# Do not rename to main.tf until import.tf has been applied and deleted.
+# Parameters modified from baseline: none
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+  required_version = ">= 1.15.6"
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+# Dynamic discovery of AWS Account context
+data "aws_caller_identity" "current" {}
+
+# ── NETWORK TOPOLOGY (Greenfield Provisioning) ────────────────────────────────
+
+resource "aws_vpc" "main" {
+  cidr_block           = "10.0.0.0/16"
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+
+  tags = {
+    Name = "multi-lab-vpc"
+  }
+}
+
+resource "aws_internet_gateway" "main" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "multi-lab-igw"
+  }
+}
+
+resource "aws_subnet" "public" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "10.0.1.0/24"
+  availability_zone       = "${var.aws_region}a"
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "multi-lab-public-subnet"
+  }
+}
+
+resource "aws_subnet" "private" {
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.2.0/24"
+  availability_zone = "${var.aws_region}a"
+
+  tags = {
+    Name = "multi-lab-private-subnet"
+  }
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.main.id
+
+  route {
+    cidr_block = "0.0.0.0/0"
+    gateway_id = aws_internet_gateway.main.id
+  }
+
+  tags = {
+    Name = "multi-lab-public-rt"
+  }
+}
+
+resource "aws_route_table_association" "public" {
+  subnet_id      = aws_subnet.public.id
+  route_table_id = aws_route_table.public.id
+}
+
+resource "aws_route_table" "private" {
+  vpc_id = aws_vpc.main.id
+
+  tags = {
+    Name = "multi-lab-private-rt"
+  }
+}
+
+resource "aws_route_table_association" "private" {
+  subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
+}
+
+# Secure VPC S3 Gateway Endpoint to avoid routing traffic over the internet
+resource "aws_vpc_endpoint" "s3" {
+  vpc_id            = aws_vpc.main.id
+  service_name      = "com.amazonaws.${var.aws_region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.public.id, aws_route_table.private.id]
+
+  tags = {
+    Name = "multi-lab-s3-endpoint"
+  }
+}
+
+# ── NETWORK HARDENING & SECURITY GROUPS ───────────────────────────────────────
+
+# Step 3 Hardening: Lock down the default security group (Enforces Zero-Trust)
+resource "aws_default_security_group" "default" {
+  vpc_id = aws_vpc.main.id
+
+  # Empty ingress/egress blocks isolate any unassigned network interface
+  tags = {
+    Name = "multi-lab-vpc-default-sg-do-not-use"
+  }
+}
+
+# Custom Security Group for the Lab Stack
+resource "aws_security_group" "multi_lab" {
+  name        = "multi-lab-sg"
+  description = "multi-lab-aws - managed manually"
+  vpc_id      = aws_vpc.main.id
+
+  ingress {
+    description = "Wireguard VPN"
+    from_port   = 51820
+    to_port     = 51820
+    protocol    = "udp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "multi-lab-sg"
+  }
+}
+
+# VPC Flow Logs Core Engine
+resource "aws_cloudwatch_log_group" "flow_logs" {
+  name              = "/aws/vpc/multi-lab-vpc"
+  retention_in_days = 90
+}
+
+resource "aws_flow_log" "main" {
+  vpc_id          = aws_vpc.main.id
+  traffic_type    = "ALL"
+  iam_role_arn    = aws_iam_role.vpc_flow_logs.arn
+  log_destination = aws_cloudwatch_log_group.flow_logs.arn
+
+  tags = {
+    Name = "multi-lab-vpc-flow-logs"
+  }
+}
+
+# ── IAM — COMPUTE & SECURITY SERVICE ROLES ────────────────────────────────────
+
+resource "aws_iam_role" "ec2" {
+  name = "multi-lab-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+
+  tags = {
+    Name = "multi-lab-ec2-role"
+  }
+}
+
+resource "aws_iam_instance_profile" "ec2" {
+  name = "multi-lab-ec2-role"
+  role = aws_iam_role.ec2.name
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_ssm" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+resource "aws_iam_role" "vpc_flow_logs" {
+  name = "multi-lab-vpc-flow-logs-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "vpc-flow-logs.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+
+  tags = {
+    Name = "multi-lab-vpc-flow-logs-role"
+  }
+}
+
+resource "aws_iam_role_policy" "vpc_flow_logs" {
+  name = "multi-lab-flow-logs-policy"
+  role = aws_iam_role.vpc_flow_logs.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect = "Allow"
+      Action = [
+        "logs:CreateLogGroup",
+        "logs:CreateLogStream",
+        "logs:PutLogEvents",
+        "logs:DescribeLogGroups",
+        "logs:DescribeLogStreams"
+      ]
+      Resource = "*"
+    }]
+  })
+}
+
+# ── ACCOUNT-LEVEL CONTROLS & DETECTION ────────────────────────────────────────
+
+resource "aws_ec2_instance_metadata_defaults" "main" {
+  http_tokens                 = "required"
+  http_put_response_hop_limit = 1
+  http_endpoint               = "enabled"
+}
+
+resource "aws_guardduty_detector" "main" {
+  enable = true
+
+  tags = {
+    Name = "multi-lab-guardduty"
+  }
+}
+
+resource "aws_guardduty_detector_feature" "s3_protection" {
+  detector_id = aws_guardduty_detector.main.id
+  name        = "S3_DATA_EVENTS"
+  status      = "ENABLED"
+}
+
+# ── AUDIT TRAILS & STORAGE POLICIES ───────────────────────────────────────────
+
+resource "aws_cloudtrail" "main" {
+  name                          = "multi-lab-trail"
+  s3_bucket_name                = var.cloudtrail_bucket_name
+  is_multi_region_trail         = true
+  enable_log_file_validation    = true
+  include_global_service_events = true
+
+  # Enforces strict execution ordering to prevent InsufficientS3BucketPolicyException during greenfield runs
+  depends_on = [aws_s3_bucket_policy.cloudtrail]
+
+  advanced_event_selector {
+    name = "Management events selector"
+    field_selector {
+      field  = "eventCategory"
+      equals = ["Management"]
+    }
+    field_selector {
+      field      = "eventSource"
+      not_equals = ["kms.amazonaws.com", "rdsdata.amazonaws.com"]
+    }
+  }
+
+  tags = {
+    Name = "multi-lab-trail"
+  }
+}
+
+resource "aws_s3_bucket_policy" "cloudtrail" {
+  bucket = var.cloudtrail_bucket_name
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Sid    = "AWSCloudTrailAclCheck"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "s3:GetBucketAcl"
+        Resource = "arn:aws:s3:::${var.cloudtrail_bucket_name}"
+      },
+      {
+        Sid    = "AWSCloudTrailWrite"
+        Effect = "Allow"
+        Principal = {
+          Service = "cloudtrail.amazonaws.com"
+        }
+        Action   = "s3:PutObject"
+        Resource = "arn:aws:s3:::${var.cloudtrail_bucket_name}/AWSLogs/${data.aws_caller_identity.current.account_id}/*"
+        Condition = {
+          StringEquals = {
+            "s3:x-amz-acl" = "bucket-owner-full-control"
+          }
+        }
+      },
+      {
+        Sid       = "DenyLogDeletion"
+        Effect    = "Deny"
+        Principal = "*"
+        Action = [
+          "s3:DeleteObject",
+          "s3:DeleteObjectVersion"
+        ]
+        Resource = "arn:aws:s3:::${var.cloudtrail_bucket_name}/AWSLogs/*"
+      }
+    ]
+  })
+}

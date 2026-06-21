@@ -110,12 +110,26 @@ hardened base.
 > before provisioning the directory — zone delegation or full BIND9
 > replacement may be required.
 
-> **Automation phase — planned next:** Each module already includes an
-> `automation/` directory reserved for this. The upcoming phase will cover
-> Ansible playbooks for self-managed deployments and Terraform / AWS CLI
-> scripts for AWS Native provisioning. The goal is to reproduce any
-> environment from scratch without manual steps — same decisions, same
-> hardening baseline, codified.
+## Automation
+
+Each module includes an `automation/` directory with the tooling to reproduce
+that module's infrastructure from code.
+
+| Environment | Tool | Scope | Stack |
+|---|---|---|---|
+| aws-native | Terraform | Per-module import + redeploy | `modules/<name>/aws-native/automation/terraform/` |
+| self-managed | Terraform | EC2 from AMI snapshot — infrastructure layer | `stacks/full-infra/self-managed/automation/terraform/` |
+
+The aws-native automation follows a module-by-module implementation order:
+`hardening` → `dns` → `file-transfer` → `web-server` → `directory`.
+Each module is independently deployable. A full-stack composition that sources
+all aws-native modules is planned as the final step in
+`stacks/full-infra/aws-native/`.
+
+The self-managed Terraform stack provisions the EC2 host from the
+`multi-lab-aws-active-directory` AMI — the infrastructure layer only.
+The configuration layer lives in the AMI and is documented per module.
+Ansible will close the configuration automation gap in a future iteration.
 
 ---
 
@@ -123,110 +137,53 @@ hardened base.
 ```
 build-your-infra/
 ├── AGENTS.md
-├── context
-│   ├── current-iteration.md
-│   └── decision-log.md
 ├── CONTRIBUTING.md
-├── environments
-│   ├── aws-native
-│   │   └── aws-native-setup.md
-│   ├── local
-│   │   └── local-vm-setup.md
-│   ├── README.md
-│   └── vps
-│       └── vps-ec2-setup.md
 ├── LICENSE
-├── modules
-│   ├── dhcp
-│   │   ├── README.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       │   ├── aide
-│   │       │   ├── audit
-│   │       │   └── kea
-│   │       └── self-managed.md
-│   ├── directory
-│   │   ├── aws-native
-│   │   │   ├── automation
-│   │   │   └── aws-native.md
-│   │   ├── README.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       │   ├── aide
-│   │       │   ├── audit
-│   │       │   ├── bind
-│   │       │   ├── krb5
-│   │       │   ├── resolv.conf
-│   │       │   └── samba
-│   │       └── self-managed.md
-│   ├── dns
-│   │   ├── aws-native
-│   │   │   ├── automation
-│   │   │   └── aws-native.md
-│   │   ├── README.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       │   ├── aide
-│   │       │   ├── audit
-│   │       │   ├── bind
-│   │       │   └── netplan
-│   │       └── self-managed.md
-│   ├── file-transfer
-│   │   ├── aws-native
-│   │   │   ├── automation
-│   │   │   └── aws-native.md
-│   │   ├── README.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       │   ├── aide
-│   │       │   ├── audit
-│   │       │   └── ssh
-│   │       └── self-managed.md
-│   ├── hardening
-│   │   ├── aws-native
-│   │   │   ├── automation
-│   │   │   └── aws-native.md
-│   │   ├── README.md
-│   │   └── self-managed
-│   │       ├── automation
-│   │       ├── configs
-│   │       │   ├── aide
-│   │       │   ├── audit
-│   │       │   ├── fail2ban
-│   │       │   ├── limits
-│   │       │   ├── logrotate
-│   │       │   ├── lynis
-│   │       │   ├── modprobe
-│   │       │   ├── netplan
-│   │       │   ├── pam
-│   │       │   ├── rsyslog
-│   │       │   ├── ssh
-│   │       │   ├── sysctl
-│   │       │   ├── ufw
-│   │       │   ├── unattended-upgrades
-│   │       │   └── wireguard
-│   │       └── self-managed.md
-│   └── web-server
-│       ├── aws-native
-│       │   ├── automation
-│       │   └── aws-native.md
-│       ├── html
-│       │   └── index.html
-│       ├── README.md
-│       └── self-managed
-│           ├── automation
-│           ├── configs
-│           │   ├── aide
-│           │   ├── audit
-│           │   └── nginx
-│           └── self-managed.md
 ├── README.md
-└── snapshots
-    └── README.md
+├── banner.png
+├── context
+│   ├── current-iteration.md
+│   └── decision-log.md
+├── environments
+│   ├── README.md
+│   ├── aws-native
+│   │   └── aws-native-setup.md
+│   ├── local
+│   │   └── local-vm-setup.md
+│   └── vps
+│       └── vps-ec2-setup.md
+├── modules
+│   ├── dhcp
+│   │   ├── README.md
+│   │   └── self-managed
+│   ├── directory
+│   │   ├── README.md
+│   │   ├── aws-native
+│   │   └── self-managed
+│   ├── dns
+│   │   ├── README.md
+│   │   ├── aws-native
+│   │   └── self-managed
+│   ├── file-transfer
+│   │   ├── README.md
+│   │   ├── aws-native
+│   │   └── self-managed
+│   ├── hardening
+│   │   ├── README.md
+│   │   ├── aws-native
+│   │   └── self-managed
+│   └── web-server
+│       ├── README.md
+│       ├── aws-native
+│       ├── html
+│       └── self-managed
+├── snapshots
+│   └── README.md
+└── stacks
+    └── full-infra
+        ├── README.md
+        ├── aws-native
+        └── self-managed
 ```
 
 📄 Snapshot log → [`snapshots/README.md`](snapshots/README.md)

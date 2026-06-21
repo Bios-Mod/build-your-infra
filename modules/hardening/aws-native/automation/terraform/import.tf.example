@@ -1,0 +1,119 @@
+# Deploy to:   modules/hardening/aws-native/automation/terraform/
+# Apply:       cp import.tf.example import.tf — replace all placeholders with real IDs
+# Module:      modules/hardening/aws-native
+# Requires:    AWS resource IDs collected from Step 1 of hardening-aws-native-automation.md
+#
+# Provider block + import blocks for Phase 1 import cycle.
+# main.tf does not exist at this phase — this file is the sole entry point.
+# Delete after terraform apply completes and main.tf is activated.
+#
+# Resources that may not exist if GuardDuty / Flow Logs were
+# torn down: omit those import blocks and Terraform will create them on apply.
+# Parameters modified from baseline: none
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+  required_version = ">= 1.15.6"
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+# ── IAM ───────────────────────────────────────────────────────────────────────
+# Import ID: role name (string)
+
+import {
+  to = aws_iam_role.ec2
+  id = "multi-lab-ec2-role"
+}
+
+import {
+  to = aws_iam_instance_profile.ec2
+  id = "multi-lab-ec2-role"
+}
+
+import {
+  to = aws_iam_role_policy_attachment.ec2_ssm
+  id = "multi-lab-ec2-role/arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
+import {
+  to = aws_iam_role.vpc_flow_logs
+  id = "multi-lab-vpc-flow-logs-role"
+}
+
+# Import ID: role-name:policy-name (inline policy)
+import {
+  to = aws_iam_role_policy.vpc_flow_logs
+  id = "multi-lab-vpc-flow-logs-role:multi-lab-flow-logs-policy"
+}
+
+# ── Network ───────────────────────────────────────────────────────────────────
+# Import ID: security group ID (sg-xxxxxxxxxxxxxxxxx)
+
+import {
+  to = aws_default_security_group.default
+  id = "sg-xxxxxxxxxxxxxxxxx"
+}
+
+# ── VPC Flow Logs ─────────────────────────────────────────────────────────────
+# Import ID: flow log ID (fl-xxxxxxxxxxxxxxxxx)
+# Omit this block if Flow Logs were torn down — Terraform will create on apply.
+
+import {
+  to = aws_flow_log.main
+  id = "fl-xxxxxxxxxxxxxxxxx"
+}
+
+# ── CloudWatch Log Group ──────────────────────────────────────────────────────
+# Import ID: log group name
+# Omit if the log group was deleted with the flow log.
+
+import {
+  to = aws_cloudwatch_log_group.flow_logs
+  id = "/aws/vpc/multi-lab-vpc"
+}
+
+# ── IMDSv2 account-level default ──────────────────────────────────────────────
+# Import ID: always "default" (singleton resource, one per account per region)
+
+import {
+  to = aws_ec2_instance_metadata_defaults.main
+  id = "default"
+}
+
+# ── GuardDuty ─────────────────────────────────────────────────────────────────
+# Import ID: detector ID (32-char hex string)
+# Omit this block and the feature block if GuardDuty was torn down.
+
+import {
+  to = aws_guardduty_detector.main
+  id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+}
+
+# Import ID: detector-id:feature-name
+import {
+  to = aws_guardduty_detector_feature.s3_protection
+  id = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx:S3_DATA_EVENTS"
+}
+
+# ── CloudTrail ────────────────────────────────────────────────────────────────
+# Import ID: trail ARN
+
+import {
+  to = aws_cloudtrail.main
+  id = "arn:aws:cloudtrail:eu-west-1:xxxxxxxxxxxx:trail/multi-lab-trail"
+}
+
+# Import ID: bucket name
+import {
+  to = aws_s3_bucket_policy.cloudtrail
+  id = "multi-lab-cloudtrail-xxxxxxxxxxxx"
+}

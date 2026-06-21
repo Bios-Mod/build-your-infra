@@ -1,0 +1,50 @@
+# Deploy to:   modules/hardening/aws-native/automation/terraform/
+# Apply:       cp outputs.tf.example outputs.tf — activate after import cycle is complete
+# Module:      modules/hardening/aws-native
+# Requires:    main.tf
+
+# ── NETWORK OUTPUTS ───────────────────────────────────────────────────────────
+
+output "vpc_id" {
+  description = "The ID of the newly provisioned multi-lab custom VPC."
+  value       = aws_vpc.main.id
+}
+
+output "public_subnet_id" {
+  description = "The ID of the multi-lab public subnet container."
+  value       = aws_subnet.public.id
+}
+
+output "private_subnet_id" {
+  description = "The ID of the multi-lab private subnet container."
+  value       = aws_subnet.private.id
+}
+
+output "security_group_id" {
+  description = "The ID of the perimetric custom security group (multi-lab-sg)."
+  value       = aws_security_group.multi_lab.id
+}
+
+# ── IAM OUTPUTS ───────────────────────────────────────────────────────────────
+
+output "ec2_role_arn" {
+  description = "The Amazon Resource Name (ARN) of the foundational EC2 instance role."
+  value       = aws_iam_role.ec2.arn
+}
+
+output "ec2_instance_profile_name" {
+  description = "The name of the EC2 instance profile used for secure SSM Session Manager attachment."
+  value       = aws_iam_instance_profile.ec2.name
+}
+
+# ── SECURITY & DETECTION OUTPUTS ──────────────────────────────────────────────
+
+output "flow_log_id" {
+  description = "The unique identifier of the active VPC Flow Logs engine."
+  value       = aws_flow_log.main.id
+}
+
+output "guardduty_detector_id" {
+  description = "The unique identifier of the account-level GuardDuty detector."
+  value       = aws_guardduty_detector.main.id
+}

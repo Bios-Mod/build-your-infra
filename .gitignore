@@ -16,7 +16,7 @@ context/
 terraform.tfvars
 import.tf
 main.tf
-output.tf
+outputs.tf
 *.tfvars.json
 
 # Terraform — lock file for local execution state
