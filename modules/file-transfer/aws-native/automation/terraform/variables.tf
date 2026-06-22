@@ -38,26 +38,6 @@ variable "operator_ip" {
   }
 }
 
-variable "vpc_id" {
-  description = "VPC ID for multi-lab-vpc. Used to scope the Security Group."
-  type        = string
-
-  validation {
-    condition     = can(regex("^vpc-[a-f0-9]+$", var.vpc_id))
-    error_message = "The vpc_id must begin with 'vpc-' followed by a valid hexadecimal string."
-  }
-}
-
-variable "subnet_id" {
-  description = "Public subnet ID (10.0.1.0/24) for the Transfer Family VPC endpoint."
-  type        = string
-
-  validation {
-    condition     = can(regex("^subnet-[a-f0-9]+$", var.subnet_id))
-    error_message = "The subnet_id must begin with 'subnet-' followed by a valid hexadecimal string."
-  }
-}
-
 variable "eip_allocation_id" {
   description = "Elastic IP allocation ID to associate with the Transfer Family server endpoint."
   type        = string
@@ -72,4 +52,10 @@ variable "sftp_public_key" {
   description = "SSH public key body for the sftpuser logical user. Paste the full public key string."
   type        = string
   # Removed sensitive = true. Public keys are non-sensitive by design and essential for state verification.
+}
+
+variable "vpc_name" {
+  description = "Name tag of the base lab VPC managed by the hardening module."
+  type        = string
+  default     = "multi-lab-vpc"
 }

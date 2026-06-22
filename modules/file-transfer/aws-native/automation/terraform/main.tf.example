@@ -6,7 +6,6 @@
 #
 # Full resource definition for the file-transfer aws-native module.
 # Do not rename to main.tf until import.tf has been applied and deleted (import path).
-# Parameters modified from baseline: none
 
 terraform {
   required_providers {
@@ -21,6 +20,24 @@ terraform {
 provider "aws" {
   region  = var.aws_region
   profile = var.aws_profile
+}
+
+# ── DATA SOURCES (DYNAMIC NETWORK DISCOVERY) ──────────────────────────────────
+
+data "aws_vpc" "main" {
+  filter {
+    name   = "tag:Name"
+    values = [var.vpc_name]
+  }
+}
+
+data "aws_subnet" "public" {
+  vpc_id = data.aws_vpc.main.id
+  
+  filter {
+    name   = "cidr-block"
+    values = ["10.0.1.0/24"]
+  }
 }
 
 # ── S3 BUCKET ─────────────────────────────────────────────────────────────────
@@ -98,8 +115,8 @@ resource "aws_iam_role_policy" "transfer_s3" {
 
 resource "aws_security_group" "transfer" {
   name        = "multi-lab-transfer-sg"
-  description = "SFTP access — operator IP only"
-  vpc_id      = var.vpc_id
+  description = "SFTP access - operator IP only" 
+  vpc_id      = data.aws_vpc.main.id
 
   ingress {
     description = "SFTP from operator IP"
@@ -135,8 +152,8 @@ resource "aws_transfer_server" "main" {
   security_policy_name   = "TransferSecurityPolicy-2024-01"
 
   endpoint_details {
-    vpc_id                 = var.vpc_id
-    subnet_ids             = [var.subnet_id]
+    vpc_id                 = data.aws_vpc.main.id
+    subnet_ids             = [data.aws_subnet.public.id]
     security_group_ids     = [aws_security_group.transfer.id]
     address_allocation_ids = [var.eip_allocation_id]
   }
