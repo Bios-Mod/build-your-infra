@@ -1,0 +1,15 @@
+# Deploy to:   modules/web-server/aws-native/automation/terraform/
+# Apply:       copy to terraform.tfvars and fill in real values
+# Module:      web-server / aws-native
+# Requires:    Step 1 completed — all IDs collected from the AWS API
+#
+# Variable values for the web server module.
+# Parameters modified from baseline:  none — fill in real values, never commit terraform.tfvars
+
+aws_region  = "eu-west-1"
+aws_profile = "multi-lab-admin"
+
+account_id = "<account-id>"
+
+domain_name    = "buildyourinfra.click"
+hosted_zone_id = "<ZXXXXXXXXXXXXXXXXX>"

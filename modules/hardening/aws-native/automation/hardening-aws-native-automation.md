@@ -215,7 +215,6 @@ state would live in S3 with DynamoDB locking.
 ```bash
 terraform init
 # → Terraform has been successfully initialized!
-# → provider registry.terraform.io/hashicorp/aws v5.x.x
 ```
 
 ---

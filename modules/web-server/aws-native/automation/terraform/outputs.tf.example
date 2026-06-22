@@ -1,0 +1,35 @@
+# Deploy to:   modules/web-server/aws-native/automation/terraform/
+# Apply:       copy to outputs.tf after import cycle is complete (Step 6)
+# Module:      web-server / aws-native
+# Requires:    main.tf active, terraform apply completed
+#
+# Output values for the web server module.
+# Parameters modified from baseline:  none
+#
+# Note:        outputs.tf is gitignored — this example is the committed reference.
+#              Sensitive values (certificate ARN, distribution ID) are marked sensitive.
+
+output "s3_origin_bucket" {
+  description = "Name of the S3 origin bucket"
+  value       = aws_s3_bucket.web_origin.id
+}
+
+output "cloudfront_domain_name" {
+  description = "CloudFront distribution domain name (*.cloudfront.net)"
+  value       = aws_cloudfront_distribution.main.domain_name
+}
+
+output "cloudfront_distribution_id" {
+  description = "CloudFront distribution ID required for running CDN cache invalidations"
+  value       = aws_cloudfront_distribution.main.id
+}
+
+output "acm_certificate_arn" {
+  description = "ARN of the public ACM certificate located in us-east-1"
+  value       = data.aws_acm_certificate.main.arn
+}
+
+output "site_url" {
+  description = "Primary secure URL of the deployed site, sanitized of trailing dots"
+  value       = "https://${trimsuffix(var.domain_name, ".")}"
+}

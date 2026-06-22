@@ -1,0 +1,181 @@
+# Deploy to:   modules/web-server/aws-native/automation/terraform/
+# Apply:       cp main.tf.example main.tf — activate after import cycle is complete (Step 6)
+#              If all resources were torn down, rename directly and run terraform apply.
+# Module:      modules/web-server/aws-native
+# Requires:    terraform.tfvars, state populated via import cycle
+#              (see web-server-aws-native-automation.md)
+#              ACM certificate must be Issued before apply.
+#
+# Full resource definition for the web-server aws-native module.
+# Do not rename to main.tf until import.tf has been applied and deleted (import path).
+# Parameters modified from baseline:  none
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+  required_version = ">= 1.15.6"
+}
+
+# Default provider — eu-west-1 (S3, CloudFront data sources, Route 53)
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+# ACM provider — us-east-1 mandatory for CloudFront certificates
+provider "aws" {
+  alias   = "us_east_1"
+  region  = "us-east-1"
+  profile = var.aws_profile
+}
+
+# ── DATA SOURCES ──────────────────────────────────────────────────────────────
+
+data "aws_route53_zone" "public" {
+  name         = var.domain_name
+  private_zone = false
+}
+
+# ── ACM CERTIFICATE & VALIDATION (us-east-1) ──────────────────────────────────
+
+data "aws_acm_certificate" "main" {
+  provider    = aws.us_east_1
+  domain      = var.domain_name
+  statuses    = ["ISSUED"]
+  most_recent = true
+}
+
+# ── S3 ORIGIN BUCKET ──────────────────────────────────────────────────────────
+
+# 1. Bucket S3
+resource "aws_s3_bucket" "web_origin" {
+  bucket = "multi-lab-web-origin-${var.account_id}"
+}
+
+# 2. Cargar el HTML (dejas de depender de que el bucket esté vacío)
+resource "aws_s3_object" "index" {
+  bucket       = aws_s3_bucket.web_origin.id
+  key          = "index.html"
+  source       = "../../../html/index.html" 
+  content_type = "text/html"
+  etag         = filemd5("../../../html/index.html")
+}
+
+# 3. Política del Bucket (Permite acceso a CloudFront)
+resource "aws_s3_bucket_policy" "web_origin" {
+  bucket = aws_s3_bucket.web_origin.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid    = "AllowCloudFrontServicePrincipal"
+      Effect = "Allow"
+      Principal = {
+        Service = "cloudfront.amazonaws.com"
+      }
+      Action   = "s3:GetObject"
+      Resource = "${aws_s3_bucket.web_origin.arn}/*"
+      Condition = {
+        StringEquals = {
+          "AWS:SourceArn" = aws_cloudfront_distribution.main.arn
+        }
+      }
+    }]
+  })
+}
+
+# ── CLOUDFRONT OAC ────────────────────────────────────────────────────────────
+
+resource "aws_cloudfront_origin_access_control" "web_origin" {
+  name                              = "multi-lab-web-origin-oac-${var.account_id}"
+  description                       = "OAC for multi-lab-web-origin — SigV4 signed requests"
+  origin_access_control_origin_type = "s3"
+  signing_behavior                  = "always"
+  signing_protocol                  = "sigv4"
+}
+
+# ── CLOUDFRONT DISTRIBUTION ───────────────────────────────────────────────────
+
+resource "aws_cloudfront_distribution" "main" {
+  enabled             = true
+  comment             = "multi-lab-cf"
+  default_root_object = "index.html" # Vital para el 403
+  http_version        = "http2and3"
+  price_class         = "PriceClass_All"
+  aliases             = [var.domain_name, "www.${var.domain_name}"]
+
+  origin {
+    domain_name              = aws_s3_bucket.web_origin.bucket_regional_domain_name
+    origin_id                = "S3-${aws_s3_bucket.web_origin.id}"
+    origin_access_control_id = aws_cloudfront_origin_access_control.web_origin.id
+  }
+
+  default_cache_behavior {
+    target_origin_id       = "S3-${aws_s3_bucket.web_origin.id}"
+    viewer_protocol_policy = "redirect-to-https"
+    allowed_methods        = ["GET", "HEAD"]
+    cached_methods         = ["GET", "HEAD"]
+    compress               = true
+
+    forwarded_values {
+      query_string = false
+      cookies { forward = "none" }
+    }
+  }
+
+  viewer_certificate {
+    acm_certificate_arn      = data.aws_acm_certificate.main.arn
+    ssl_support_method       = "sni-only"
+    minimum_protocol_version = "TLSv1.2_2021"
+  }
+
+  restrictions {
+    geo_restriction { restriction_type = "none" }
+  }
+
+  tags = {
+    Name    = "multi-lab-cf"
+    Project = "build-your-infra"
+    Module  = "web-server"
+    Env     = "aws-native"
+  }
+}
+
+# ── ROUTE 53 ALIAS RECORDS ────────────────────────────────────────────────────
+
+resource "aws_route53_record" "apex" {
+  zone_id = data.aws_route53_zone.public.zone_id
+  name    = var.domain_name
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.main.domain_name
+    zone_id                = aws_cloudfront_distribution.main.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_route53_record" "www" {
+  zone_id = data.aws_route53_zone.public.zone_id
+  name    = "www.${var.domain_name}"
+  type    = "A"
+
+  alias {
+    name                   = aws_cloudfront_distribution.main.domain_name
+    zone_id                = aws_cloudfront_distribution.main.hosted_zone_id
+    evaluate_target_health = false
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "web_origin" {
+  bucket = aws_s3_bucket.web_origin.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
