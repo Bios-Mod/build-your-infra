@@ -1,0 +1,64 @@
+# Deploy to:   modules/directory/aws-native/automation/terraform/
+# Apply:       cp import.tf.example import.tf — fill in real IDs, delete after apply
+# Module:      modules/directory/aws-native
+# Note:        this file holds the provider block during Phase 1 import cycle.
+#              main.tf does not exist at this stage.
+#
+# IMPORT NOT EXECUTED — all resources were deleted during the aws-native.md Step 7
+# teardown before this automation phase was implemented. There was no existing
+# infrastructure to absorb. Terraform provisioned all resources from scratch via
+# terraform apply in Step 6.
+#
+# These import blocks are retained as reference for any future scenario where
+# resources exist prior to bringing this module under Terraform control.
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+  required_version = ">= 1.5.6"
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+# ── IMPORT BLOCKS (reference only — not executed) ─────────────────────────────
+
+# Persistent resources (subnet and SG survive teardown).
+
+# import {
+#   to = aws_subnet.private_2
+#   id = "<subnet-id>"  # subnet-xxxxxxxxxxxxxxxxx
+# }
+
+# import {
+#   to = aws_security_group.directory
+#   id = "<sg-id>"  # sg-xxxxxxxxxxxxxxxxx
+# }
+
+# import {
+#   to = aws_sns_topic.directory_alerts
+#   id = "<sns-topic-arn>"  # arn:aws:sns:eu-west-1:<account-id>:multi-lab-directory-alerts
+# }
+
+# Deploy-on-demand resources — deleted on every teardown cycle.
+
+# import {
+#   to = aws_directory_service_directory.main
+#   id = "<directory-id>"  # d-xxxxxxxxxxxxxxxxx
+# }
+
+# import {
+#   to = aws_vpc_dhcp_options.ad
+#   id = "<dhcp-options-id>"  # dopt-xxxxxxxxxxxxxxxxx
+# }
+
+# import {
+#   to = aws_vpc_dhcp_options_association.ad
+#   id = "<vpc-id>"  # vpc-xxxxxxxxxxxxxxxxx (VPC ID, not association ID)
+# }

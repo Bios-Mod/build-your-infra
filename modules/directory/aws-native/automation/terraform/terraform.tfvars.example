@@ -1,0 +1,13 @@
+# Terraform AWS Directory Service — build-your-infra
+# Module:   modules/directory/aws-native/automation/terraform
+# Deploy:   copy to terraform.tfvars and fill in real values
+# Note:     terraform.tfvars is gitignored and never committed
+
+aws_region  = "eu-west-1"
+aws_profile = "multi-lab-admin"
+vpc_name    = "multi-lab-vpc"
+
+ad_admin_password = "Mv-L4b.Secur3AD.Pass!2026"
+
+# Optional — SNS alert subscription email (leave empty to skip)
+sns_email = ""

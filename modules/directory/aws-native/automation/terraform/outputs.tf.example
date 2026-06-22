@@ -1,0 +1,33 @@
+# Terraform AWS Directory Service — build-your-infra
+# Module:   modules/directory/aws-native/automation/terraform
+# Deploy:   copy to outputs.tf after import cycle completes
+
+output "directory_id" {
+  description = "Managed AD directory ID."
+  value       = aws_directory_service_directory.main.id
+}
+
+output "directory_dns_ip_addresses" {
+  description = "DC IP addresses — use to update DHCP Options Set and domain join clients."
+  value       = aws_directory_service_directory.main.dns_ip_addresses
+}
+
+output "directory_security_group_id" {
+  description = "Security group ID for multi-lab-directory-sg."
+  value       = aws_security_group.directory.id
+}
+
+output "private_subnet_2_id" {
+  description = "ID of the second private subnet (eu-west-1b)."
+  value       = aws_subnet.private_2.id
+}
+
+output "dhcp_options_id" {
+  description = "DHCP Options Set ID pointing DNS to Managed AD DCs."
+  value       = aws_vpc_dhcp_options.ad.id
+}
+
+output "sns_topic_arn" {
+  description = "ARN of the directory alerts SNS topic."
+  value       = aws_sns_topic.directory_alerts.arn
+}

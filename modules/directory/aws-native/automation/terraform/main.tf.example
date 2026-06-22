@@ -1,0 +1,233 @@
+# Deploy to:   modules/directory/aws-native/automation/terraform/
+# Apply:       cp main.tf.example main.tf — activate after import cycle is complete
+# Module:      modules/directory/aws-native
+# Requires:    terraform.tfvars, state populated via import cycle (see directory-aws-native-automation.md)
+#              If all resources were torn down, rename directly and run terraform apply.
+#
+# Full resource definition for the directory aws-native module.
+# Do not rename to main.tf until import.tf has been applied and deleted (import path).
+
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 6.50"
+    }
+  }
+  required_version = ">= 1.5.6"
+}
+
+provider "aws" {
+  region  = var.aws_region
+  profile = var.aws_profile
+}
+
+# ── DATA SOURCES ──────────────────────────────────────────────────────────────
+
+# Descubrimiento automático de la subnet preexistente del módulo hardening
+data "aws_subnet" "private_1" {
+  vpc_id = data.aws_vpc.main.id
+
+  filter {
+    name   = "cidr-block"
+    values = ["10.0.2.0/24"]
+  }
+}
+
+data "aws_vpc" "main" {
+  filter {
+    name   = "tag:Name"
+    values = [var.vpc_name]
+  }
+}
+
+# ── SECOND PRIVATE SUBNET (AZ-b) ──────────────────────────────────────────────
+
+resource "aws_subnet" "private_2" {
+  vpc_id            = data.aws_vpc.main.id
+  cidr_block        = "10.0.3.0/24"
+  availability_zone = "eu-west-1b"
+
+  tags = {
+    Name = "multi-lab-private-2"
+  }
+}
+
+# ── SECURITY GROUP ────────────────────────────────────────────────────────────
+
+resource "aws_security_group" "directory" {
+  name        = "multi-lab-directory-sg"
+  description = "Managed AD - intra-VPC AD traffic only"
+  vpc_id      = data.aws_vpc.main.id
+
+  ingress {
+    description = "DNS TCP"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "DNS UDP"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "Kerberos TCP"
+    from_port   = 88
+    to_port     = 88
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "Kerberos UDP"
+    from_port   = 88
+    to_port     = 88
+    protocol    = "udp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "RPC endpoint mapper"
+    from_port   = 135
+    to_port     = 135
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "LDAP TCP"
+    from_port   = 389
+    to_port     = 389
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "LDAP UDP"
+    from_port   = 389
+    to_port     = 389
+    protocol    = "udp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "SMB / AD replication"
+    from_port   = 445
+    to_port     = 445
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "Kerberos password change TCP"
+    from_port   = 464
+    to_port     = 464
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "Kerberos password change UDP"
+    from_port   = 464
+    to_port     = 464
+    protocol    = "udp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "LDAPS"
+    from_port   = 636
+    to_port     = 636
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "Global Catalog"
+    from_port   = 3268
+    to_port     = 3268
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "Global Catalog SSL"
+    from_port   = 3269
+    to_port     = 3269
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  ingress {
+    description = "RPC dynamic ports"
+    from_port   = 49152
+    to_port     = 65535
+    protocol    = "tcp"
+    cidr_blocks = ["10.0.0.0/16"]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+}
+
+# ── MANAGED AD DIRECTORY ──────────────────────────────────────────────────────
+
+resource "aws_directory_service_directory" "main" {
+  name       = "multi-lab.internal"
+  short_name = "MULTILAB"
+  password   = var.ad_admin_password
+  edition    = "Standard"
+  type       = "MicrosoftAD"
+
+  vpc_settings {
+    vpc_id     = data.aws_vpc.main.id
+    subnet_ids = [data.aws_subnet.private_1.id, aws_subnet.private_2.id]
+  }
+
+  tags = {
+    Name = "multi-lab-directory"
+  }
+}
+
+# ── DHCP OPTIONS SET ──────────────────────────────────────────────────────────
+
+resource "aws_vpc_dhcp_options" "ad" {
+  domain_name         = "multi-lab.internal"
+  domain_name_servers = aws_directory_service_directory.main.dns_ip_addresses
+
+  tags = {
+    Name = "multi-lab-ad-dhcp"
+  }
+}
+
+resource "aws_vpc_dhcp_options_association" "ad" {
+  vpc_id          = data.aws_vpc.main.id
+  dhcp_options_id = aws_vpc_dhcp_options.ad.id
+}
+
+# ── SNS TOPIC — DIRECTORY ALERTS ─────────────────────────────────────────────
+
+resource "aws_sns_topic" "directory_alerts" {
+  name = "multi-lab-directory-alerts"
+}
+
+# ── SNS TOPIC SUBSCRIPTION ────────────────────────────────────────────────────
+
+resource "aws_sns_topic_subscription" "directory_alerts_email" {
+  # Si sns_email no está vacío, crea 1 suscripción; si está vacío, crea 0.
+  count     = var.sns_email != "" ? 1 : 0
+  topic_arn = aws_sns_topic.directory_alerts.arn
+  protocol  = "email"
+  endpoint  = var.sns_email
+}
