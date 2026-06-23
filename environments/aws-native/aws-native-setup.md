@@ -24,6 +24,7 @@ Complete this guide once before applying any aws-native module.
 ## Step 1 — Billing alerts
 
 ### What was done
+
 Enabled Free Tier usage alerts and created a zero-spend budget that triggers
 an email notification on any billable charge.
 
@@ -35,11 +36,13 @@ Before provisioning any resource:
 2. **Zero-spend budget:** Billing and Cost Management → Budgets → Create budget → select *Zero spend budget* template → confirm.
 
 ### Why
+
 An unattended resource accrues cost silently. These two controls are the
 minimum safety net before provisioning anything — the zero-spend budget fires
 on the first cent charged, regardless of cause.
 
 ### Verification
+
 Billing and Cost Management → Budgets — confirm budget status shows *OK* and
 alert email address is correct.
 
@@ -48,6 +51,7 @@ alert email address is correct.
 ## Step 2 — IAM base
 
 ### What was done
+
 - MFA enabled on root account.
 - IAM admin user `multi-lab-admin` created with `AdministratorAccess`, console
   access, and MFA.
@@ -58,9 +62,11 @@ alert email address is correct.
 AWS root account credentials must not be used for day-to-day operations.
 
 **Enable MFA on root:**
+
 IAM → Dashboard → Security recommendations → Add MFA for root → follow the wizard.
 
 **Create an IAM admin user:**
+
 1. IAM → Users → Create user.
 2. Username: `multi-lab-admin`.
 3. Skip "Provide user access to the AWS Management Console" — console access
@@ -103,6 +109,7 @@ AWS Account → Create account alias (e.g. `multi-lab`).
 The login URL becomes: `https://multi-lab.signin.aws.amazon.com/console`
 
 **Enable MFA on `multi-lab-admin`:**
+
 IAM → Users → `multi-lab-admin` → Security credentials → Assign MFA device →
 follow the wizard. MFA is required as second factor after password on every
 console login.
@@ -124,6 +131,7 @@ data with no additional policy changes — `AdministratorAccess` already covers 
 
 Go to `https://<account-id-or-alias>.signin.aws.amazon.com/console` and
 provide:
+
 - Account ID or alias
 - IAM username: `multi-lab-admin`
 - Password (set above)
@@ -153,6 +161,7 @@ aws configure --profile multi-lab-admin
 > dedicated IAM roles with scoped policies — defined in the automation phase.
 
 ### Why
+
 Root credentials cannot be scoped or rotated safely — any compromise is a
 full account compromise. The IAM user with MFA provides an auditable identity
 for all operations. AWS separates console access (password) from programmatic
@@ -180,6 +189,7 @@ aws sts get-caller-identity --profile multi-lab-admin
 ## Step 3 — Delete default VPC
 
 ### What was done
+
 Deleted the default VPC in the working region (`eu-west-1`) and any additional
 region that will be used in this lab.
 
@@ -192,6 +202,7 @@ region that will be used in this lab.
 3. Select default VPC → Actions → Delete VPC → confirm.
 
 ### Why
+
 The default VPC has permissive settings by design (public subnets, all traffic
 allowed by default Security Group). Leaving it active creates an accidental
 deployment surface — a misconfigured service or a console click in the wrong
@@ -210,6 +221,7 @@ VPC → Your VPCs — confirm no VPC with *Default: Yes* exists in the working r
 ## Step 4 — Custom VPC
 
 ### What was done
+
 Created custom VPC `multi-lab-vpc` with one public and one private subnet,
 Internet Gateway, and route tables. Both `DNS hostnames` and `DNS resolution`
 explicitly enabled.
@@ -246,6 +258,7 @@ Modules that require internet-facing resources use the public subnet (`10.0.1.0/
 Modules that do not (e.g. Directory Service, private DNS) use the private subnet (`10.0.2.0/24`).
 
 ### Why
+
 The default VPC (now deleted) had no explicit network boundaries. A custom VPC
 makes every routing decision intentional and mirrors real-world deployments
 where network segmentation is a baseline requirement. `DNS hostnames` assigns
@@ -259,7 +272,9 @@ more secure than a NAT Gateway for this use case.
 ### Verification
 
 **Console**
+
 VPC → Your VPCs → `multi-lab-vpc`:
+
 - State: *Available*
 - DNS hostnames: *Enabled*
 - DNS resolution: *Enabled*
@@ -267,6 +282,7 @@ VPC → Your VPCs → `multi-lab-vpc`:
 VPC → Subnets — confirm `10.0.1.0/24` (public) and `10.0.2.0/24` (private) exist and are associated to `multi-lab-vpc`.
 
 **CLI**
+
 ```bash
 aws ec2 describe-vpcs \
   --filters "Name=tag:Name,Values=multi-lab-vpc" \
@@ -280,6 +296,7 @@ aws ec2 describe-vpcs \
 ## Step 5 — Base audit services
 
 ### What was done
+
 Passive observability baseline enabled at the account level: CloudTrail
 (all-region trail) and GuardDuty.
 
@@ -292,6 +309,7 @@ Passive observability baseline enabled at the account level: CloudTrail
 CloudTrail → Create trail:
 
 **5.1.1 — Trail settings**
+
 - Trail name: `multi-lab-trail`
 - Storage location: Create new S3 bucket → `multi-lab-cloudtrail-<account-id>`
 - Log file validation: **Enabled**
@@ -310,6 +328,7 @@ CloudTrail → Create trail:
   - Network activity events: **off**
 
 **5.1.3 — Management event configuration**
+
 - API activity: **Read** ✓ · **Write** ✓
 - Exclude AWS KMS events: **enabled** — KMS generates high-volume read events
   that add noise without diagnostic value at this lab scale.
@@ -354,6 +373,7 @@ and GuardDuty data source configuration are covered in
 ---
 
 ### Why
+
 Passive observability baseline — no ongoing configuration after enabling.
 
 CloudTrail is the API-level audit log (equivalent to `auditd` at the OS layer).
@@ -366,10 +386,12 @@ the hardening module.
 ### Verification
 
 **Console**
+
 - CloudTrail → Trails → `multi-lab-trail` — Status: *Logging*
 - GuardDuty → Summary — Status: *Enabled*
 
 **CLI**
+
 ```bash
 aws cloudtrail get-trail-status --name multi-lab-trail --profile multi-lab
 # → "IsLogging": true

@@ -6,12 +6,10 @@
 # Variable values for the file-transfer aws-native Terraform module.
 # Parameters modified from baseline: none
 
-aws_region        = "eu-west-1"
-aws_profile       = "multi-lab-admin"
-
-account_id        = "<12-digit-account-id>"
-operator_ip       = "<your-public-ip>/32"
-vpc_id            = "<multi-lab-vpc-id>"
-subnet_id         = "<public-subnet-id>"
-eip_allocation_id = "<eip-allocation-id>"
-sftp_public_key   = "<paste-full-ssh-public-key>"
+aws_region  = "eu-west-1"
+aws_profile = "multi-lab-admin"
+vpc_name = "multi-lab-vpc"
+account_id        = "REPLACE"
+operator_ip       = "REPLACE"
+eip_allocation_id = "eipalloc-REPLACE"
+sftp_public_key   = "REPLACE"

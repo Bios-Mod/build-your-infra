@@ -17,9 +17,8 @@ variable "aws_profile" {
   type        = string
   default     = "multi-lab-admin"
 }
-
-# Comentado hasta que se crea 
-# ya que no se puede dar un id de un recurso que no existe 
+ 
+# Comment if not exist at moment of first plan
 
 # variable "vpc_id" {
 #   description = "ID of multi-lab-vpc — used for default SG lookup and Flow Logs"
