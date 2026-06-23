@@ -43,7 +43,7 @@ stacks/full-infra/aws-native/automation/terraform/
 | Module | Resources owned |
 |---|---|
 | hardening | VPC, subnets, IGW, route tables, security groups, IAM roles, GuardDuty, CloudTrail, VPC Flow Logs, IMDSv2 defaults |
-| dns | Route 53 Private Hosted Zone, A record, Resolver query logging |
+| dns | Route 53 Private Hosted Zone, A record (optional — disabled by default), Resolver query logging |
 | file-transfer | S3 transfer bucket, IAM role, Transfer Family server and user, SSH key |
 | web-server | S3 origin bucket, CloudFront distribution + OAC, Route 53 public records |
 | directory | Second private subnet, directory security group, Managed AD, DHCP Options Set, SNS topic |
@@ -105,7 +105,7 @@ contract without sensitive values.
 ### Verification
 
 ```bash
-grep -c "REPLACE_ME" terraform.tfvars
+grep -c "REPLACE" terraform.tfvars
 # 0 — no placeholders remaining
 ```
 
@@ -173,32 +173,28 @@ terraform init
 ```bash
 terraform fmt
 terraform validate
-terraform plan -out aws-native.tfplan
+terraform plan -target=module.hardening -out aws-native-phase1.tfplan
 ```
 
 ### Why
 
-`terraform plan` resolves all cross-module references before touching AWS.
-The hardening module outputs (`vpc_id`, `public_subnet_id`,
-`private_subnet_id`) are consumed by dns, file-transfer, web-server, and
-directory. A clean plan confirms all variable bindings resolve correctly
-before any resource is created.
+`dns` and `file_transfer` modules resolve the VPC via a `data "aws_vpc"` lookup at plan time. On a greenfield deploy the VPC does not exist yet, so a single-pass plan fails with `no matching EC2 VPC found`. Planning `module.hardening` first in isolation confirms the network topology before the dependent modules evaluate their data sources.
 
-The directory module is commented out in `main.tf` by default. Validate
-the first four modules with a clean plan before enabling it.
+> **Public Hosted Zone prerequisite:** the web-server module creates the
+> ACM certificate and requires the Route 53 Public Hosted Zone for
+> `buildyourinfra.click` to exist before plan. The zone is not managed
+> by this stack — verify it exists and that `hosted_zone_id` in
+> `terraform.tfvars` is populated with its ID before proceeding.
 
-> **ACM dependency:** the web-server module reads the ACM certificate via
-> a `data` source — it must be in `ISSUED` state before plan or it will
-> fail. Verify in the `us-east-1` console before proceeding.
-
-> **`aws-native.tfplan` is gitignored** (`*.tfplan`) and never committed.
+> **`aws-native-phase1.tfplan` is gitignored** (`*.tfplan`) and never committed.
 
 ### Verification
 
 ```bash
-terraform plan -out aws-native.tfplan
+terraform plan -target=module.hardening -out aws-native-phase1.tfplan
 # Plan: N to add, 0 to change, 0 to destroy.
-# Review the resource count — expected: all resources from all active modules.
+# Review resource count — expected: VPC, subnets, IGW, route tables,
+# security group, IAM roles, GuardDuty, CloudTrail, VPC Flow Logs.
 ```
 
 ---
@@ -207,16 +203,20 @@ terraform plan -out aws-native.tfplan
 
 ### What was done
 
+Apply in two phases. Phase 1 provisions the network. Phase 2 provisions all remaining modules once the VPC exists.
+
 ```bash
+# ── PHASE 1: HARDENING ────────────────────────────────────────────────────────
+terraform apply aws-native-phase1.tfplan
+
+# ── PHASE 2: FULL STACK ───────────────────────────────────────────────────────
+terraform plan -out aws-native.tfplan
 terraform apply aws-native.tfplan
 ```
 
 ### Why
 
-Apply creates all resources in dependency order. The hardening module
-provisions the VPC and network topology first. The directory module is
-last and has the longest provisioning time (~30 minutes). The `depends_on`
-chain in `main.tf` enforces this order explicitly.
+Phase 1 creates the VPC and network topology. Phase 2 resolves cleanly because the `data "aws_vpc"` lookups in `dns` and `file_transfer` find the VPC in the live account. All remaining modules — dns, file-transfer, web-server — are applied in a single pass.
 
 ### Verification
 
@@ -248,9 +248,10 @@ aws transfer list-servers \
 
 ### What was done
 
-Uncomment the `module "directory"` block in `main.tf`, then plan and apply.
+Uncomment the `module "directory"` block in `main.tf`, `terraform.tfvars`and `variables.tf` then plan and apply.
 
 ```bash
+terraform init # for read directory module
 terraform plan -out aws-native.tfplan
 terraform apply aws-native.tfplan
 ```

@@ -33,3 +33,9 @@ variable "hosted_zone_id" {
   description = "Route 53 Public Hosted Zone ID for buildyourinfra.click"
   type        = string
 }
+
+variable "html_dir" {
+  description = "Absolute or relative path to the html directory containing index.html. Defaults to the standard location relative to this module."
+  type        = string
+  default     = "../../../html"
+}

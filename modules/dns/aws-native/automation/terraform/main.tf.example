@@ -43,7 +43,11 @@ resource "aws_route53_zone" "internal" {
 
 # ── DNS RECORDS ───────────────────────────────────────────────────────────────
 
+# Optional — enabled only when an EC2 instance with a known private IP exists.
+# Set create_ec2_record = true and supply ec2_private_ip in terraform.tfvars.
 resource "aws_route53_record" "ec2" {
+  count = var.create_ec2_record ? 1 : 0
+
   zone_id = aws_route53_zone.internal.zone_id
   name    = "ec2.${var.zone_name}"
   type    = "A"

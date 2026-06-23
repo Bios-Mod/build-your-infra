@@ -56,16 +56,14 @@ resource "aws_s3_bucket" "web_origin" {
   bucket = "multi-lab-web-origin-${var.account_id}"
 }
 
-# 2. Cargar el HTML (dejas de depender de que el bucket esté vacío)
 resource "aws_s3_object" "index" {
   bucket       = aws_s3_bucket.web_origin.id
   key          = "index.html"
-  source       = "../../../html/index.html" 
+  source       = "${var.html_dir}/index.html"
   content_type = "text/html"
-  etag         = filemd5("../../../html/index.html")
+  etag         = filemd5("${var.html_dir}/index.html")
 }
 
-# 3. Política del Bucket (Permite acceso a CloudFront)
 resource "aws_s3_bucket_policy" "web_origin" {
   bucket = aws_s3_bucket.web_origin.id
 

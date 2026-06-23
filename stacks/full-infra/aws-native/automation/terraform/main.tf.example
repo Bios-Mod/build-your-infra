@@ -1,0 +1,73 @@
+# Deploy to:   stacks/full-infra/aws-native/automation/terraform/
+# Apply:       cp main.tf.example main.tf — activate before terraform init (greenfield path)
+# Module:      stacks/full-infra/aws-native
+# Requires:    terraform.tfvars with all values filled in
+#
+# Composes all five aws-native modules into a single deployable unit.
+# The stack owns no resources directly — it wires module outputs to module inputs.
+# Parameters modified from baseline: none
+
+# ── MODULE: HARDENING ─────────────────────────────────────────────────────────
+
+module "hardening" {
+  source = "../../../../../modules/hardening/aws-native/automation/terraform"
+
+  aws_region             = var.aws_region
+  aws_profile            = var.aws_profile
+  cloudtrail_bucket_name = var.cloudtrail_bucket_name
+}
+
+# ── MODULE: DNS ───────────────────────────────────────────────────────────────
+
+module "dns" {
+  source = "../../../../../modules/dns/aws-native/automation/terraform"
+
+  aws_region            = var.aws_region
+  aws_profile           = var.aws_profile
+  vpc_name              = var.vpc_name
+  zone_name             = var.zone_name
+  create_ec2_record     = false
+  a_record_ttl          = var.a_record_ttl
+  log_group_name        = var.dns_log_group_name
+  log_retention_days    = var.dns_log_retention_days
+  query_log_config_name = var.dns_query_log_config_name
+}
+
+# ── MODULE: FILE-TRANSFER ─────────────────────────────────────────────────────
+
+module "file_transfer" {
+  source = "../../../../../modules/file-transfer/aws-native/automation/terraform"
+
+  aws_region        = var.aws_region
+  aws_profile       = var.aws_profile
+  vpc_name          = var.vpc_name
+  account_id        = var.account_id
+  operator_ip       = var.operator_ip
+  eip_allocation_id = var.eip_allocation_id
+  sftp_public_key   = var.sftp_public_key
+}
+
+# ── MODULE: WEB-SERVER ────────────────────────────────────────────────────────
+
+module "web_server" {
+  source = "../../../../../modules/web-server/aws-native/automation/terraform"
+
+  aws_region     = var.aws_region
+  aws_profile    = var.aws_profile
+  account_id     = var.account_id
+  domain_name    = var.domain_name
+  hosted_zone_id = var.hosted_zone_id
+  html_dir = "../../../../../modules/web-server/html"
+}
+
+# ── MODULE: DIRECTORY (enable in Step 6 — second apply) ──────────────────────
+
+# module "directory" {
+#   source = "../../../../../modules/directory/aws-native/automation/terraform"
+#
+#   aws_region        = var.aws_region
+#   aws_profile       = var.aws_profile
+#   vpc_name          = var.vpc_name
+#   ad_admin_password = var.ad_admin_password
+#   sns_email         = var.sns_email
+# }

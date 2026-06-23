@@ -16,11 +16,6 @@ output "hosted_zone_name" {
   value       = aws_route53_zone.internal.name
 }
 
-output "ec2_record_fqdn" {
-  description = "Fully qualified domain name of the EC2 A record."
-  value       = aws_route53_record.ec2.fqdn
-}
-
 output "resolver_query_log_config_id" {
   description = "Route 53 Resolver Query Log configuration ID."
   value       = aws_route53_resolver_query_log_config.main.id
@@ -39,4 +34,9 @@ output "dns_query_log_group_name" {
 output "dns_query_log_group_arn" {
   description = "ARN of the CloudWatch Logs group for DNS query logs."
   value       = aws_cloudwatch_log_group.dns_query_logs.arn
+}
+
+output "ec2_record_fqdn" {
+  description = "FQDN of the EC2 A record. Empty string when create_ec2_record = false."
+  value       = var.create_ec2_record ? aws_route53_record.ec2[0].fqdn : ""
 }

@@ -1,0 +1,107 @@
+# Deploy to:   stacks/full-infra/aws-native/automation/terraform/
+# Apply:       committed as-is — no sensitive values
+# Module:      stacks/full-infra/aws-native
+# Requires:    main.tf active (all modules instantiated)
+#
+# Stack-level outputs aggregated from all active module outputs.
+# Parameters modified from baseline: none
+
+# ── HARDENING ─────────────────────────────────────────────────────────────────
+
+output "vpc_id" {
+  description = "ID of the VPC provisioned by the hardening module."
+  value       = module.hardening.vpc_id
+}
+
+output "public_subnet_id" {
+  description = "ID of the public subnet provisioned by the hardening module."
+  value       = module.hardening.public_subnet_id
+}
+
+output "private_subnet_id" {
+  description = "ID of the primary private subnet provisioned by the hardening module."
+  value       = module.hardening.private_subnet_id
+}
+
+output "security_group_id" {
+  description = "ID of the main EC2 security group provisioned by the hardening module."
+  value       = module.hardening.security_group_id
+}
+
+output "ec2_instance_profile_name" {
+  description = "Name of the EC2 IAM instance profile provisioned by the hardening module."
+  value       = module.hardening.ec2_instance_profile_name
+}
+
+# ── DNS ───────────────────────────────────────────────────────────────────────
+
+output "private_hosted_zone_id" {
+  description = "ID of the Route 53 Private Hosted Zone provisioned by the dns module."
+  value = module.dns.hosted_zone_id
+}
+
+output "dns_a_record_fqdn" {
+  description = "FQDN of the A record created in the Private Hosted Zone."
+  value = module.dns.ec2_record_fqdn
+}
+
+output "resolver_query_log_config_id" {
+  description = "ID of the Route 53 Resolver Query Log configuration."
+  value       = module.dns.resolver_query_log_config_id
+}
+
+# ── FILE-TRANSFER ─────────────────────────────────────────────────────────────
+
+output "transfer_server_id" {
+  description = "ID of the Transfer Family server provisioned by the file-transfer module."
+  value       = module.file_transfer.transfer_server_id
+}
+
+output "transfer_server_endpoint" {
+  description = "VPC endpoint hostname of the Transfer Family server."
+  value       = module.file_transfer.transfer_server_endpoint
+}
+
+output "transfer_s3_bucket_name" {
+  description = "Name of the S3 bucket used as the SFTP transfer target."
+  value       = module.file_transfer.s3_bucket_name
+}
+
+# ── WEB-SERVER ────────────────────────────────────────────────────────────────
+
+output "cloudfront_distribution_id" {
+  description = "ID of the CloudFront distribution provisioned by the web-server module."
+  value       = module.web_server.cloudfront_distribution_id
+}
+
+output "cloudfront_domain_name" {
+  description = "CloudFront distribution domain name (*.cloudfront.net)."
+  value       = module.web_server.cloudfront_domain_name
+}
+
+output "web_origin_bucket_name" {
+  description = "Name of the S3 origin bucket used by CloudFront."
+  value       = module.web_server.s3_origin_bucket
+}
+
+output "acm_certificate_arn" {
+  description = "ARN of the ACM certificate issued in us-east-1 for the CloudFront distribution."
+  value       = module.web_server.acm_certificate_arn
+}
+
+# ── DIRECTORY (uncomment when enabling module in Step 6) ─────────────────────
+
+# output "directory_id" {
+#   description = "ID of the Managed AD directory provisioned by the directory module."
+#   value       = module.directory.directory_id
+# }
+#
+# output "directory_dns_ip_addresses" {
+#   description = "DNS IP addresses of the Managed AD directory."
+#   value       = module.directory.directory_dns_ip_addresses
+# }
+#
+# output "dhcp_options_id" {
+#   description = "ID of the DHCP Options Set associated with the VPC."
+#   value       = module.directory.dhcp_options_id
+# }

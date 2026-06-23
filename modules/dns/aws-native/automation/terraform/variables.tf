@@ -30,11 +30,6 @@ variable "zone_name" {
   default     = "multi-lab.internal"
 }
 
-variable "ec2_private_ip" {
-  description = "Private IPv4 address of the multi-lab-aws EC2 instance. Used as the value for the A record."
-  type        = string
-}
-
 variable "a_record_ttl" {
   description = "TTL in seconds for the A records in the Private Hosted Zone."
   type        = number
@@ -57,4 +52,16 @@ variable "query_log_config_name" {
   description = "Name of the Route 53 Resolver Query Log configuration."
   type        = string
   default     = "multi-lab-resolver-logging"
+}
+
+variable "create_ec2_record" {
+  description = "Whether to create the ec2.multi-lab.internal A record. Set to true only when an EC2 instance with a known private IP exists in the VPC. Defaults to false for aws-native deployments where no EC2 is present."
+  type        = bool
+  default     = false
+}
+
+variable "ec2_private_ip" {
+  description = "Private IPv4 address of the multi-lab-aws EC2 instance. Used as the value for the A record. Required only when create_ec2_record = true."
+  type        = string
+  default     = ""
 }

@@ -1,0 +1,49 @@
+# Deploy to:   stacks/full-infra/aws-native/automation/terraform/
+# Apply:       cp terraform.tfvars.example terraform.tfvars — replace all REPLACE values
+# Module:      stacks/full-infra/aws-native
+# Requires:    variables.tf
+#
+# Input values for the aws-native full-stack.
+# Fill in before running terraform init. This file is gitignored and never committed.
+# Parameters modified from baseline: none
+
+# ── PROVIDER ──────────────────────────────────────────────────────────────────
+
+aws_region  = "eu-west-1"
+aws_profile = "multi-lab-admin"
+
+# ── SHARED ────────────────────────────────────────────────────────────────────
+
+vpc_name   = "multi-lab-vpc"
+account_id = "REPLACE"        # 12-digit AWS account ID
+operator_ip = "REPLACE"       # $(curl -s https://checkip.amazonaws.com)/32
+
+# ── HARDENING ─────────────────────────────────────────────────────────────────
+
+cloudtrail_bucket_name = "multi-lab-cloudtrail-REPLACE"   # append account ID
+
+# ── DNS ───────────────────────────────────────────────────────────────────────
+
+# Activate only if you need associate a ec2 instance to your DNS
+# ec2_private_ip         = "REPLACE"   # 10.0.x.x — multi-lab-aws private IP
+
+zone_name              = "multi-lab.internal"
+a_record_ttl           = 300
+dns_log_group_name     = "/aws/route53/multi-lab-vpc"
+dns_log_retention_days = 30
+dns_query_log_config_name = "multi-lab-resolver-logging"
+
+# ── FILE-TRANSFER ─────────────────────────────────────────────────────────────
+
+eip_allocation_id = "eipalloc-REPLACE"   # aws ec2 describe-addresses --filters Name=tag:Name,Values=multi-lab-transfer-eip
+sftp_public_key   = "REPLACE"            # paste full ssh-ed25519 public key string
+
+# ── WEB-SERVER ────────────────────────────────────────────────────────────────
+
+domain_name    = "buildyourinfra.click"
+hosted_zone_id = "Z09404252U4J0M75PLO69"   # aws route53 list-hosted-zones-by-name --dns-name buildyourinfra.click
+
+# ── DIRECTORY (uncomment when enabling module in Step 6) ─────────────────────
+
+# ad_admin_password = "REPLACE"   # minimum 8 chars, upper+lower+digit+symbol
+# sns_email         = ""
