@@ -1,0 +1,71 @@
+# =========================================================================
+# .cursorignore - Estándar para laboratorios de Infraestructura y Cloud
+# =========================================================================
+
+# cursor
+.cursorignore
+
+# --- Terraform & IaC ---
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+*.tfvars
+
+# --- Seguridad y Credenciales (¡CRÍTICO!) ---
+*.pem
+*.key
+*.pub
+id_rsa
+.env
+*.secret
+secrets.yml
+credentials/
+
+# --- Docker y Contenedores ---
+.dockerignore
+/var/lib/docker/
+
+# --- Ansible ---
+.ansible/
+ansible.log
+fact_cache/
+
+# --- Logs de Sistema y Temporales ---
+*.log
+tmp/
+dist/
+build/
+.DS_Store
+
+**/.DS_Store
+*.key
+*.pem
+*.p12
+*.pfx
+
+AGENTS.md
+context/
+
+# Terraform — local plugins downloaded by init
+.terraform/
+
+# Terraform — state files contain secrets in plain text, never commit
+*.tfstate
+*.tfstate.*
+terraform.tfvars
+import.tf
+main.tf
+outputs.tf
+*.tfvars.json
+
+# Terraform — lock file for local execution state
+.terraform.tfstate.lock.info
+
+# Terraform — saved plan files can contain sensitive data
+*.tfplan
+*.tfgraph.png
+
+# Terraform — crash logs
+crash.log
+crash.*.log
