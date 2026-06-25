@@ -29,3 +29,6 @@ outputs.tf
 # Terraform — crash logs
 crash.log
 crash.*.log
+
+# cursorignore file
+.cursorignore   
