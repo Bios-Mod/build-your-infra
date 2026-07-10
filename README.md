@@ -2,6 +2,9 @@
 
 # build-your-infra — Multi-Environment Infrastructure Lab
 
+[![push-ci](https://github.com/Bios-Mod/build-your-infra/actions/workflows/push-ci.yml/badge.svg)](https://github.com/Bios-Mod/build-your-infra/actions/workflows/push-ci.yml)
+[![pull-request](https://github.com/Bios-Mod/build-your-infra/actions/workflows/pull-request.yml/badge.svg)](https://github.com/Bios-Mod/build-your-infra/actions/workflows/pull-request.yml)
+
 [![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)
 [![Lynis EC2](https://img.shields.io/badge/Lynis%20EC2-90-brightgreen?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)
 [![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)
@@ -130,56 +133,67 @@ Ansible will close the configuration automation gap in a future iteration.
 
 ---
 
+## Continuous Integration
+
+Every module is validated on push and pull request via GitHub Actions — self-managed configs through native syntax checkers (`sshd -t`, `named-checkconf`, `testparm`, `nginx -t`, `fail2ban-client -t`, `aide --check`), and aws-native Terraform through `fmt -check` and `validate`. A single reusable workflow (`modules-ci.yml`) defines every check once; push and pull-request entry points call it via `workflow_call`, avoiding duplicated validation logic across triggers.
+
+`terraform plan` is intentionally excluded from CI — there is no persistent AWS environment in this lab, so `plan` remains a manual, local step before apply.
+
+See [`continuous-integration.md`](continuous-integration.md) for the full workflow structure, design decisions, and actions used.
+
+---
+
 ## Repository Structure
 ```
 build-your-infra/
 ├── AGENTS.md
-├── CONTRIBUTING.md
-├── LICENSE
-├── README.md
 ├── banner.png
 ├── context
 │   ├── current-iteration.md
 │   └── decision-log.md
+├── continuous-integration.md
+├── CONTRIBUTING.md
 ├── environments
-│   ├── README.md
 │   ├── aws-native
 │   │   └── aws-native-setup.md
 │   ├── local
 │   │   └── local-vm-setup.md
+│   ├── README.md
 │   └── vps
 │       └── vps-ec2-setup.md
+├── LICENSE
 ├── modules
 │   ├── dhcp
 │   │   ├── README.md
 │   │   └── self-managed
 │   ├── directory
-│   │   ├── README.md
 │   │   ├── aws-native
+│   │   ├── README.md
 │   │   └── self-managed
 │   ├── dns
-│   │   ├── README.md
 │   │   ├── aws-native
+│   │   ├── README.md
 │   │   └── self-managed
 │   ├── file-transfer
-│   │   ├── README.md
 │   │   ├── aws-native
+│   │   ├── README.md
 │   │   └── self-managed
 │   ├── hardening
-│   │   ├── README.md
 │   │   ├── aws-native
+│   │   ├── README.md
 │   │   └── self-managed
 │   └── web-server
-│       ├── README.md
 │       ├── aws-native
 │       ├── html
+│       ├── README.md
 │       └── self-managed
+├── README.md
 ├── snapshots
 │   └── README.md
 └── stacks
     └── full-infra
-        ├── README.md
         ├── aws-native
+        ├── README.md
         └── self-managed
 ```
 
