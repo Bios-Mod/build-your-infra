@@ -112,9 +112,10 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y bind9-utils
       - name: Validate named.conf syntax
         run: |
+          sudo mkdir -p /var/cache/bind
           for f in modules/dns/self-managed/configs/bind/named.conf.*; do
             echo "Validating $f"
-            named-checkconf "$f"
+            sudo named-checkconf "$f"
           done
       - name: Validate zone files
         run: |
