@@ -251,11 +251,14 @@ jobs:
           file modules/dhcp/self-managed/configs/kea/kea-dhcp4.conf
           cat modules/dhcp/self-managed/configs/kea/kea-dhcp4.conf | head -5
       - name: Validate Kea DHCP config syntax
+# Move kea conf to etc/ because the block of apparmor to check
         run: |
+          sudo mkdir -p /etc/kea
           for f in modules/dhcp/self-managed/configs/kea/*.conf; do
-            abs_path=$(realpath "$f")
-            echo "Validating $abs_path"
-            sudo kea-dhcp4 -t "$abs_path"
+            dest="/etc/kea/$(basename "$f")"
+            sudo cp "$f" "$dest"
+            echo "Validating $dest"
+            sudo kea-dhcp4 -t "$dest"
           done
 
   full-infra:
