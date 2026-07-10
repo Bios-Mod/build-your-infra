@@ -253,13 +253,15 @@ jobs:
       - name: Validate Kea DHCP config syntax
 # Move kea conf to etc/ because the block of apparmor to check
         run: |
+          sudo ip link add ens160 type dummy
           sudo mkdir -p /etc/kea
           for f in modules/dhcp/self-managed/configs/kea/*.conf; do
             dest="/etc/kea/$(basename "$f")"
             sudo cp "$f" "$dest"
             echo "Validating $dest"
-            sudo kea-dhcp4 -T "$dest"
+            sudo kea-dhcp4 -t "$dest"
           done
+          sudo ip link delete ens160
 
   full-infra:
     needs: changes
