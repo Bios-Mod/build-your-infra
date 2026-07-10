@@ -258,7 +258,7 @@ jobs:
             dest="/etc/kea/$(basename "$f")"
             sudo cp "$f" "$dest"
             echo "Validating $dest"
-            sudo kea-dhcp4 -t "$dest"
+            sudo kea-dhcp4 -T "$dest"
           done
 
   full-infra:
