@@ -248,8 +248,9 @@ jobs:
       - name: Validate Kea DHCP config syntax
         run: |
           for f in modules/dhcp/self-managed/configs/kea/*.conf; do
-            echo "Validating $f"
-            sudo kea-dhcp4 -t "$f"
+            abs_path=$(realpath "$f")
+            echo "Validating $abs_path"
+            sudo kea-dhcp4 -t "$abs_path"
           done
 
   full-infra:
