@@ -214,8 +214,8 @@ jobs:
       - name: Install Nginx validator
         run: sudo apt-get update && sudo apt-get install -y nginx
       - name: Validate Nginx config syntax
-        run: sudo nginx -t -c modules/web-server/self-managed/configs/nginx/multi-lab-vm.conf
-
+        run: |
+          sudo nginx -t -c "$(pwd)/modules/web-server/self-managed/configs/nginx/multi-lab-vm.conf"
   web-server-aws-native:
     needs: changes
     if: needs.changes.outputs.web-server-aws-native == 'true'
