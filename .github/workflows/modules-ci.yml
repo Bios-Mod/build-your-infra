@@ -251,7 +251,8 @@ jobs:
           file modules/dhcp/self-managed/configs/kea/kea-dhcp4.conf
           cat modules/dhcp/self-managed/configs/kea/kea-dhcp4.conf | head -5
       - name: Validate Kea DHCP config syntax
-# Move kea conf to etc/ because the block of apparmor to check
+# Move kea conf to etc/ because the block of apparmor to check and simulate a dummy
+# interface for run the test
         run: |
           sudo ip link add ens160 type dummy
           sudo mkdir -p /etc/kea
@@ -265,8 +266,8 @@ jobs:
 
   full-infra:
     needs: changes
-# This is for check if any module have a change in the code, trigger the test of full infra for 
-# integrity check
+# This is for check if any module have a change in the code, 
+# trigger the test of full infra for integrity check
     if: needs.changes.outputs.any-module == 'true'
     runs-on: ubuntu-24.04-arm
     steps:
