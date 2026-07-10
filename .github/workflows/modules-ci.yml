@@ -245,6 +245,11 @@ jobs:
       - uses: actions/checkout@v7
       - name: Install Kea DHCP
         run: sudo apt-get update && sudo apt-get install -y kea-dhcp4-server
+      - name: Debug file existence and permissions
+        run: |
+          ls -la modules/dhcp/self-managed/configs/kea/
+          file modules/dhcp/self-managed/configs/kea/kea-dhcp4.conf
+          cat modules/dhcp/self-managed/configs/kea/kea-dhcp4.conf | head -5
       - name: Validate Kea DHCP config syntax
         run: |
           for f in modules/dhcp/self-managed/configs/kea/*.conf; do
