@@ -243,11 +243,13 @@ jobs:
     runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v7
-      - name: Validate Kea DHCP config JSON syntax
+      - name: Install Kea DHCP
+        run: sudo apt-get update && sudo apt-get install -y kea-dhcp4-server
+      - name: Validate Kea DHCP config syntax
         run: |
           for f in modules/dhcp/self-managed/configs/kea/*.conf; do
             echo "Validating $f"
-            python3 -m json.tool "$f" > /dev/null
+            sudo kea-dhcp4 -t "$f"
           done
 
   full-infra:
