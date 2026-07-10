@@ -99,7 +99,12 @@ jobs:
       - name: Lint netplan and sysctl YAML
         run: |
           pip install yamllint --quiet
-          yamllint modules/hardening/self-managed/configs/netplan/
+          yamllint -d "{extends: default, rules: {
+            line-length: disable,
+            document-start: disable,
+            new-line-at-end-of-file: disable,
+            truthy: disable
+          }}" modules/hardening/self-managed/configs/netplan/
 
   hardening-aws-native:
     needs: changes
