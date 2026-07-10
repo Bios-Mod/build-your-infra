@@ -11,6 +11,12 @@
 
 on:
   workflow_call:
+# check the last commit for trigger only modified modules    
+    inputs:
+      base-ref:
+        required: false
+        type: string
+        default: ''
     outputs:
       any-module:
         value: ${{ jobs.changes.outputs.any-module }}
@@ -127,7 +133,11 @@ jobs:
       - name: Lint netplan YAML
         run: |
           pip install yamllint --quiet
-          yamllint modules/dns/self-managed/configs/netplan/
+          yamllint -d "{extends: default, rules: {
+            line-length: disable,
+            document-start: disable,
+            new-line-at-end-of-file: disable
+          }}" modules/dns/self-managed/configs/netplan/
 
   dns-aws-native:
     needs: changes

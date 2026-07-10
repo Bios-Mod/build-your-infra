@@ -15,3 +15,6 @@ on:
 jobs:
   ci:
     uses: ./.github/workflows/modules-ci.yml
+    with:
+# compare state with the last commit for run tests only in modified modules
+      base-ref: ${{ github.event.before }}
