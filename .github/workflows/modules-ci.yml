@@ -1,0 +1,270 @@
+# Deploy to:   GitHub Actions runner
+# Apply:       invoked via workflow_call from push-ci.yml and pull-request.yml
+# Module:      all modules (hardening, dns, file-transfer, web-server, directory, dhcp) + stacks/full-infra
+# Requires:    none
+#
+# Single source of truth for CI logic. Detects which module/environment
+# changed via paths-filter, runs the matching validation job, and gates
+# full-infra composition if any module changed. Called identically by
+# both push and pull_request triggers — change logic here once.
+# Parameters modified from baseline: none
+
+on:
+  workflow_call:
+    outputs:
+      any-module:
+        value: ${{ jobs.changes.outputs.any-module }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-24.04-arm
+    outputs:
+# Generated in the dorny action, allows us to check the state of the module for trigger 
+# the specific test      
+      hardening-self-managed: ${{ steps.filter.outputs.hardening-self-managed }}
+      hardening-aws-native: ${{ steps.filter.outputs.hardening-aws-native }}
+      dns-self-managed: ${{ steps.filter.outputs.dns-self-managed }}
+      dns-aws-native: ${{ steps.filter.outputs.dns-aws-native }}
+      file-transfer-self-managed: ${{ steps.filter.outputs.file-transfer-self-managed }}
+      file-transfer-aws-native: ${{ steps.filter.outputs.file-transfer-aws-native }}
+      web-server-self-managed: ${{ steps.filter.outputs.web-server-self-managed }}
+      web-server-aws-native: ${{ steps.filter.outputs.web-server-aws-native }}
+      directory-self-managed: ${{ steps.filter.outputs.directory-self-managed }}
+      directory-aws-native: ${{ steps.filter.outputs.directory-aws-native }}
+      dhcp-self-managed: ${{ steps.filter.outputs.dhcp-self-managed }}
+      any-module: ${{ steps.filter.outputs.any-module }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
+        id: filter
+        with:
+          filters: |
+            hardening-self-managed:
+              - 'modules/hardening/self-managed/**'
+            hardening-aws-native:
+              - 'modules/hardening/aws-native/**'
+            dns-self-managed:
+              - 'modules/dns/self-managed/**'
+            dns-aws-native:
+              - 'modules/dns/aws-native/**'
+            file-transfer-self-managed:
+              - 'modules/file-transfer/self-managed/**'
+            file-transfer-aws-native:
+              - 'modules/file-transfer/aws-native/**'
+            web-server-self-managed:
+              - 'modules/web-server/self-managed/**'
+            web-server-aws-native:
+              - 'modules/web-server/aws-native/**'
+            directory-self-managed:
+              - 'modules/directory/self-managed/**'
+            directory-aws-native:
+              - 'modules/directory/aws-native/**'
+            dhcp-self-managed:
+              - 'modules/dhcp/self-managed/**'
+            any-module:
+              - 'modules/**'
+
+  hardening-self-managed:
+    needs: changes
+    if: needs.changes.outputs.hardening-self-managed == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install validators
+        run: sudo apt-get update && sudo apt-get install -y openssh-server fail2ban auditd aide
+      - name: Validate sshd_config syntax
+        run: sudo sshd -t -f modules/hardening/self-managed/configs/ssh/sshd_config
+      - name: Validate fail2ban jail.local
+        run: sudo fail2ban-client -t -c modules/hardening/self-managed/configs/fail2ban
+      - name: Sanity-check audit rules format
+        run: grep -E '^-w .+ -p .+ -k .+' modules/hardening/self-managed/configs/audit/99-hardening.rules
+      - name: Validate AIDE conf syntax
+        run: sudo aide --config modules/hardening/self-managed/configs/aide/99-hardening --check || true
+      - name: Lint netplan and sysctl YAML
+        run: |
+          pip install yamllint --quiet
+          yamllint modules/hardening/self-managed/configs/netplan/
+
+  hardening-aws-native:
+    needs: changes
+    if: needs.changes.outputs.hardening-aws-native == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.6
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive modules/hardening/aws-native/automation/terraform
+      - name: Terraform init and validate
+        working-directory: modules/hardening/aws-native/automation/terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  dns-self-managed:
+    needs: changes
+    if: needs.changes.outputs.dns-self-managed == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install BIND9 validators
+        run: sudo apt-get update && sudo apt-get install -y bind9-utils
+      - name: Validate named.conf syntax
+        run: |
+          for f in modules/dns/self-managed/configs/bind/named.conf.*; do
+            echo "Validating $f"
+            named-checkconf "$f"
+          done
+      - name: Validate zone files
+        run: |
+          for f in modules/dns/self-managed/configs/bind/zones/db.*; do
+            zone=$(basename "$f" | sed 's/^db\.//')
+            echo "Validating zone $zone"
+            named-checkzone "$zone" "$f"
+          done
+      - name: Lint netplan YAML
+        run: |
+          pip install yamllint --quiet
+          yamllint modules/dns/self-managed/configs/netplan/
+
+  dns-aws-native:
+    needs: changes
+    if: needs.changes.outputs.dns-aws-native == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.6
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive modules/dns/aws-native/automation/terraform
+      - name: Terraform init and validate
+        working-directory: modules/dns/aws-native/automation/terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  file-transfer-self-managed:
+    needs: changes
+    if: needs.changes.outputs.file-transfer-self-managed == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install validators
+        run: sudo apt-get update && sudo apt-get install -y openssh-server auditd aide
+      - name: Validate sshd_config Match User block
+        run: sudo sshd -t -f modules/file-transfer/self-managed/configs/ssh/sshd_config
+      - name: Sanity-check audit rules format
+        run: grep -E '^-w .+ -p .+ -k .+' modules/file-transfer/self-managed/configs/audit/99-hardening.rules
+      - name: Validate AIDE scope append syntax
+        run: sudo aide --config modules/file-transfer/self-managed/configs/aide/99-hardening --check || true
+
+  file-transfer-aws-native:
+    needs: changes
+    if: needs.changes.outputs.file-transfer-aws-native == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.6
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive modules/file-transfer/aws-native/automation/terraform
+      - name: Terraform init and validate
+        working-directory: modules/file-transfer/aws-native/automation/terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  web-server-self-managed:
+    needs: changes
+    if: needs.changes.outputs.web-server-self-managed == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install Nginx validator
+        run: sudo apt-get update && sudo apt-get install -y nginx
+      - name: Validate Nginx config syntax
+        run: sudo nginx -t -c modules/web-server/self-managed/configs/nginx/multi-lab-vm.conf
+
+  web-server-aws-native:
+    needs: changes
+    if: needs.changes.outputs.web-server-aws-native == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.6
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive modules/web-server/aws-native/automation/terraform
+      - name: Terraform init and validate
+        working-directory: modules/web-server/aws-native/automation/terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  directory-self-managed:
+    needs: changes
+    if: needs.changes.outputs.directory-self-managed == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install validators
+        run: sudo apt-get update && sudo apt-get install -y samba-common-bin auditd aide
+      - name: Validate smb.conf syntax
+        run: testparm -s modules/directory/self-managed/configs/samba/smb.conf
+      - name: Validate AIDE conf syntax
+        run: sudo aide --config modules/directory/self-managed/configs/aide/99-hardening --check || true
+      - name: Sanity-check audit rules format
+        run: grep -E '^-w .+ -p .+ -k .+' modules/directory/self-managed/configs/audit/99-hardening.rules
+
+  directory-aws-native:
+    needs: changes
+    if: needs.changes.outputs.directory-aws-native == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.6
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive modules/directory/aws-native/automation/terraform
+      - name: Terraform init and validate
+        working-directory: modules/directory/aws-native/automation/terraform
+        run: |
+          terraform init -backend=false
+          terraform validate
+
+  dhcp-self-managed:
+    needs: changes
+    if: needs.changes.outputs.dhcp-self-managed == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Validate Kea DHCP config JSON syntax
+        run: |
+          for f in modules/dhcp/self-managed/configs/kea/*.conf; do
+            echo "Validating $f"
+            python3 -m json.tool "$f" > /dev/null
+          done
+
+  full-infra:
+    needs: changes
+# This is for check if any module have a change in the code, trigger the test of full infra for 
+# integrity check
+    if: needs.changes.outputs.any-module == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - uses: hashicorp/setup-terraform@v4
+        with:
+          terraform_version: 1.15.6
+      - name: Terraform fmt check
+        run: terraform fmt -check -recursive stacks/full-infra/aws-native/automation/terraform
+      - name: Terraform init and validate
+        working-directory: stacks/full-infra/aws-native/automation/terraform
+        run: |
+          terraform init -backend=false
+          terraform validate

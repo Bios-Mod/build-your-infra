@@ -1,0 +1,34 @@
+# Deploy to:   GitHub Actions runner
+# Apply:       automatic on pull_request to main
+# Module:      repository-wide (calls modules-ci.yml reusable workflow)
+# Requires:    modules-ci.yml
+#
+# Entry point for PR gate. Delegates module and full-infra validation to
+# the reusable workflow, and adds path-consistency check (verifies every
+# config path referenced in module docs exists physically in the repo).
+# Parameters modified from baseline: none
+
+on:
+  pull_request:
+    branches: main
+
+jobs:
+  ci:
+    uses: ./.github/workflows/modules-ci.yml
+
+  path-consistency:
+    runs-on: ubuntu-24.04-arm
+    steps:
+# Check broken paths inside the repo
+      - uses: actions/checkout@v7
+      - name: Verify config paths referenced in docs exist
+        run: |
+          set -e
+          missing=0
+          for path in $(grep -rhoE 'modules/[a-zA-Z0-9_./-]+/configs/[a-zA-Z0-9_./-]+' --include='*.md' .); do
+            if [ ! -f "$path" ]; then
+              echo "MISSING: $path"
+              missing=1
+            fi
+          done
+          exit $missing
