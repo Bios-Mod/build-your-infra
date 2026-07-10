@@ -89,7 +89,9 @@ jobs:
           sudo mkdir -p /run/sshd
           sudo sshd -t -f modules/hardening/self-managed/configs/ssh/sshd_config
       - name: Validate fail2ban jail.local
-        run: sudo fail2ban-client -t -c modules/hardening/self-managed/configs/fail2ban
+        run: |
+          sudo cp modules/hardening/self-managed/configs/fail2ban/jail.local /etc/fail2ban/jail.local
+          sudo fail2ban-client -t
       - name: Sanity-check audit rules format
         run: grep -E '^-w .+ -p .+ -k .+' modules/hardening/self-managed/configs/audit/99-hardening.rules
       - name: Validate AIDE conf syntax
