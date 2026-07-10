@@ -7,9 +7,9 @@ on the target environment before applying this module.
 
 ## Implementations
 
-| Environment | Technology | Status | Doc |
+| Environment | Technology | Doc |
 |---|---|---|---|
-| self-managed | SFTP (OpenSSH internal subsystem) | Complete | [self-managed.md](self-managed/self-managed.md) |
-| aws-native | AWS Transfer Family (SFTP / FTPS / FTP) | Planned | [aws-native.md](aws-native/aws-native.md) |
+| self-managed | SFTP (OpenSSH internal subsystem) | [file-transfer-self-managed.md](self-managed/file-transfer-self-managed.md) |
+| aws-native | AWS Transfer Family (SFTP / FTPS / FTP) | [file-transfer-aws-native.md](aws-native/file-transfer-aws-native.md) |
 
 **Docker equivalent:** atmoz/sftp — [`containerize-your-infra/modules/file-transfer`](https://github.com/Bios-Mod/containerize-your-infra/tree/main/modules/file-transfer)

@@ -13,12 +13,12 @@ IMDSv2 account-level default, GuardDuty, Security Hub, and the CloudTrail S3
 bucket policy and log validation setting.
 
 All resources in this module were created manually and documented in
-[aws-native.md](../aws-native.md). This module imports them into state, does
+[hardening-aws-native.md](../hardening-aws-native.md). This module imports them into state, does
 not recreate them.
 
 > **Prerequisites:** AWS CLI configured with the `multi-lab-admin` profile.
 > Terraform >= 1.5 installed locally. All steps in
-> [aws-native.md](../aws-native.md) completed — resources must exist before
+> [hardening-aws-native.md](../hardening-aws-native.md) completed — resources must exist before
 > import.
 
 ---

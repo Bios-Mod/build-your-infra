@@ -361,7 +361,7 @@ GuardDuty → Get started → **Enable GuardDuty**.
 
 No additional configuration required at this stage. VPC Flow Logs activation
 and GuardDuty data source configuration are covered in
-[`modules/hardening/aws-native/aws-native.md`](../../modules/hardening/aws-native/aws-native.md).
+[`modules/hardening/aws-native/hardening-aws-native.md`](../../modules/hardening/aws-native/hardening-aws-native.md).
 
 > GuardDuty includes a 30-day free trial on first enable per account per
 > region. After the trial, cost is based on volume of CloudTrail management
@@ -402,4 +402,4 @@ aws guardduty list-detectors --profile multi-lab-admin
 
 ---
 
-**Next:** [`modules/hardening/aws-native/aws-native.md`](../../modules/hardening/aws-native/aws-native.md)
+**Next:** [`modules/hardening/aws-native/hardening-aws-native.md`](../../modules/hardening/aws-native/hardening-aws-native.md)

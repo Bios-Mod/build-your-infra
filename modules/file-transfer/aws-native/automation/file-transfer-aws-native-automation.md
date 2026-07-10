@@ -13,12 +13,12 @@ the deploy-on-demand layer — the Transfer Family server, logical user, and
 SSH key.
 
 All resources in this module were created manually and documented in
-[aws-native.md](../aws-native.md). This module imports the persistent
+[file-transfer-aws-native.md](../file-transfer-aws-native.md). This module imports the persistent
 resources into state and manages the on-demand resources via apply/destroy.
 
 > **Prerequisites:** AWS CLI configured with the `multi-lab-admin` profile.
 > Terraform >= 1.5 installed locally. All steps in
-> [aws-native.md](../aws-native.md) completed — resources must exist before
+> [file-transfer-aws-native.md](../file-transfer-aws-native.md) completed — resources must exist before
 > import.
 
 ---
@@ -53,11 +53,8 @@ modules/file-transfer/aws-native/automation/terraform/
 | Transfer Family logical user | `aws_transfer_user` |
 | Transfer Family SSH key | `aws_transfer_ssh_key` |
 
-**Out of scope:** The Elastic IP associated with the Transfer Family server
-endpoint is not managed here — it is provisioned and released per session
-as documented in [aws-native.md](../aws-native.md) Steps 4 and 7. S3
-server access logging and CloudTrail S3 data events are managed by the
-hardening module.
+**Out of scope:** The Elastic IP associated with the Transfer Family server endpoint is not managed here — it is provisioned and released per session as documented in 
+[file-transfer-aws-native.md](../file-transfer-aws-native.md) Steps 4 and 7. S3 server access logging and CloudTrail S3 data events are managed by the hardening module.
 
 > **Deploy-on-demand pattern:** the Transfer Family server is billed at
 > $0.30/hour from creation. The server, logical user, and SSH key follow
@@ -354,7 +351,7 @@ billing.
 > IAM role, Security Group, and CloudWatch log group are also destroyed.
 > Do not run destroy if the S3 bucket contains data you intend to keep —
 > Terraform cannot delete a non-empty versioned bucket. Empty it first
-> using the commands in [aws-native.md](../aws-native.md) Step 7.
+> using the commands in [file-transfer-aws-native.md](../file-transfer-aws-native.md) Step 7.
 
 ```bash
 terraform destroy -auto-approve
@@ -369,7 +366,7 @@ the bucket. No orphaned resources remain after destroy completes.
 
 > **Elastic IP:** Terraform does not manage the EIP for this module. Release
 > it manually from the EC2 console after the server is destroyed, as
-> documented in [aws-native.md](../aws-native.md) Step 7.
+> documented in [file-transfer-aws-native.md](../file-transfer-aws-native.md) Step 7.
 
 ### Verification
 

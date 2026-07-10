@@ -12,12 +12,12 @@ certificate in `us-east-1`, S3 origin bucket with OAC bucket policy, and
 the CloudFront distribution with its Route 53 Alias records.
 
 All resources in this module were created manually and documented in
-[aws-native.md](../aws-native.md). This module imports them into state, does
+[web-server-aws-native.md](../web-server-aws-native.md). This module imports them into state, does
 not recreate them.
 
 > **Prerequisites:** AWS CLI configured with the `multi-lab-admin` profile.
 > Terraform >= 1.5 installed locally. All steps in
-> [aws-native.md](../aws-native.md) completed — resources must exist before
+> [web-server-aws-native.md](../web-server-aws-native.md) completed — resources must exist before
 > import.
 
 ---

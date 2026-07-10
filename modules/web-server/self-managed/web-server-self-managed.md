@@ -8,7 +8,7 @@
 
 This document covers the deployment of Nginx with HTTPS and a reverse proxy
 layer on top of the hardened OS baseline established in
-`modules/hardening/self-managed/self-managed.md`.
+`modules/hardening/self-managed/hardening-self-managed.md`.
 
 The web server layer introduces the first public-facing service in the lab.
 It terminates TLS at the Nginx level, enforces HTTPS-only access, and routes

@@ -182,7 +182,7 @@ ssh multi-lab-local
 
 ---
 
-**Next:** [`modules/hardening/self-managed/self-managed.md`](../../modules/hardening/self-managed/self-managed.md)
+**Next:** [`modules/hardening/self-managed/hardening-self-managed.md`](../../modules/hardening/self-managed/hardening-self-managed.md)
 
-> After hardening: update `~/.ssh/config` entry for `multi-lab-local` —
-> change `Port 22` to `Port 22222` and add `IdentityFile ~/.ssh/<your_key>`.
+> After hardening: update `~/.ssh/config` entry for 
+> `multi-lab-local` — change `Port 22` to `Port 22222` and add `IdentityFile ~/.ssh/<your_key>`.

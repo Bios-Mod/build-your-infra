@@ -13,5 +13,5 @@ on the target environment before applying this module.
 
 | Environment | Technology | Doc |
 |---|---|---|
-| self-managed (local VM) | Kea DHCP | [self-managed.md](self-managed/self-managed.md) |
+| self-managed (local VM) | Kea DHCP | [dhcp-self-managed.md](self-managed/dhcp-self-managed.md) |
 | aws-native | N/A — VPC DHCP Options Sets | — |

@@ -3,7 +3,7 @@
 AWS infrastructure provisioning for a self-managed Ubuntu Server instance.
 Scope: billing protection, key pair, security group, EC2 instance, and first
 connection. OS-level configuration starts in
-[`modules/hardening/self-managed/self-managed.md`](../../modules/hardening/self-managed/self-managed.md).
+[`modules/hardening/self-managed/hardening-self-managed.md`](../../modules/hardening/self-managed/hardening-self-managed.md).
 
 ---
 
@@ -156,9 +156,9 @@ EC2 → Security Groups → Create security group:
 > **Port 22 — temporary rule:** Ubuntu Server 24.04 starts SSH on port 22
 > by default. This rule is required for the first connection and for hardening
 > Step 3, which moves SSH to port 22222. The port 22 rule is removed in
-> [`modules/hardening/self-managed/self-managed.md`](../../modules/hardening/self-managed/self-managed.md)
+> [`modules/hardening/self-managed/hardening-self-managed.md`](../../modules/hardening/self-managed/hardening-self-managed.md)
 > Step 3 — do not delete it now.
-
+>
 > **Source IP restriction:** both SSH rules restrict source to `My IP (/32)`.
 > Update when your IP changes:
 > ```bash
@@ -324,7 +324,7 @@ cat /etc/os-release | grep VERSION
 
 ---
 
-**Next:** [`modules/hardening/self-managed/self-managed.md`](../../modules/hardening/self-managed/self-managed.md)
+**Next:** [`modules/hardening/self-managed/hardening-self-managed.md`](../../modules/hardening/self-managed/hardening-self-managed.md)
 
 > After hardening: update `~/.ssh/config` entry for `multi-lab-aws` —
 > change `Port 22` to `Port 22222`. The port 22 inbound rule in `multi-lab-sg`

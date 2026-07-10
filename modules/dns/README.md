@@ -8,8 +8,8 @@ Internal name resolution for lab services and clients, with controlled recursion
 
 | Environment | Technology | Doc |
 |---|---|---|
-| self-managed | BIND9 (authoritative + recursive resolver) | [self-managed.md](self-managed/self-managed.md) |
-| aws-native | Route 53 Private Hosted Zone | [aws-native.md](aws-native/aws-native.md) |
+| self-managed | BIND9 (authoritative + recursive resolver) | [dns-self-managed.md](self-managed/dns-self-managed.md) |
+| aws-native | Route 53 Private Hosted Zone | [dns-aws-native.md](aws-native/dns-aws-native.md) |
 
 > **Deployment scope — self-managed:** BIND9 is deployed exclusively on the
 > EC2 instance, which acts as the WireGuard hub. All other lab hosts (local VM,

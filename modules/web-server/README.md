@@ -11,7 +11,7 @@ on the target environment before applying this module.
 
 | Environment | Technology | Doc |
 |---|---|---|
-| self-managed | Nginx — HTTPS + reverse proxy (Let's Encrypt / self-signed) | [self-managed.md](self-managed/self-managed.md) |
-| aws-native | S3 · CloudFront · ACM | [aws-native.md](aws-native/aws-native.md) |
+| self-managed | Nginx — HTTPS + reverse proxy (Let's Encrypt / self-signed) | [web-server-self-managed.md](self-managed/web-server-self-managed.md) |
+| aws-native | S3 · CloudFront · ACM | [web-server-aws-native.md](aws-native/web-server-aws-native.md) |
 
 **Docker equivalent:** Nginx official image — [`containerize-your-infra/modules/web-server`](https://github.com/Bios-Mod/containerize-your-infra/tree/main/modules/web-server)

@@ -8,7 +8,7 @@
 
 This document covers the deployment of Samba 4 as an Active Directory Domain
 Controller on top of the hardened OS baseline established in
-[`modules/hardening/self-managed/self-managed.md`](../../hardening/self-managed/self-managed.md).
+[`modules/hardening/self-managed/hardening-self-managed.md`](../../hardening/self-managed/hardening-self-managed.md).
 
 The directory service introduces domain authentication, LDAP, Kerberos, and
 integrated DNS into the lab. Samba 4 in DC mode replaces standalone file-level
@@ -18,10 +18,10 @@ Windows Server AD, implemented entirely on Linux.
 > **Prerequisite — DNS:** the `dns` module must be fully deployed and validated
 > before provisioning Samba 4. Samba AD DS requires a functioning DNS
 > infrastructure to register SRV records, resolve DC names, and support
-> Kerberos ticket exchange. Review [`modules/dns/self-managed/self-managed.md`](../../dns/self-managed/self-managed.md)
+> Kerberos ticket exchange. Review [`modules/dns/self-managed/dns-self-managed.md`](../../dns/self-managed/dns-self-managed.md)
 > before proceeding.
 >
-> **Prerequisite — Hardening:** the [`hardening`](../../hardening/self-managed/self-managed.md) module must be fully deployed.
+> **Prerequisite — Hardening:** the [`hardening`](../../hardening/self-managed/hardening-self-managed.md) module must be fully deployed.
 > The firewall rules, AppArmor enforcement, auditd, and AIDE baseline extended
 > here all depend on the hardening configuration.
 

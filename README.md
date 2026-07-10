@@ -2,32 +2,32 @@
 
 # build-your-infra — Multi-Environment Infrastructure Lab
 
-[![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/self-managed.md)
-[![Lynis EC2](https://img.shields.io/badge/Lynis%20EC2-90-brightgreen?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/self-managed/self-managed.md)
-[![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)](modules/hardening/self-managed/self-managed.md)
-[![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/self-managed.md)
-[![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)](modules/hardening/self-managed/self-managed.md)
-[![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)](modules/hardening/self-managed/self-managed.md)
-[![auditd](https://img.shields.io/badge/auditd-active-blue?style=flat-square)](modules/hardening/self-managed/self-managed.md)
-[![GuardDuty](https://img.shields.io/badge/GuardDuty-enabled-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
-[![CloudTrail](https://img.shields.io/badge/CloudTrail-audit-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
-[![Security Hub](https://img.shields.io/badge/Security%20Hub-enabled-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
+[![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)
+[![Lynis EC2](https://img.shields.io/badge/Lynis%20EC2-90-brightgreen?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)
+[![WireGuard](https://img.shields.io/badge/WireGuard-VPN-red?style=flat-square&logo=wireguard&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)
+[![UFW](https://img.shields.io/badge/UFW-Firewall-informational?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)
+[![Fail2Ban](https://img.shields.io/badge/Fail2Ban-active-success?style=flat-square)](modules/hardening/self-managed/hardening-self-managed.md)
+[![AppArmor](https://img.shields.io/badge/AppArmor-enforce-blueviolet?style=flat-square)](modules/hardening/self-managed/hardening-self-managed.md)
+[![auditd](https://img.shields.io/badge/auditd-active-blue?style=flat-square)](modules/hardening/self-managed/hardening-self-managed.md)
+[![GuardDuty](https://img.shields.io/badge/GuardDuty-enabled-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/hardening-aws-native.md)
+[![CloudTrail](https://img.shields.io/badge/CloudTrail-audit-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/hardening-aws-native.md)
+[![Security Hub](https://img.shields.io/badge/Security%20Hub-enabled-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/hardening-aws-native.md)
 
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-24.04%20LTS-orange?style=flat-square&logo=ubuntu&logoColor=white)](environments/local/local-vm-setup.md)
-[![SFTP](https://img.shields.io/badge/SFTP-OpenSSH%20subsystem-blue?style=flat-square)](modules/file-transfer/self-managed/self-managed.md)
-[![BIND9](https://img.shields.io/badge/BIND9-DNS-informational?style=flat-square)](modules/dns/self-managed/self-managed.md)
-[![Nginx](https://img.shields.io/badge/Nginx-HTTPS%20%2B%20proxy-009639?style=flat-square&logo=nginx&logoColor=white)](modules/web-server/self-managed/self-managed.md)
-[![Samba4](https://img.shields.io/badge/Samba4-AD%20DC-blue?style=flat-square)](modules/directory/self-managed/self-managed.md)
-[![Kea DHCP](https://img.shields.io/badge/Kea-DHCP-informational?style=flat-square)](modules/dhcp/self-managed/self-managed.md)
+[![SFTP](https://img.shields.io/badge/SFTP-OpenSSH%20subsystem-blue?style=flat-square)](modules/file-transfer/self-managed/file-transfer-self-managed.md)
+[![BIND9](https://img.shields.io/badge/BIND9-DNS-informational?style=flat-square)](modules/dns/self-managed/dns-self-managed.md)
+[![Nginx](https://img.shields.io/badge/Nginx-HTTPS%20%2B%20proxy-009639?style=flat-square&logo=nginx&logoColor=white)](modules/web-server/self-managed/web-server-self-managed.md)
+[![Samba4](https://img.shields.io/badge/Samba4-AD%20DC-blue?style=flat-square)](modules/directory/self-managed/directory-self-managed.md)
+[![Kea DHCP](https://img.shields.io/badge/Kea-DHCP-informational?style=flat-square)](modules/dhcp/self-managed/dhcp-self-managed.md)
 
 [![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](environments/vps/vps-ec2-setup.md)
-[![SSM](https://img.shields.io/badge/SSM-Session%20Manager-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/aws-native.md)
-[![Transfer Family](https://img.shields.io/badge/Transfer%20Family-SFTP-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/file-transfer/aws-native/aws-native.md)
-[![Route 53](https://img.shields.io/badge/Route%2053-Private%20DNS-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/dns/aws-native/aws-native.md)
-[![S3](https://img.shields.io/badge/S3-Static%20Origin-FF9900?style=flat-square&logo=amazons3&logoColor=white)](modules/web-server/aws-native/aws-native.md)
-[![ACM](https://img.shields.io/badge/ACM-TLS%20Certificates-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/aws-native.md)
-[![CloudFront](https://img.shields.io/badge/CloudFront-CDN-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/aws-native.md)
-[![Directory Service](https://img.shields.io/badge/Directory%20Service-Managed%20AD-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/directory/aws-native/aws-native.md)
+[![SSM](https://img.shields.io/badge/SSM-Session%20Manager-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/hardening-aws-native.md)
+[![Transfer Family](https://img.shields.io/badge/Transfer%20Family-SFTP-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/file-transfer/aws-native/file-transfer-aws-native.md)
+[![Route 53](https://img.shields.io/badge/Route%2053-Private%20DNS-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/dns/aws-native/dns-aws-native.md)
+[![S3](https://img.shields.io/badge/S3-Static%20Origin-FF9900?style=flat-square&logo=amazons3&logoColor=white)](modules/web-server/aws-native/web-server-aws-native.md)
+[![ACM](https://img.shields.io/badge/ACM-TLS%20Certificates-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/web-server-aws-native.md)
+[![CloudFront](https://img.shields.io/badge/CloudFront-CDN-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/web-server-aws-native.md)
+[![Directory Service](https://img.shields.io/badge/Directory%20Service-Managed%20AD-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/directory/aws-native/directory-aws-native.md)
 
 A practical, step-by-step reference for deploying and hardening infrastructure across three environments: local VM, VPS, and AWS Native managed services. Each module is implemented at the configuration level, with the reasoning behind every decision explained inline.
 
@@ -41,10 +41,7 @@ Nginx, BIND9, SFTP, and reverse proxy via Traefik v3, deployed with Docker
 Engine and Compose v2 across dev (OrbStack on macOS) and prod
 (Ubuntu 24.04 LTS · EC2 t4g.micro) environments.
 
-The automation phase of both repos is coordinated: Terraform for AWS
-infrastructure provisioning — planned as the next step in both repositories.
-
----
+The automation phase of both repos is coordinated: Terraform for AWS infrastructure provisioning — planned as the next step in both repositories.
 
 ---
 
@@ -61,13 +58,14 @@ infrastructure provisioning — planned as the next step in both repositories.
 `local` and `vps` follow the same self-managed hardening baseline. `aws-native`
 replaces each service with its AWS managed equivalent — no OS to manage.
 
-> See [`environments/README.md`](environments/README.md) for environment setup
-> guides and when to use each.
-
-> **Architecture note:** Built and tested on ARM64 (Apple Silicon via VMware
-> Fusion and AWS Graviton2). All configurations are architecture-agnostic
-> except where noted. x86_64 users can follow the same steps — differences
-> are called out inline.
+> See [`environments/README.md`](environments/README.md) for 
+> environment setup guides and when to use each.
+>
+> **Architecture note:** Built and tested on ARM64 (Apple 
+> Silicon via VMware Fusion and AWS Graviton2). 
+> All configurations are architecture-agnostic except 
+> where noted. x86_64 users can follow the same steps — 
+> differences are called out inline.
 
 ---
 
@@ -105,15 +103,14 @@ hardened base.
 | Directory | Samba 4 AD DC | AWS Directory Service (Managed Microsoft AD) | [`modules/directory/`](modules/directory/README.md) |
 | DHCP | Kea DHCP | N/A — local only | [`modules/dhcp/`](modules/dhcp/README.md) |
 
-> **Directory dependency:** Samba 4 AD DC mode includes its own internal DNS
-> server that can replace or integrate with BIND9. Review the DNS module
-> before provisioning the directory — zone delegation or full BIND9
-> replacement may be required.
+> **Directory dependency:** Samba 4 AD DC mode includes its own
+> internal DNS server that can replace or integrate with BIND9.
+> Review the DNS module before provisioning the directory — zone
+> delegation or full BIND9 replacement may be required.
 
 ## Automation
 
-Each module includes an `automation/` directory with the tooling to reproduce
-that module's infrastructure from code.
+Each module includes an `automation/` directory with the tooling to reproduce that module's infrastructure from code.
 
 | Environment | Tool | Scope | Stack |
 |---|---|---|---|

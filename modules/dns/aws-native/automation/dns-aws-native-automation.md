@@ -12,13 +12,13 @@ the A record for the EC2 instance, the Resolver Query Log configuration,
 its VPC association, and the CloudWatch log group that receives DNS query logs.
 
 All resources in this module were created manually and documented in
-[aws-native.md](../aws-native.md). This module imports them into state, does
+[dns-aws-native.md](../dns-aws-native.md). This module imports them into state, does
 not recreate them.
 
 > **Prerequisites:** AWS CLI configured with the `multi-lab-admin` profile.
 > Terraform >= 1.5 installed locally. All steps in
-> [aws-native.md](../aws-native.md) completed — resources must exist before
-> import.
+> [dns-aws-native.md](../dns-aws-native.md) completed — resources must 
+> exist before import.
 
 ---
 
@@ -53,7 +53,7 @@ by the service. The VPC (`multi-lab-vpc`) is referenced via a `data` source —
 it is managed by the hardening module and not owned here.
 
 > **Resolver Query Logging — teardown state:** Step 4 of
-> [aws-native.md](../aws-native.md) disassociates the VPC from the query log
+> [dns-aws-native.md](../dns-aws-native.md) disassociates the VPC from the query log
 > config to stop variable billing between sessions. If the association was
 > removed before this import cycle, skip importing
 > `aws_route53_resolver_query_log_config_association` and omit that block
@@ -272,7 +272,7 @@ cycle is complete.
 > state. The three logging resources (CloudWatch log group, Resolver Query Log
 > config, and VPC association) do not exist in AWS — Terraform creates them
 > on this apply. This is the expected outcome given the teardown executed in
-> [aws-native.md](../aws-native.md) Step 4.
+> [dns-aws-native.md](../dns-aws-native.md) Step 4.
 
 ---
 
