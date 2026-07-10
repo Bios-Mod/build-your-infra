@@ -165,7 +165,9 @@ jobs:
       - name: Install validators
         run: sudo apt-get update && sudo apt-get install -y openssh-server auditd aide
       - name: Validate sshd_config Match User block
-        run: sudo sshd -t -f modules/file-transfer/self-managed/configs/ssh/sshd_config
+        run: |
+          sudo mkdir -p /run/sshd
+          sudo sshd -t -f modules/file-transfer/self-managed/configs/ssh/sshd_config
       - name: Sanity-check audit rules format
         run: grep -E '^-w .+ -p .+ -k .+' modules/file-transfer/self-managed/configs/audit/99-hardening.rules
       - name: Validate AIDE scope append syntax
