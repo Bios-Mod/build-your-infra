@@ -2,8 +2,8 @@
 
 # build-your-infra — Multi-Environment Infrastructure Lab
 
-[![push-ci](https://github.com/Bios-Mod/build-your-infra/actions/workflows/push-ci.yml/badge.svg)](https://github.com/Bios-Mod/build-your-infra/actions/workflows/push-ci.yml)
-[![pull-request](https://github.com/Bios-Mod/build-your-infra/actions/workflows/pull-request.yml/badge.svg)](https://github.com/Bios-Mod/build-your-infra/actions/workflows/pull-request.yml)
+[![Push](https://github.com/Bios-Mod/build-your-infra/actions/workflows/push-ci.yml/badge.svg)](https://github.com/Bios-Mod/build-your-infra/actions/workflows/push-ci.yml)
+[![Pull Request](https://github.com/Bios-Mod/build-your-infra/actions/workflows/pull-request.yml/badge.svg)](https://github.com/Bios-Mod/build-your-infra/actions/workflows/pull-request.yml)
 
 [![Lynis VM](https://img.shields.io/badge/Lynis%20VM-88-brightgreen?style=flat-square&logo=linux&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)
 [![Lynis EC2](https://img.shields.io/badge/Lynis%20EC2-90-brightgreen?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/self-managed/hardening-self-managed.md)

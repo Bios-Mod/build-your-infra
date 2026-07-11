@@ -9,8 +9,7 @@
 
 on:
   push:
-    branches:
-      - actions-implementation
+    branches: main
 
 jobs:
   ci:
