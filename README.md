@@ -150,7 +150,6 @@ See [`continuous-integration.md`](continuous-integration.md) for the full workfl
 │       ├── modules-ci.yml
 │       ├── pull-request.yml
 │       └── push-ci.yml
-├── .gitignore
 ├── AGENTS.md
 ├── banner.png
 ├── context
