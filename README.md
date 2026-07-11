@@ -145,7 +145,12 @@ See [`continuous-integration.md`](continuous-integration.md) for the full workfl
 
 ## Repository Structure
 ```
-build-your-infra/
+├── .github
+│   └── workflows
+│       ├── modules-ci.yml
+│       ├── pull-request.yml
+│       └── push-ci.yml
+├── .gitignore
 ├── AGENTS.md
 ├── banner.png
 ├── context
