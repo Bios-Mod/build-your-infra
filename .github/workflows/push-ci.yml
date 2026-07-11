@@ -1,0 +1,20 @@
+# Deploy to:   GitHub Actions runner
+# Apply:       automatic on push (actions-implementation branch)
+# Module:      repository-wide (calls modules-ci.yml reusable workflow)
+# Requires:    modules-ci.yml
+#
+# Entry point for push-triggered CI during implementation/debug phase.
+# Delegates all module and full-infra validation to the reusable workflow.
+# Parameters modified from baseline: none
+
+on:
+  push:
+    branches:
+      - actions-implementation
+
+jobs:
+  ci:
+    uses: ./.github/workflows/modules-ci.yml
+    with:
+# compare state with the last commit for run tests only in modified modules
+      base-ref: ${{ github.event.before }}
