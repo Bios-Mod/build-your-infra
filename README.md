@@ -34,7 +34,7 @@
 
 A practical, step-by-step reference for deploying and hardening infrastructure across three environments: local VM, VPS, and AWS Native managed services. Each module is implemented at the configuration level, with the reasoning behind every decision explained inline.
 
-Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Management Console (where the GUI provides the clearest workflow) and the CLI. No automation frameworks at this stage — automation of deployed modules is planned as a follow-up phase.
+Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Management Console (where the GUI provides the clearest workflow) and the CLI.
 
 The same services are also deployed as Docker containers in
 [containerize-your-infra](https://github.com/Bios-Mod/containerize-your-infra)
@@ -44,14 +44,12 @@ Nginx, BIND9, SFTP, and reverse proxy via Traefik v3, deployed with Docker
 Engine and Compose v2 across dev (OrbStack on macOS) and prod
 (Ubuntu 24.04 LTS · EC2 t4g.micro) environments.
 
-The automation phase of both repos is coordinated: Terraform for AWS infrastructure provisioning — planned as the next step in both repositories.
-
 ---
 
 ## Environments
 
 | Component | Local (VM) | VPS / EC2 | AWS Native |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | OS | Ubuntu Server 24.04 LTS | Ubuntu Server 24.04 LTS | Managed (per service) |
 | Architecture | ARM64 (Apple Silicon) / x86_64 | ARM64(Graviton2) | — |
 | Deployment | VMware Fusion / VirtualBox · Bridged network | EC2 t4g.micro · eu-west-1 | AWS managed services · eu-west-1 |
@@ -61,13 +59,13 @@ The automation phase of both repos is coordinated: Terraform for AWS infrastruct
 `local` and `vps` follow the same self-managed hardening baseline. `aws-native`
 replaces each service with its AWS managed equivalent — no OS to manage.
 
-> See [`environments/README.md`](environments/README.md) for 
+> See [`environments/README.md`](environments/README.md) for
 > environment setup guides and when to use each.
 >
-> **Architecture note:** Built and tested on ARM64 (Apple 
-> Silicon via VMware Fusion and AWS Graviton2). 
-> All configurations are architecture-agnostic except 
-> where noted. x86_64 users can follow the same steps — 
+> **Architecture note:** Built and tested on ARM64 (Apple
+> Silicon via VMware Fusion and AWS Graviton2).
+> All configurations are architecture-agnostic except
+> where noted. x86_64 users can follow the same steps —
 > differences are called out inline.
 
 ---
@@ -99,7 +97,7 @@ hardened base.
 ### Services
 
 | Module | Self-Managed Technology | AWS Native Technology | Doc |
-|--------|-------------------------|-----------------------|-----|
+| -------- | ------------------------- | ----------------------- | ----- |
 | File Transfer | SFTP (OpenSSH subsystem) | AWS Transfer Family | [`modules/file-transfer/`](modules/file-transfer/README.md) |
 | DNS | BIND9 | Route 53 Private Hosted Zones | [`modules/dns/`](modules/dns/README.md) |
 | Web Server | Nginx + HTTPS · reverse proxy | S3 · CloudFront · ACM | [`modules/web-server/`](modules/web-server/README.md) |
@@ -116,7 +114,7 @@ hardened base.
 Each module includes an `automation/` directory with the tooling to reproduce that module's infrastructure from code.
 
 | Environment | Tool | Scope | Stack |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | aws-native | Terraform | Per-module import + redeploy | `modules/<name>/aws-native/automation/terraform/` |
 | self-managed | Terraform | EC2 from AMI snapshot — infrastructure layer | `stacks/full-infra/self-managed/automation/terraform/` |
 
@@ -144,6 +142,7 @@ See [`continuous-integration.md`](continuous-integration.md) for the full workfl
 ---
 
 ## Repository Structure
+
 ```
 ├── .github
 │   └── workflows
