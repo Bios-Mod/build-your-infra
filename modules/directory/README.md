@@ -1,7 +1,6 @@
 # Directory
 
-Centralized identity store providing Kerberos authentication, LDAP directory
-queries, Group Policy enforcement, and integrated DNS for domain-joined hosts.
+Without a central identity store, every host manages its own users and credentials. Centralized identity providing Kerberos authentication, LDAP directory queries, Group Policy enforcement, and integrated DNS for domain-joined hosts.
 
 **Requires:** [`modules/hardening/`](../hardening/README.md) fully deployed
 on the target environment before applying this module.
@@ -9,7 +8,7 @@ on the target environment before applying this module.
 ## Implementations
 
 | Environment | Technology | Doc |
-|---|---|---|
+| --- | --- | --- |
 | aws-native | AWS Directory Service (Managed Microsoft AD) | [directory-aws-native.md](aws-native/directory-aws-native.md) |
 | self-managed | Samba 4 AD DC | [directory-self-managed.md](self-managed/directory-self-managed.md) |
 

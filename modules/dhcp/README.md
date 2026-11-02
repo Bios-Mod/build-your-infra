@@ -1,6 +1,6 @@
 # DHCP
 
-Dynamic address assignment and lease management for the local network.
+Manual address assignment doesn't scale and causes conflicts on a shared network. Dynamic address assignment and lease management for the local network.
 
 **Requires:** [`modules/hardening/`](../hardening/README.md) fully deployed
 on the target environment before applying this module.
@@ -12,6 +12,6 @@ on the target environment before applying this module.
 ## Implementations
 
 | Environment | Technology | Doc |
-|---|---|---|
+| --- | --- | --- |
 | self-managed (local VM) | Kea DHCP | [dhcp-self-managed.md](self-managed/dhcp-self-managed.md) |
 | aws-native | N/A — VPC DHCP Options Sets | — |

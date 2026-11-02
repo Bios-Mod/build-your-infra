@@ -1,8 +1,6 @@
 # Hardening
 
-Security baseline applied before deploying any service. Follows the
-defense-in-depth principle — multiple independent layers where the failure
-of one does not compromise the system.
+A freshly provisioned server is exposed by default: open ports, password logins, no audit trail. This module closes those gaps before any service is deployed, following defense-in-depth — multiple independent layers where the failure of one does not compromise the system.
 
 **Required prerequisite for all other modules.**
 
