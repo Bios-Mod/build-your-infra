@@ -32,7 +32,7 @@
 [![CloudFront](https://img.shields.io/badge/CloudFront-CDN-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/web-server-aws-native.md)
 [![Directory Service](https://img.shields.io/badge/Directory%20Service-Managed%20AD-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/directory/aws-native/directory-aws-native.md)
 
-Server infrastructure is usually built once by hand and never reproduced: configurations drift, security baselines are undocumented, and nobody remembers why a setting was chosen. This lab solves that by deploying the same service set (hardening, file transfer, DNS, web, directory, DHCP) across three environments — local VM, VPS and AWS Native — documenting the reasoning behind every decision inline, and then automating each layer with the tool that fits it: Terraform provisions, Ansible configures, GitHub Actions validates, Prometheus and Grafana observe.
+Server infrastructure is usually built once by hand and never reproduced: configurations drift, security baselines are undocumented, and nobody remembers why a setting was chosen. This lab solves that by deploying the same service set (hardening, file transfer, DNS, web, directory, DHCP) across three environments — local VM, VPS and AWS Native — documenting the reasoning behind every decision inline, and then automating each layer with the tool that fits it: Terraform provisions and GitHub Actions validates, while Ansible (configuration) and Prometheus + Grafana (monitoring) are being added as the final layers.
 
 Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Management Console (where the GUI provides the clearest workflow) and the CLI.
 
@@ -111,17 +111,17 @@ hardened base.
 
 ## Automation
 
-Each layer of the lab is automated with the tool that matches its scope. Terraform provisions infrastructure, Ansible configures the operating system, and GitHub Actions validates both.
+Terraform provisions infrastructure and GitHub Actions validates it. Ansible, which will configure the operating system of the self-managed environment, is being implemented.
 
 | Environment | Tool | Scope | Location |
 | --- | --- | --- | --- |
 | aws-native | Terraform | Per-module import + redeploy | `modules/<name>/aws-native/automation/terraform/` |
 | self-managed | Terraform | EC2 from AMI snapshot — infrastructure layer | `stacks/full-infra/self-managed/automation/terraform/` |
-| self-managed | Ansible | OS configuration layer, role per module | `modules/<name>/self-managed/automation/ansible/` · orchestration in `stacks/full-infra/self-managed/automation/ansible/` |
+| self-managed | Ansible | OS configuration layer, role per module (in progress) | `modules/<name>/self-managed/automation/ansible/` · orchestration in `stacks/full-infra/self-managed/automation/ansible/` |
 
 The aws-native implementation order is `hardening` → `dns` → `file-transfer` → `web-server` → `directory`. Each module is independently deployable, and the full-stack composition sources them all.
 
-The self-managed Terraform stack provisions the EC2 host from the `multi-lab-aws-active-directory` AMI — infrastructure only. Ansible roles reproduce the configuration layer that the snapshot captured, so the host can be rebuilt from scratch without relying on an image. Monitoring (Prometheus, Grafana) is deployed as a self-managed module on top of the same baseline.
+The self-managed Terraform stack provisions the EC2 host from the `multi-lab-aws-active-directory` AMI — infrastructure only. Ansible roles will reproduce the configuration layer captured by the snapshot, so the host can be rebuilt without relying on an image. Monitoring (Prometheus, Grafana) will be added as a self-managed module on top of the same baseline.
 
 ---
 
