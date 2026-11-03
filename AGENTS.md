@@ -315,6 +315,7 @@ Reglas al editar el CI:
 
 Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código (Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces, jobs de CI a partir de un patrón definido. Las decisiones de diseño, los documentos de implementación y las justificaciones (`### Why`) permanecen con el autor y el asistente.
 
-- El agente trabaja en feature branches, puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea cada pull request.
+- El agente trabaja en una feature branch por módulo (hardening usa `feat/hardening-2a`; los siguientes, `feat/ansible-<módulo>`), con un commit por cambio; no crea ramas por correcciones ni por tareas pequeñas. Puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea el pull request del módulo cuando está cerrado.
 - Cada tarea indica: alcance de archivos, lectura obligatoria (`AGENTS.md`, `decision-log.md` y, para tareas de Ansible, `context/ansible-implementation.md`), criterios de aceptación y lo que queda fuera de límites.
 - El agente ejecuta la estructura definida en `decision-log.md`; nunca la decide.
+- El agente escribe su informe final en `context/last-report.md` (ignorado por git y sobrescrito en cada ejecución) y responde en el chat solo con un resumen breve.
