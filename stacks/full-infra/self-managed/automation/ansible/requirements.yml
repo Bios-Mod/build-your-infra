@@ -1,0 +1,18 @@
+# Deploy to:   local control node (Mac)
+# Apply:       ansible-galaxy collection install -r requirements.yml
+# Module:      stacks/full-infra/self-managed/automation/ansible
+# Requires:    ansible-core >= 2.21.6
+#
+# Pinned Ansible Galaxy collection dependencies for the self-managed stack.
+# Parameters modified from baseline: strictly pinned to verified stable releases.
+#
+# Source: Ansible Galaxy. Compatible with ansible-core 2.21
+---
+collections:
+  # Provides ufw and system administration modules
+  - name: community.general
+    version: "14.0.0"
+
+  # Provides sysctl, authorized_key, and POSIX operating system modules
+  - name: ansible.posix
+    version: "2.2.2"

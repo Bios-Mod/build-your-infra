@@ -38,3 +38,6 @@ lan_trusted_cidr: "192.168.1.0/24"
 
 # WireGuard client endpoint for local VM
 wireguard_endpoint: "{{ vm_lan_ip }}:{{ wireguard_port }}"
+
+# Disable auditd immutable mode (-e 2) during development to allow rule reloading without rebooting
+hardening_auditd_immutable_mode: false

@@ -98,11 +98,11 @@ hardening_login_defs_pass_min_days: 7
 hardening_login_defs_pass_warn_age: 14
 hardening_login_defs_sha_crypt_rounds: 5000
 
-# Auditd immutable flag (-e 2) toggle. Enabled only on production convergence runs.
-hardening_auditd_immutable_mode: false
+# Auditd immutable flag (-e 2) from Step 10. Default true matches manual baseline; disabled in vm.yml during development.
+hardening_auditd_immutable_mode: true
 
-# Lynis minimum Hardening Index threshold expected for VM target
-hardening_lynis_min_index_vm: 88
+# Lynis minimum Hardening Index threshold expected for the target host (88 for VM, 90 for EC2)
+hardening_lynis_min_score: 88
 
-# Lynis minimum Hardening Index threshold expected for EC2 target
-hardening_lynis_min_index_ec2: 90
+# Whether to fail the playbook execution if Lynis score is below threshold (false: records score and warns)
+hardening_lynis_enforce: false

@@ -172,6 +172,26 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   existentes de `modules/<module>/self-managed/configs/` desde el nodo de control; sin
   contenido de configuración duplicado. Los placeholders (`<username>`, `192.168.X.X`,
   `<upstream_port>`) se sustituyen al desplegar con variables de inventario.
+- **Colecciones.** Además de ansible-core se usan `community.general` (p. ej. `ufw`) y
+  `ansible.posix` (p. ej. `sysctl`), fijadas en `requirements.yml` e instaladas con
+  `ansible-galaxy collection install -r requirements.yml`, solo cuando no existe módulo
+  builtin equivalente. No se instala el paquete `ansible` completo.
+- **Placeholders de configs:** `ansible.builtin.copy` con `content` y `validate:`; nunca
+  `template` sobre copias en el rol.
+- **Contraseña del usuario admin:** pedida en ejecución con `vars_prompt` en `bootstrap.yml`
+  (privada, convertida a hash); sin contraseñas ni hashes en variables del repo. Después,
+  `--ask-become-pass`.
+- **Claves de WireGuard:** el servidor genera su par con `creates:`; las claves públicas de
+  los peers van en `host_vars` (real ignorado, `.example` versionado), sin Vault; los pares
+  de clientes se generan en cada cliente (cambio deliberado respecto al doc manual).
+- **auditd `-e 2`:** el rol lleva por defecto el valor del doc; el inventario de la VM lo
+  desactiva durante el desarrollo y se activa en la reconstrucción desde cero de 2C.
+- **Lynis:** el playbook no falla; registra la puntuación y avisa. El umbral (88 VM / 90 EC2)
+  es una variable y la puerta del hito la comprueba el autor.
+- **Usuario inicial:** el creado en el instalador (VM) o `ubuntu` (EC2), en `host_vars`
+  como `initial_user`.
+- **Fail2Ban** se incluye en el bloque de acceso (2B).
+- **snapd/SSM en EC2:** se resuelve en 2D reproduciendo lo descrito en el doc de hardening.
 - **Un rol por módulo para ambos destinos.** Las diferencias VM/EC2 se resuelven con variables
   (`is_cloud`, `tls_mode`, ...) y los módulos se asignan a hosts mediante grupos de inventario
   que reflejan la matriz real. TLS: autofirmado en VM, Let's Encrypt en EC2.
@@ -185,6 +205,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Nodo de control: el Mac, con Ansible nativo en un `venv`** y versiones fijadas en
   `requirements.txt`. Tras el Step 5 de hardening, SSH solo escucha por `wg0`; el túnel
   de WireGuard del Mac es nativo y evita el routing adicional de un contenedor o una VM.
+  ansible-core 2.21.6 (Python >= 3.12) y ansible-lint 26.10.1.
 - **Orden de implementación:** hardening → file-transfer → dns → web-server → directory →
   dhcp. Refleja el orden real de despliegue manual de los módulos.
 - **Partida desde cero en ambos entornos, sin depender de snapshots ni AMIs.**
@@ -232,6 +253,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   (Prometheus + Grafana) se planificará en un documento aparte cuando se cierre
   la base de Ansible.
 - **2026-11-03 — Cambio al plan:** el trabajo de Terraform del stack self-managed (descripción de `ami_id` y variable de CIDR de bootstrap SSH) pasa de la Fase 1 a la preparación de la fase 2D. La variable `ami_id` ya existe; lo que falta es la apertura condicional del puerto 22.
+- **2026-11-03 — Cambio al plan:** se añade `requirements.yml` (colecciones) al stack y Fail2Ban se ubica en el bloque 2B.
 
 ---
 

@@ -16,11 +16,9 @@
     state: restarted
 
 # Reloads UFW rules to enforce updated firewall and sysctl policies from Step 4 and Step 5
-# Uses native ufw reload CLI as ufw does not provide a standard daemon reload interface and avoids external collection dependencies
 - name: Reload ufw
-  ansible.builtin.command:
-    cmd: ufw reload
-  changed_when: true
+  community.general.ufw:
+    state: reloaded
 
 # Restarts unattended-upgrades to load daily update intervals from Step 1
 - name: Restart unattended-upgrades

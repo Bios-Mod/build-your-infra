@@ -26,6 +26,9 @@ Variables are declared with sensible defaults in `defaults/main.yml` (prefixed w
 | `hardening_wireguard_port` | `wireguard_port` (`51820`) | UDP listening port for WireGuard VPN service. |
 | `hardening_wireguard_vpn_subnet` | `wireguard_vpn_subnet` (`"10.8.0.0/24"`) | Dedicated non-conflicting VPN CIDR. |
 | `hardening_wireguard_server_vpn_ip` | `wireguard_server_vpn_ip` (`"10.8.0.1/24"`) | Gateway VPN IP assigned to `wg0`. |
+| `hardening_auditd_immutable_mode` | `true` | Enforces immutable auditd rules (`-e 2`) in Step 10 (overridden to `false` in `vm.yml` during development). |
+| `hardening_lynis_min_score` | `88` | Minimum Lynis Hardening Index threshold (88 for VM, 90 for EC2). |
+| `hardening_lynis_enforce` | `false` | Whether to fail execution if Lynis score is below threshold (`false`: record & warn). |
 | `is_cloud` | `false` (in `vm.yml`) / `true` (in `ec2.yml`) | Distinguishes hypervisor/bare-metal from AWS cloud platform. |
 | `connection_mode` | `"pre"` | Connection phase toggle (`pre` = port 22, `post` = port 22222 on wg0). |
 | `tls_mode` | `"self_signed"` (VM) / `"letsencrypt"` (EC2) | Certificate strategy per target platform. |

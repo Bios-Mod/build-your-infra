@@ -8,25 +8,27 @@ This document provides the technical analysis and architectural blueprint for au
 
 The manual hardening baseline consists of 13 primary sections (Steps 0 through 12, plus Step 3.1).
 
-| Step | Name | Configs Used | Application Method | Host Destination | Classification | Candidate Ansible Module | Required Handler |
-|---|---|---|---|---|---|---|---|
-| **0** | Admin User Setup | None | `adduser`, `usermod`, `passwd`, `ssh-copy-id` (VM) / `cp` (EC2) | `/home/<user>/.ssh/authorized_keys`, `/etc/passwd`, `/etc/group` | Automatable (Lockout risk) | `ansible.builtin.user`, `ansible.builtin.group`, `ansible.builtin.authorized_key` | None |
-| **1** | System Update & Automated Security Upgrades | `unattended-upgrades/50unattended-upgrades`, `unattended-upgrades/20auto-upgrades` | `apt update && full-upgrade`, `apt install`, `sed`, `cp` | `/etc/apt/apt.conf.d/50unattended-upgrades`, `/etc/apt/apt.conf.d/20auto-upgrades`, `/etc/default/debsums` | Automatable | `ansible.builtin.apt`, `ansible.builtin.lineinfile`, `ansible.builtin.copy` | `restart unattended-upgrades` |
-| **2** | Static IP Configuration (VM only) | `netplan/00-installer-config.yaml`, `netplan/no-dhcp.conf` | `cp`, `netplan apply`, `mkdir`, `systemctl daemon-reload && restart` | `/etc/netplan/00-installer-config.yaml`, `/etc/systemd/network/10-netplan-<iface>.network.d/no-dhcp.conf` | Automatable (Lockout risk, VM only) | `ansible.builtin.template`, `ansible.builtin.copy`, `ansible.builtin.systemd_service`, `ansible.builtin.command` (`netplan apply`) | None |
-| **3** | SSH Hardening | `ssh/sshd_config`, `ssh/issue.net.template` | `cp`, `chmod 600`, `rm` (RSA/ECDSA keys), `sshd -t`, `systemctl enable && restart` | `/etc/ssh/sshd_config`, `/etc/issue.net`, `/etc/issue` | Automatable (Lockout risk) | `ansible.builtin.template` (for `AllowUsers`), `ansible.builtin.copy`, `ansible.builtin.file` (`state: absent`), `ansible.builtin.systemd_service` | `restart sshd` |
-| **3.1** | EC2 SSM Session Manager Access | None | AWS CLI / console / instance profile | EC2 instance profile / metadata | Out of Ansible (EC2 only) | Out of scope for Ansible role (managed via Terraform IAM and AWS CLI) | None |
-| **4** | UFW (Firewall) | `ufw/sysctl.conf` | `ufw default`, `ufw limit 22222/tcp`, `ufw logging medium`, `ufw enable`, `cp` | `/etc/ufw/sysctl.conf`, `/etc/default/ufw` | Automatable (Lockout risk) | `community.general.ufw`, `ansible.builtin.copy` | `reload ufw` |
-| **5** | WireGuard VPN | `wireguard/wg0.conf`, `wireguard/client-template.conf`, `sysctl/99-wireguard.conf` | `apt install`, `wg genkey`, `cp`, `wg-quick up`, `systemctl enable`, `ufw allow 51820/udp`, `ufw allow in on wg0 to 22222`, `ufw delete limit 22222`, `ufw route allow`, `sysctl --system` | `/etc/wireguard/wg0.conf`, `/etc/sysctl.d/99-wireguard.conf` | Automatable (Lockout risk) | `ansible.builtin.apt`, `ansible.builtin.command` (`wg genkey`), `ansible.builtin.template`, `ansible.builtin.copy`, `community.general.ufw`, `ansible.posix.sysctl`, `ansible.builtin.systemd_service` | `restart wireguard`, `reload ufw` |
-| **6** | Fail2Ban | `fail2ban/jail.local`, `fail2ban/fail2ban.d/allowipv6.conf` | `apt install`, `cp`, `mkdir`, `systemctl enable && restart` | `/etc/fail2ban/jail.local`, `/etc/fail2ban/fail2ban.d/allowipv6.conf` | Automatable | `ansible.builtin.apt`, `ansible.builtin.template` (for `ignoreip`), `ansible.builtin.copy`, `ansible.builtin.systemd_service` | `restart fail2ban` |
-| **7** | Kernel Hardening (sysctl) | `sysctl/99-z-hardening.conf` | `cp`, `sysctl --system` | `/etc/sysctl.d/99-z-hardening.conf` | Automatable | `ansible.builtin.copy`, `ansible.builtin.command` (`sysctl --system`) | `reload sysctl` |
-| **8** | AppArmor | None | `apt install` | `/etc/apparmor.d/`, `/usr/share/apparmor/extra-profiles/` | Automatable | `ansible.builtin.apt` | None |
-| **9.1** | Attack Surface: Services & Daemons | None | `systemctl disable --now`, `systemctl mask`, `apt purge apport* snapd*`, `apt-mark hold` | Systemd service units, APT package database | Automatable | `ansible.builtin.systemd_service`, `ansible.builtin.apt` (`state: absent`, `purge: true`), `ansible.builtin.dpkg_selections` | None |
-| **9.2** | Attack Surface: Filesystem & User Hardening | `pam/common-password`, `pam/common-session`, `limits/limits.conf` | `chmod`, `sed` on `/etc/login.defs`, `apt install libpam-pwquality libpam-tmpdir`, `cp` | `/etc/crontab`, `/etc/cron.*`, `/etc/sudoers.d`, `/etc/login.defs`, `/etc/pam.d/common-password`, `/etc/pam.d/common-session`, `/etc/security/limits.conf` | Automatable | `ansible.builtin.file`, `ansible.builtin.lineinfile`, `ansible.builtin.apt`, `ansible.builtin.copy` | None |
-| **9.3** | Attack Surface: Kernel Modules Blacklist | `modprobe/disable-unused-protocols.conf` | `cp`, `update-initramfs -u` | `/etc/modprobe.d/disable-unused-protocols.conf` | Automatable | `ansible.builtin.copy`, `ansible.builtin.command` (`update-initramfs -u`) | `update-initramfs` |
-| **9.4** | Monitoring & Forensics | None | `apt install rkhunter acct sysstat`, `sed`, `systemctl enable --now`, `rkhunter --update --propupd` | `/etc/rkhunter.conf`, `/etc/default/rkhunter`, `/etc/default/sysstat` | Automatable | `ansible.builtin.apt`, `ansible.builtin.lineinfile`, `ansible.builtin.systemd_service`, `ansible.builtin.command` | None |
-| **10** | Audit Trail (auditd + AIDE) | `audit/99-hardening.rules`, `aide/99-hardening` | `apt install auditd audispd-plugins aide aide-common`, `cp`, `augenrules --load`, `aide --init`, `mv` database, `sed` | `/etc/audit/rules.d/99-hardening.rules`, `/etc/aide/aide.conf.d/99-hardening`, `/var/lib/aide/aide.db`, `/etc/default/aide` | Automatable (Lockout / idempotence risk with `-e 2` and `--init`) | `ansible.builtin.apt`, `ansible.builtin.copy`, `ansible.builtin.command` (`augenrules --load`, `aide --init`), `ansible.builtin.lineinfile`, `ansible.builtin.systemd_service` | `restart auditd` |
-| **11** | Log Management (rsyslog + logrotate) | `rsyslog/20-ufw.conf`, `rsyslog/99-hardening.conf`, `logrotate/hardening-logs` | `ufw logging on`, `install -m 640`, `cp`, `systemctl restart rsyslog` | `/var/log/ufw.log`, `/var/log/fail2ban.log`, `/etc/rsyslog.d/20-ufw.conf`, `/etc/rsyslog.d/99-hardening.conf`, `/etc/logrotate.d/hardening-logs` | Automatable | `community.general.ufw`, `ansible.builtin.file`, `ansible.builtin.copy`, `ansible.builtin.systemd_service` | `restart rsyslog` |
-| **12** | Security Audit Baseline (Lynis) | `lynis/custom.prf` | `apt install lynis`, `mkdir`, `cp`, `lynis audit system` | `/etc/lynis/custom.prf` | Automatable | `ansible.builtin.apt`, `ansible.builtin.file`, `ansible.builtin.copy`, `ansible.builtin.command` (`lynis audit system`) | None |
+All configuration deployments strictly consume upstream files from `modules/hardening/self-managed/configs/` using `ansible.builtin.copy` with `content: "{{ lookup('file', configs_root ~ '/path/to/file') | replace(...) }}"` and native `validate:` commands wherever supported. Files are never duplicated into role `templates/`. Non-builtin modules are sourced exclusively from collections pinned in `requirements.yml` (`community.general`, `ansible.posix`).
+
+| Step | Name | Configs Used | Application Method | Host Destination | Classification | Candidate Ansible Module | Collection | Required Handler |
+|---|---|---|---|---|---|---|---|---|
+| **0** | Admin User Setup | None | `adduser`, `usermod`, `passwd`, `ssh-copy-id` (VM) / `cp` (EC2) | `/home/<user>/.ssh/authorized_keys`, `/etc/passwd`, `/etc/group` | Automatable (Lockout risk) | `ansible.builtin.user`, `ansible.builtin.group`, `ansible.posix.authorized_key` | `ansible.builtin`, `ansible.posix` | None |
+| **1** | System Update & Automated Security Upgrades | `unattended-upgrades/50unattended-upgrades`, `unattended-upgrades/20auto-upgrades` | `apt update && full-upgrade`, `apt install`, `sed`, `cp` | `/etc/apt/apt.conf.d/50unattended-upgrades`, `/etc/apt/apt.conf.d/20auto-upgrades`, `/etc/default/debsums` | Automatable | `ansible.builtin.apt`, `ansible.builtin.lineinfile`, `ansible.builtin.copy` | `ansible.builtin` | `restart unattended-upgrades` |
+| **2** | Static IP Configuration (VM only) | `netplan/00-installer-config.yaml`, `netplan/no-dhcp.conf` | `cp`, `netplan apply`, `mkdir`, `systemctl daemon-reload && restart` | `/etc/netplan/00-installer-config.yaml`, `/etc/systemd/network/10-netplan-<iface>.network.d/no-dhcp.conf` | Automatable (Lockout risk, VM only) | `ansible.builtin.copy` (`content:` lookup + replace), `ansible.builtin.copy`, `ansible.builtin.systemd_service`, `ansible.builtin.command` (`netplan apply`) | `ansible.builtin` | None |
+| **3** | SSH Hardening | `ssh/sshd_config`, `ssh/issue.net.template` | `cp`, `chmod 600`, `rm` (RSA/ECDSA keys), `sshd -t`, `systemctl enable && restart` | `/etc/ssh/sshd_config`, `/etc/issue.net`, `/etc/issue` | Automatable (Lockout risk) | `ansible.builtin.copy` (`content:` lookup + replace `<username>`, `validate: '/usr/sbin/sshd -t -f %s'`), `ansible.builtin.copy`, `ansible.builtin.file` (`state: absent`), `ansible.builtin.systemd_service` | `ansible.builtin` | `restart sshd` |
+| **3.1** | EC2 SSM Session Manager Access | None | AWS CLI / console / instance profile | EC2 instance profile / metadata | Out of Ansible (EC2 only) | Out of scope for Ansible role (managed via Terraform IAM and AWS CLI) | N/A | None |
+| **4** | UFW (Firewall) | `ufw/sysctl.conf` | `ufw default`, `ufw limit 22222/tcp`, `ufw logging medium`, `ufw enable`, `cp` | `/etc/ufw/sysctl.conf`, `/etc/default/ufw` | Automatable (Lockout risk) | `community.general.ufw`, `ansible.builtin.copy` | `community.general`, `ansible.builtin` | `reload ufw` |
+| **5** | WireGuard VPN | `wireguard/wg0.conf`, `wireguard/client-template.conf`, `sysctl/99-wireguard.conf` | `apt install`, `wg genkey`, `cp`, `wg-quick up`, `systemctl enable`, `ufw allow 51820/udp`, `ufw allow in on wg0 to 22222`, `ufw delete limit 22222`, `ufw route allow`, `sysctl --system` | `/etc/wireguard/wg0.conf`, `/etc/sysctl.d/99-wireguard.conf` | Automatable (Lockout risk) | `ansible.builtin.apt`, `ansible.builtin.command` (`wg genkey`, `creates:`), `ansible.builtin.copy` (`content:` lookup + replace), `community.general.ufw`, `ansible.posix.sysctl`, `ansible.builtin.systemd_service` | `ansible.builtin`, `community.general`, `ansible.posix` | `restart wireguard`, `reload ufw` |
+| **6** | Fail2Ban | `fail2ban/jail.local`, `fail2ban/fail2ban.d/allowipv6.conf` | `apt install`, `cp`, `mkdir`, `systemctl enable && restart` | `/etc/fail2ban/jail.local`, `/etc/fail2ban/fail2ban.d/allowipv6.conf` | Automatable | `ansible.builtin.apt`, `ansible.builtin.copy` (`content:` lookup + replace `ignoreip`), `ansible.builtin.copy`, `ansible.builtin.systemd_service` | `ansible.builtin` | `restart fail2ban` |
+| **7** | Kernel Hardening (sysctl) | `sysctl/99-z-hardening.conf` | `cp`, `sysctl --system` | `/etc/sysctl.d/99-z-hardening.conf` | Automatable | `ansible.builtin.copy`, `ansible.builtin.command` (`sysctl --system`) | `ansible.builtin` | `reload sysctl` |
+| **8** | AppArmor | None | `apt install` | `/etc/apparmor.d/`, `/usr/share/apparmor/extra-profiles/` | Automatable | `ansible.builtin.apt` | `ansible.builtin` | None |
+| **9.1** | Attack Surface: Services & Daemons | None | `systemctl disable --now`, `systemctl mask`, `apt purge apport* snapd*`, `apt-mark hold` | Systemd service units, APT package database | Automatable | `ansible.builtin.systemd_service`, `ansible.builtin.apt` (`state: absent`, `purge: true`), `ansible.builtin.dpkg_selections` | `ansible.builtin` | None |
+| **9.2** | Attack Surface: Filesystem & User Hardening | `pam/common-password`, `pam/common-session`, `limits/limits.conf` | `chmod`, `sed` on `/etc/login.defs`, `apt install libpam-pwquality libpam-tmpdir`, `cp` | `/etc/crontab`, `/etc/cron.*`, `/etc/sudoers.d`, `/etc/login.defs`, `/etc/pam.d/common-password`, `/etc/pam.d/common-session`, `/etc/security/limits.conf` | Automatable | `ansible.builtin.file`, `ansible.builtin.lineinfile`, `ansible.builtin.apt`, `ansible.builtin.copy` | `ansible.builtin` | None |
+| **9.3** | Attack Surface: Kernel Modules Blacklist | `modprobe/disable-unused-protocols.conf` | `cp`, `update-initramfs -u` | `/etc/modprobe.d/disable-unused-protocols.conf` | Automatable | `ansible.builtin.copy`, `ansible.builtin.command` (`update-initramfs -u`) | `ansible.builtin` | `update-initramfs` |
+| **9.4** | Monitoring & Forensics | None | `apt install rkhunter acct sysstat`, `sed`, `systemctl enable --now`, `rkhunter --update --propupd` | `/etc/rkhunter.conf`, `/etc/default/rkhunter`, `/etc/default/sysstat` | Automatable | `ansible.builtin.apt`, `ansible.builtin.lineinfile`, `ansible.builtin.systemd_service`, `ansible.builtin.command` | `ansible.builtin` | None |
+| **10** | Audit Trail (auditd + AIDE) | `audit/99-hardening.rules`, `aide/99-hardening` | `apt install auditd audispd-plugins aide aide-common`, `cp`, `augenrules --load`, `aide --init`, `mv` database, `sed` | `/etc/audit/rules.d/99-hardening.rules`, `/etc/aide/aide.conf.d/99-hardening`, `/var/lib/aide/aide.db`, `/etc/default/aide` | Automatable (Lockout / idempotence risk with `-e 2` and `--init`) | `ansible.builtin.apt`, `ansible.builtin.copy`, `ansible.builtin.command` (`augenrules --load`, `aide --init`), `ansible.builtin.lineinfile`, `ansible.builtin.systemd_service` | `ansible.builtin` | `restart auditd` |
+| **11** | Log Management (rsyslog + logrotate) | `rsyslog/20-ufw.conf`, `rsyslog/99-hardening.conf`, `logrotate/hardening-logs` | `ufw logging on`, `install -m 640`, `cp`, `systemctl restart rsyslog` | `/var/log/ufw.log`, `/var/log/fail2ban.log`, `/etc/rsyslog.d/20-ufw.conf`, `/etc/rsyslog.d/99-hardening.conf`, `/etc/logrotate.d/hardening-logs` | Automatable | `community.general.ufw`, `ansible.builtin.file`, `ansible.builtin.copy`, `ansible.builtin.systemd_service` | `community.general`, `ansible.builtin` | `restart rsyslog` |
+| **12** | Security Audit Baseline (Lynis) | `lynis/custom.prf` | `apt install lynis`, `mkdir`, `cp`, `lynis audit system` | `/etc/lynis/custom.prf` | Automatable | `ansible.builtin.apt`, `ansible.builtin.file`, `ansible.builtin.copy`, `ansible.builtin.command` (`lynis audit system`) | `ansible.builtin` | None |
 
 ---
 
@@ -83,7 +85,7 @@ In `context/ansible-implementation.md`, Fail2Ban (Step 6) was placed provisional
 
 | Step | Area | Local VM (`multi-lab-local`) | EC2 Self-Managed (`multi-lab-vps`) | Controlling Variable |
 |---|---|---|---|---|
-| **0** | Initial SSH User | Install user (e.g. `localuser`) | Default AMI user `ubuntu` | `ansible_user` (via `connection_mode`) |
+| **0** | Initial SSH User | Install user (e.g. `localuser`) | Default AMI user `ubuntu` | `initial_user` (in `host_vars`) |
 | **0** | SSH Key Injection | `ssh-copy-id` from local machine | Injected at launch by AWS into `/home/ubuntu/.ssh/authorized_keys`; copied to admin user | `is_cloud: false` vs `true` |
 | **2** | Netplan & Static IP | Deployed (`00-installer-config.yaml` + `no-dhcp.conf`) | **Skipped.** Handled by VPC DHCP and Elastic IP; modifying Netplan risks network detachment. | `when: not is_cloud` |
 | **3.1** | SSM Session Manager | N/A (local hypervisor) | Available via IAM instance profile (`multi-lab-ec2-role`) and AWS CLI | Out of Ansible |
@@ -93,26 +95,26 @@ In `context/ansible-implementation.md`, Fail2Ban (Step 6) was placed provisional
 | **9.1** | Hypervisor / Cloud Tools | `open-vm-tools` kept | `open-vm-tools` absent; `cloud-init` kept; `amazon-ssm-agent` migrated to apt if snapd purged | `is_cloud` |
 | **9.1** | `snapd` Purge | Safe to purge completely | On EC2, `amazon-ssm-agent` ships as snap. Purging snapd requires installing deb package first, or keeping snapd. | `is_cloud` |
 | **10** | Syscall ABI (Auditd) | Uses `unlinkat`/`renameat`/`renameat2` on ARM64 | Uses `unlinkat`/`renameat`/`renameat2` on ARM64 (Graviton t4g.micro) | Architecture check (`ansible_architecture == "aarch64"`) |
-| **12** | Lynis Baseline Index | Target score: **88** | Target score: **90** (AWS platform controls suppress `USB-1000`, `AUTH-9284`, `NAME-4404`) | Audit threshold variable |
+| **12** | Lynis Baseline Index | Target score: **88** | Target score: **90** (AWS platform controls suppress `USB-1000`, `AUTH-9284`, `NAME-4404`) | Audit threshold variable (`hardening_lynis_min_score`) |
 
 ---
 
 ## 4. Placeholder Inventory in Configuration Files
 
-The repository's `configs/` directory contains template placeholders that must be resolved at deployment time without modifying the raw files in git:
+The repository's `configs/` directory contains template placeholders that must be resolved at deployment time without modifying the raw files in git. All files are rendered via `ansible.builtin.copy` with `content: "{{ lookup('file', configs_root ~ '/...') | replace(...) }}"` and native `validate:` parameters:
 
-| Config File | Placeholder | Context in File | Proposed Inventory Variable | Default / Scope |
+| Config File | Placeholder | Context in File | Proposed Variable | Scope / File |
 |---|---|---|---|---|
 | `ssh/sshd_config` | `<username>` | `AllowUsers <username>` | `admin_username` | `group_vars/all.yml` (e.g. `admin`) |
 | `fail2ban/jail.local` | `192.168.X.X/X` | `ignoreip = 127.0.0.1/8 192.168.X.X/X 172.16.0.0/24` | `lan_trusted_cidr` | `group_vars/vm.yml` (`192.168.1.0/24`), empty string in `ec2.yml` |
 | `netplan/00-installer-config.yaml` | `192.168.X.X/X` | `addresses: [192.168.X.X/X]` | `vm_static_ip` | `group_vars/vm.yml` |
 | `netplan/00-installer-config.yaml` | `192.168.X.1` | `routes: - via: 192.168.X.1` | `vm_gateway` | `group_vars/vm.yml` |
 | `netplan/00-installer-config.yaml` | `<your-mac-address>` | `# match: macaddress: <your-mac-address>` | `vm_mac_address` | Optional / commented in `group_vars/vm.yml` |
-| `netplan/00-installer-config.yaml` | `enp2s0` / `ens160` | Network interface name | `vm_interface` | `group_vars/vm.yml` (e.g. `ens160`) |
+| `netplan/00-installer-config.yaml` | `enp2s0` / `ens160` | Network interface name | `vm_interface` | `group_vars/vm.yml` (e.g. `enp2s0`) |
 | `wireguard/wg0.conf` | `<server-private-key>` | `[Interface] PrivateKey = <server-private-key>` | Auto-generated on target host | Stored in `/etc/wireguard/server_private.key` (0600) |
-| `wireguard/wg0.conf` | `<mac-public-key>` | `[Peer] PublicKey = <mac-public-key>` | `wireguard_mac_public_key` | `host_vars/multi-lab-local.yml` or vault |
-| `wireguard/wg0.conf` | `<device-public-key>` | `[Peer] PublicKey = <device-public-key>` | `wireguard_peer_public_keys` | List in host/group vars |
-| `wireguard/client-template.conf`| `<client-private-key>` | `[Interface] PrivateKey = ...` | Local client generated | Client device only |
+| `wireguard/wg0.conf` | `<mac-public-key>` | `[Peer] PublicKey = <mac-public-key>` | `wireguard_peer_public_keys.mac` | `host_vars/multi-lab-local.yml` (gitignored) |
+| `wireguard/wg0.conf` | `<device-public-key>` | `[Peer] PublicKey = <device-public-key>` | `wireguard_peer_public_keys` | Dict in `host_vars/<host>.yml` |
+| `wireguard/client-template.conf`| `<client-private-key>` | `[Interface] PrivateKey = ...` | Local client generated | Client workstation only |
 | `wireguard/client-template.conf`| `<server-public-key>` | `[Peer] PublicKey = ...` | Auto-generated on target host | Derived from server private key |
 | `wireguard/client-template.conf`| `<server-ip-or-domain>` | `[Peer] Endpoint = <server-ip-or-domain>:51820` | `wireguard_endpoint` | `group_vars/vm.yml` (LAN IP) / `group_vars/ec2.yml` (EIP) |
 
@@ -147,7 +149,7 @@ The repository's `configs/` directory contains template placeholders that must b
 
 | Risk | Impact | Step | Cause | Mitigation in Ansible |
 |---|---|---|---|---|
-| **Auditd immutable mode (`-e 2`)** | Playbook failure / Error 1 | Step 10 | Once `-e 2` is sent to the kernel audit subsystem, no further rules can be loaded with `augenrules --load`. Attempting to load rules returns `Operation not permitted`. | In Ansible, check `auditctl -s`. If `enabled 2`, do not run `augenrules --load` directly; notify the `restart auditd` handler instead or reboot to change rules. |
+| **Auditd immutable mode (`-e 2`)** | Playbook failure / Error 1 | Step 10 | Once `-e 2` is sent to the kernel audit subsystem, no further rules can be loaded with `augenrules --load`. Attempting to load rules returns `Operation not permitted`. | In Ansible, role default sets `hardening_auditd_immutable_mode: true` (matching manual baseline). `inventories/group_vars/vm.yml` overrides this to `false` during iterative development. Enabled on the from-scratch convergence rebuild at the end of 2C. |
 | **AIDE database reinitialization** | High CPU, clobbered baseline | Step 10 | `aide --init` regenerates `/var/lib/aide/aide.db.new`. Running it on every execution takes minutes and overwrites the initial baseline. | Use `creates: /var/lib/aide/aide.db`. Only initialize if the database does not exist. |
 | **WireGuard key regeneration** | Tunnel destruction / disconnect | Step 5 | Re-running `wg genkey` creates new keys, invalidating peer connections and client configurations. | Use `creates: /etc/wireguard/server_private.key`. Generate server keys once only. |
 | **Host key deletion idempotence** | Failure on repeated runs | Step 3 | `rm /etc/ssh/ssh_host_*` fails on second run if using raw shell. | Use declarative `ansible.builtin.file: path: ... state: absent`. |
@@ -167,13 +169,25 @@ The repository's `configs/` directory contains template placeholders that must b
 
 ---
 
-## 8. Open Questions for the Author
+## 8. Decisions Taken
 
-1. **EC2 SSM Agent vs. Snapd Purge:**
-   In Step 9.1, purging `snapd` on EC2 requires downloading and installing `amazon-ssm-agent.deb` via apt before removing snapd to preserve SSM Session Manager access. Should the Ansible role implement this deb migration automatically when `is_cloud: true`, or should snapd removal be skipped on EC2?
-2. **WireGuard Client Key Management:**
-   Server keys can be generated idempotently on the target host. For client peers (e.g. Mac operator), should the role accept an inventory list of existing client public keys (`wireguard_peer_public_keys`), or should the role generate the client keypairs on the server and fetch them back to the control node?
-3. **Auditd Immutable Mode in CI / Idempotence Testing:**
-   In test runs, once `-e 2` is enabled, rule modifications fail without a full OS reboot. For automated testing on the same host, should an inventory variable (e.g. `auditd_immutable: true/false`) allow disabling `-e 2` during development and enabling it only for the final verification gate?
+The open architectural questions identified during analysis have been resolved as follows:
+
+1. **snapd / SSM on EC2 (Step 9.1):**
+   - **Reference doc:** `modules/hardening/self-managed/hardening-self-managed.md`, lines 1072–1110 ("EC2 — SSM Agent migration (required before purging snapd)").
+   - **Decision:** Resolved in Block 2D by exactly reproducing what the hardening documentation prescribes for EC2: remove snap IPC sockets (`/var/lib/amazon/ssm/ipc/`), download and install the official `amazon-ssm-agent` deb package via `dpkg`, ensure the service is active, and only then purge and hold `snapd`.
+2. **WireGuard Key Management:**
+   - **Decision:** The server keypair is generated directly on the target host with `creates: /etc/wireguard/server_private.key` (avoiding key exposure in variables). Peer public keys are declared in host inventory variables (`host_vars/multi-lab-local.yml` and `host_vars/multi-lab-vps.yml`, which are gitignored, with `.example` templates committed), without requiring Ansible Vault. Client keypairs are generated independently on each client workstation (deliberate security improvement over the manual doc, which generated client keys on the server).
+3. **Auditd Immutable Mode (`-e 2`):**
+   - **Decision:** The role default in `defaults/main.yml` matches the manual documentation baseline (`hardening_auditd_immutable_mode: true`). The VM development inventory (`inventories/group_vars/vm.yml`) explicitly overrides this to `false` during iterative development. It is enabled during the final from-scratch rebuild verification at the end of Block 2C.
 4. **Admin Sudo Password Handling:**
-   Step 0 sets a password for `<username>`. In Ansible, passwords should be passed as password hashes (`password: "{{ admin_password_hash }}"`). Should this variable be supplied via `--ask-become-pass` / `group_vars` with a placeholder hash?
+   - **Decision:** Prompted interactively at runtime via `vars_prompt` in `playbooks/bootstrap.yml` (private, encrypted with `password_hash('sha512')` dynamically). No cleartext passwords or password hashes are ever committed to repository variables. Subsequent playbooks execute with `--ask-become-pass`.
+5. **Initial Bootstrap SSH User:**
+   - **Decision:** Specified per host via the `initial_user` variable in `host_vars/` (e.g. the user created during ISO installation on the VM; `ubuntu` on EC2). Driven by `connection_mode: "pre"`.
+6. **Lynis Verification & Thresholds:**
+   - **Decision:** The playbook does not fail on score thresholds; it records the Hardening Index and emits an advisory warning if the score falls below threshold. The threshold is configurable via variable `hardening_lynis_min_score` (default `88` on VM, `90` on EC2). Verification against the milestone gate is checked by the author.
+7. **Fail2Ban Location:**
+   - **Decision:** Placed definitively in Block 2B immediately following UFW and WireGuard, completing the access and network perimeter layer.
+
+> **CI Note for Phase 3:**
+> The reusable CI workflow in Phase 3 must execute `ansible-galaxy collection install -r requirements.yml` prior to invoking `ansible-lint` to ensure all external collection schemas (`community.general`, `ansible.posix`) are loaded in the runner environment.

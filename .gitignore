@@ -36,6 +36,8 @@ crash.*.log
 # Ansible — local inventory with real host data, never commit
 stacks/full-infra/self-managed/automation/ansible/inventories/hosts.yml
 hosts.yml
+stacks/full-infra/self-managed/automation/ansible/inventories/host_vars/*.yml
+!stacks/full-infra/self-managed/automation/ansible/inventories/host_vars/*.example
 
 # Ansible — virtual environment and retry files
 .venv/

@@ -1,0 +1,21 @@
+# Deploy to:   multi-lab-local host
+# Apply:       included automatically by Ansible for host 'multi-lab-local'
+# Module:      stacks/full-infra/self-managed/automation/ansible
+# Requires:    none
+#
+# Host-specific variable definitions for local VM host (multi-lab-local).
+# Why:         Defines installer user and peer public keys without hardcoding secrets.
+# Doc ref:     context/ansible-implementation.md — Section 4
+# Targets:     vm
+
+---
+# Initial username created during Ubuntu Server ISO installation (used in connection_mode: "pre")
+initial_user: "localuser"
+
+# WireGuard peer public keys mapped for the local VM
+# Note: real keys must never be committed; configure in multi-lab-local.yml (gitignored)
+wireguard_peer_public_keys:
+  # Management Mac workstation peer public key
+  mac: "REPLACE_WITH_MAC_WIREGUARD_PUBLIC_KEY"
+  # AWS EC2 VPS peer public key
+  vps: "REPLACE_WITH_VPS_WIREGUARD_PUBLIC_KEY"
