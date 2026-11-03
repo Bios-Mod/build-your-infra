@@ -17,7 +17,7 @@ ingeniería senior. Reclutadores y equipos de ingeniería revisarán este reposi
 - Antes de tomar cualquier decisión que afecte al autor, preguntar primero.
 - `AGENTS.md`, `decision-log.md` y los planes de implementación en `context/` (hoy, `ansible-implementation.md`) son los únicos documentos de contexto. No existe ningún archivo de estado por iteración: el estado reside en las tablas de módulos y en el log de decisiones.
 - Reparto entre documentos: `AGENTS.md` define cómo escribir y trabajar (reglas imperativas); `decision-log.md` registra qué se decidió y por qué.
-- El contenido del repositorio (docs de módulos y entornos, README, configs, comentarios en línea, YAML y código) está en inglés. Los documentos internos y de contexto (AGENTS.md y context/decision-log.md) están en español.
+- El contenido del repositorio (docs de módulos y entornos, README, configs, comentarios en línea, YAML y código) está en inglés. Los documentos internos y de contexto (`AGENTS.md`, `context/decision-log.md` y `context/ansible-implementation.md`) están en español.
 
 ---
 
@@ -86,10 +86,6 @@ de AWS documentado por separado.
     │       ├── README.md
     │       ├── self-managed/
     │       │   ├── configs/
-    │       │   ├── automation/
-    │       │   │   ├── ansible/
-    │       │   │   │   └── roles/<module>/
-    │       │   │   └── <module>-self-managed-automation.md
     │       │   └── <module>-self-managed.md
     │       └── aws-native/
     │           ├── automation/
@@ -107,7 +103,8 @@ de AWS documentado por separado.
                 │   ├── ansible.cfg
                 │   ├── requirements.txt
                 │   ├── inventories/
-                │   └── playbooks/
+                │   ├── playbooks/
+                │   └── roles/<module>/
                 └── self-managed-automation.md
 
 > **Convención de nomenclatura (decisión 2026-07-10):** los documentos de
@@ -264,7 +261,7 @@ configuración; la justificación detallada corresponde a la sección `### Why` 
 
 ## Convenciones de Ansible
 
-Reglas de escritura. El alcance, la estructura y las decisiones están en `decision-log.md`.
+Reglas de escritura. El alcance, la estructura y las decisiones están en `decision-log.md`; las fases, en `context/ansible-implementation.md`.
 
 - Todo fichero YAML de Ansible lleva cabecera con los campos `Deploy to:`, `Apply:`,
   `Module:`, `Requires:`, descripción de una línea, `Why:`, `Doc ref:` y `Targets:`
@@ -278,8 +275,10 @@ Reglas de escritura. El alcance, la estructura y las decisiones están en `decis
   usa `command`/`shell`, justificarlo y emplear `creates:` o `changed_when`.
 - Usar `validate:` con el validador nativo del servicio cuando exista.
 - Los comentarios y el contenido van en inglés.
-- Los docs de automatización siguen What was done / Why / Verification, incluyendo
-  `--check --diff` y una segunda ejecución con 0 `changed`.
+- El doc de implementación de Ansible es `self-managed-automation.md` del stack, con una
+  sección por módulo que sigue What was done / Why / Verification, incluyendo
+  `--check --diff` y una segunda ejecución con 0 `changed`. Cada rol tiene además un
+  `README.md` corto (entradas, tags, destinos y ficheros compartidos).
 
 ---
 

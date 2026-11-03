@@ -52,7 +52,10 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   El estado queda desactualizado de inmediato y no es de confianza.
 - **DNS desplegado solo en EC2 — la VM local es un cliente peer.** BIND9 se ejecuta solo
   en el hub de WireGuard en EC2; la VM local resuelve mediante `172.16.0.1` a través del túnel.
-- **Idioma del repositorio (2026-11-03)** — El contenido del repositorio (docs de módulos y entornos, README, configs, comentarios en línea, YAML y código) está en inglés. Los documentos internos y de contexto (`AGENTS.md` y `context/decision-log.md`) están en español.
+- **Idioma del repositorio (2026-11-03)** — El contenido del repositorio (docs de módulos y entornos, README, configs, comentarios en línea, YAML y código) está en inglés. Los documentos internos y de contexto (`AGENTS.md`, `context/decision-log.md` y `context/ansible-implementation.md`) están en español.
+- **`snapshots/README.md` es un registro documental.** La columna `State` ("Retained") refleja
+  cómo se documentó cada snapshot/AMI en su momento; no implica que exista hoy. Ninguna
+  fase de Ansible depende de esos snapshots/AMIs.
 
 ---
 
@@ -90,12 +93,14 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 
 ## Fase de Automatización — Decisiones de Terraform
 
-- **Los módulos individuales + full-stack son ambos obligatorios.** Un full-stack
+- **Los módulos individuales + full-stack son ambos obligatorios en `aws-native`.** Un full-stack
   sin módulos individuales es una caja negra; un módulo sin un full-stack
-  no demuestra composición.
-- **`stacks/full-infra/self-managed/`** despliega EC2 desde el snapshot de la AMI
-  (`multi-lab-aws-active-directory`) — capa de infraestructura únicamente. La
-  configuración del SO se aplicó manualmente y se documentó por módulo. Ansible
+  no demuestra composición. En `self-managed` la automatización (Terraform y Ansible) existe
+  únicamente a nivel de stack.
+- **`stacks/full-infra/self-managed/`** desplegaba EC2 desde el snapshot de la AMI
+  (`multi-lab-aws-active-directory`) — capa de infraestructura únicamente. Esa AMI ya no
+  existe; el stack pasa a poder lanzar Ubuntu Server 24.04 base (ver "Decisiones de Ansible").
+  La configuración del SO se aplicó manualmente y se documentó por módulo. Ansible
   cerrará esta brecha; este es el patrón correcto (no forzar Terraform donde no
   corresponde).
 - **Orden de implementación de módulos (aws-native):** hardening → dns → file-transfer → web-server → directory. De menor a mayor complejidad;
@@ -122,17 +127,14 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   (`modules/<name>/aws-native/automation/terraform/`) — cada módulo despliega
   sus propios recursos gestionados de AWS de forma independiente. En `self-managed`, Terraform
   se aplica **únicamente** en `stacks/full-infra/self-managed/` — aprovisiona
-  la instancia EC2 a partir del snapshot de la AMI pre-hardened
-  (`multi-lab-aws-active-directory`), cubriendo solo la capa de infraestructura
-  (instancia, red, security groups). Los módulos individuales self-managed
-  **no** tienen Terraform — no hay nada que aprovisionar a nivel de módulo en ese
-  entorno (sin recursos cloud, solo configuración de SO sobre un host existente).
-  La brecha real no es "Terraform vs Ansible" como herramientas paralelas — es
-  que **la capa de configuración del SO del snapshot self-managed se aplicó
-  manualmente** y está documentada por módulo (`*-self-managed.md`), pero aún
-  no está automatizada. Ansible es la herramienta que cerrará esta brecha específica:
-  gestión de configuración sobre la capa de infraestructura del snapshot,
-  no un reemplazo para el rol de aprovisionamiento de infraestructura de Terraform. No
+  la instancia EC2 (instancia, red, security groups), cubriendo solo la capa de infraestructura.
+  Los módulos individuales self-managed **no** tienen Terraform — no hay nada que aprovisionar a
+  nivel de módulo en ese entorno (sin recursos cloud, solo configuración de SO sobre un host
+  existente). La brecha real no es "Terraform vs Ansible" como herramientas paralelas — es
+  que **la capa de configuración del SO self-managed se aplicó manualmente** y está
+  documentada por módulo (`*-self-managed.md`), pero aún no está automatizada. Ansible es la
+  herramienta que cerrará esta brecha específica: gestión de configuración sobre la capa de
+  infraestructura, no un reemplazo para el rol de aprovisionamiento de Terraform. No
   confundir ambos — Terraform aprovisiona, Ansible configura. Ansible está
   planificado pero aún no implementado; junto con la monitorización constituye la
   fase final del repositorio.
@@ -145,31 +147,31 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 
 - **Alcance: self-managed únicamente.** `aws-native` aprovisiona servicios gestionados con
   Terraform; no hay SO que configurar. Ansible cierra la brecha de configuración
-  del snapshot self-managed, no una brecha de Terraform.
+  self-managed, no una brecha de Terraform.
 - **Se automatiza exactamente lo ya aplicado a mano, en cada destino donde se aplicó**
   (fuente: `snapshots/README.md`). hardening, file-transfer y web-server: VM y EC2.
   dns y directory: solo EC2. dhcp: solo VM. Sin funcionalidad nueva; las limitaciones
   conocidas se reproducen tal cual (p. ej. SMB2 bloqueado por el bug de Samba 4.19.5 en aarch64).
-- **Estructura en dos niveles.** Un rol por módulo en
-  `modules/<module>/self-managed/automation/ansible/roles/<module>/` (con `tasks/`,
-  `handlers/`, `defaults/`, `templates/` y `meta/`). Inventario, `ansible.cfg`,
-  `requirements.txt` y playbooks (`bootstrap.yml`, `site.yml` y uno por módulo) en
-  `stacks/full-infra/self-managed/automation/ansible/` — el mismo patrón de módulo + stack
-  utilizado para Terraform. `roles_path` en `ansible.cfg` lista una ruta por módulo, añadida
-  al llegar a su fase.
-- **`terraform/` y `ansible/` coexisten dentro de `automation/`** y ambos se mantienen
-  separados de `configs/`, que es hermano de `automation/`.
-- **Docs de implementación de Ansible:** `<module>-self-managed-automation.md` dentro de
-  `modules/<module>/self-managed/automation/`, con el estándar What was done / Why / Verification.
-- **Módulos elegibles.** Un playbook por módulo y `site.yml` con un tag por módulo; cada módulo
-  comprueba al inicio que hardening está aplicado y falla con un mensaje claro si no lo está.
+- **Ansible existe solo a nivel de stack**, igual que el Terraform de self-managed. Todo vive en
+  `stacks/full-infra/self-managed/automation/ansible/`: `ansible.cfg`, `requirements.txt`,
+  `inventories/`, `playbooks/` (`bootstrap.yml`, `site.yml` y uno por módulo) y
+  `roles/<module>/` (un rol por módulo, con `tasks/`, `handlers/`, `defaults/`, `templates/`,
+  `meta/` y un `README.md` corto). Los módulos self-managed no tienen carpeta `automation/`.
+- **`terraform/` y `ansible/` coexisten dentro de `automation/`** del stack y ambos se mantienen
+  separados de `configs/`, que permanece en cada módulo.
+- **Doc de implementación único:** `stacks/full-infra/self-managed/automation/self-managed-automation.md`,
+  con una sección por módulo (What was done / Why / Verification). Los hitos de verificación de
+  cada módulo se reutilizan en el full stack para comprobar que cada módulo quedó bien aplicado.
+- **Módulos elegibles.** La selección se hace por grupos de inventario (qué módulos se aplican a cada
+  host) y por tags (`--tags <module>`) para ejecutar un módulo concreto. Hardening se aplica siempre
+  primero y cada módulo comprueba al inicio que hardening está aplicado, fallando con un mensaje claro si no.
 
 **Diseño de los roles**
 
 - **`configs/` se mantiene como la única fuente de verdad.** Los roles consumen los archivos
-  existentes desde el nodo de control; sin contenido de configuración duplicado. Los
-  placeholders (`<username>`, `192.168.X.X`, `<upstream_port>`) se sustituyen al desplegar
-  con variables de inventario.
+  existentes de `modules/<module>/self-managed/configs/` desde el nodo de control; sin
+  contenido de configuración duplicado. Los placeholders (`<username>`, `192.168.X.X`,
+  `<upstream_port>`) se sustituyen al desplegar con variables de inventario.
 - **Un rol por módulo para ambos destinos.** Las diferencias VM/EC2 se resuelven con variables
   (`is_cloud`, `tls_mode`, ...) y los módulos se asignan a hosts mediante grupos de inventario
   que reflejan la matriz real. TLS: autofirmado en VM, Let's Encrypt en EC2.
@@ -184,43 +186,47 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   `requirements.txt`. Tras el Step 5 de hardening, SSH solo escucha por `wg0`; el túnel
   de WireGuard del Mac es nativo y evita el routing adicional de un contenedor o una VM.
 - **Orden de implementación:** hardening → file-transfer → dns → web-server → directory →
-  dhcp. Sigue la cadena real de snapshots, de modo que cada módulo dispone de su snapshot
-  acumulativo como oráculo. Sustituye al orden anterior (dns antes de file-transfer).
-- **Punto de partida: siempre una base limpia.** VM: snapshot `ubuntu-base-install`. EC2: AMI
-  `multi-lab-aws-base-install`. Nunca el AMI ya configurado como destino de construcción.
-- **El stack de Terraform self-managed** admite elegir el AMI mediante una variable, para
-  poder lanzar `multi-lab-aws-base-install` además del AMI actual. Se revisa primero cómo
-  está definido hoy.
-- **Oráculos.** Los snapshots y AMIs manuales existentes se conservan hasta cerrar Ansible y se
-  usan para comprobar equivalencia (`--check --diff` vacío). Lo creado durante Ansible lleva
-  el prefijo `multi-lab-local-ansible-` / `multi-lab-aws-ansible-`.
+  dhcp. Refleja el orden real de despliegue manual de los módulos.
+- **Partida desde cero en ambos entornos, sin depender de snapshots ni AMIs.**
+  VM: una VM nueva creada con `environments/local/local-vm-setup.md`. EC2: el stack de Terraform
+  self-managed lanza Ubuntu Server 24.04 ARM64 base mediante una variable de AMI (se revisa
+  primero cómo está definido hoy y qué recursos crea o asume). Los docs de implementación
+  de cada módulo son la especificación del estado deseado.
+- **Desarrollo incremental.** Cada fase añade un módulo sobre el mismo host. La reconstrucción completa
+  desde cero se hace al cerrar hardening y al final del plan.
+- **Puntos de retorno.** VM: snapshot local de seguridad antes del bloque de acceso de hardening (SSH,
+  UFW, WireGuard); no es una dependencia. EC2: sin snapshots intermedios; la recuperación es terminar la
+  instancia y relanzarla con Terraform y Ansible. Opcionalmente, un único AMI `multi-lab-aws-ansible-hardening`
+  tras hardening, solo por comodidad.
+- **VM actual.** Se conserva intacta y apagada, como referencia y sin ser dependencia, hasta cerrar
+  Ansible y pasar a monitorización.
 - **Pruebas.** `ansible-lint` y `--syntax-check` en CI; `--check --diff` y una segunda
-  ejecución con 0 `changed` en cada destino. Sin Molecule.
+  ejecución con 0 `changed` en cada destino; verificaciones de cada módulo; Lynis ≥ 88 (VM) y ≥ 90 (EC2)
+  en hardening. Sin Molecule.
 - **Monitorización (Prometheus + Grafana)** es un módulo posterior, solo self-managed,
   añadido tras cerrar la base de Ansible. También existe en
   `containerize-your-infra`, donde por ahora no se planifica Ansible.
-  
+
 ---
 
 ## Plan de Implementación de Ansible (2026-11-03)
 
 - **Documento de referencia:** `context/ansible-implementation.md`. Es la fuente
-  única de fases, hitos de verificación, matriz módulo × destino, cadenas de
-  snapshots/AMIs y riesgos de la implementación de Ansible. Las decisiones que lo
-  sustentan están en la sección anterior; el plan las aplica y no las reabre.
+  única de fases, hitos de verificación, matriz módulo × destino y riesgos de la
+  implementación de Ansible. Las decisiones que lo sustentan están en la sección
+  anterior; el plan las aplica y no las reabre.
 - **Lectura obligatoria** para el autor, el asistente y el agente de código en
   cualquier tarea relacionada con Ansible.
 - **Fases (orden fijo):** 0 alineación de contexto · 1 análisis de hardening +
   scaffolding · 2 hardening (2A preparación, 2B cadena de acceso, 2C resto de
-  capas, 2D réplica en EC2) · 3 Ansible en el CI · 4 file-transfer · 5 dns ·
-  6 web-server · 7 directory · 8 dhcp · 9 orquestación y cierre.
+  capas, 2D EC2) · 3 Ansible en el CI · 4 file-transfer · 5 dns · 6 web-server ·
+  7 directory · 8 dhcp · 9 orquestación y cierre.
 - **Regla de puertas.** No se inicia una fase sin cumplir el hito de verificación
   de la anterior. Los hitos se definen por destino (VM y/o EC2) según la matriz
   del plan.
 - **Verificación estándar por módulo y destino:** `ansible-lint` y
   `--syntax-check`; `--check --diff`; ejecución real; segunda ejecución con
-  0 `changed`; verificaciones del doc manual; prueba de equivalencia contra el
-  snapshot/AMI manual del módulo.
+  0 `changed`; verificaciones del doc manual del módulo.
 - **Cambios al plan.** Cualquier cambio de fases, hitos, matriz u orden se edita
   en `context/ansible-implementation.md` y se registra aquí con fecha. El estado
   de avance no se anota en ninguno de los dos documentos (se vuelve obsoleto);
@@ -250,6 +256,9 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   su propio filtro — diferente perfil de riesgo y herramientas.
 - **`path-consistency` es solo para PR**, para mantener el ciclo de push enfocado en la
   corrección de los módulos.
+- **La validación de Ansible** se añade como un único filtro + job sobre
+  `stacks/full-infra/self-managed/automation/ansible/**` dentro de `modules-ci.yml`
+  (`ansible-lint` y `--syntax-check`); los workflows de entrada no se tocan.
 
 ---
 
