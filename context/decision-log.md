@@ -1,7 +1,6 @@
 # Log de Decisiones
 
-Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud
-explícita del autor.
+Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud explícita del autor.
 
 ---
 
@@ -102,8 +101,7 @@ explícita del autor.
   configuración del SO se aplicó manualmente y se documentó por módulo. Ansible
   cerrará esta brecha en una iteración futura; este es el patrón correcto (no
   forzar Terraform donde no corresponde).
-- **Orden de implementación de módulos (aws-native):** hardening → dns →
-  file-transfer → web-server → directory. De menor a mayor complejidad;
+- **Orden de implementación de módulos (aws-native):** hardening → dns → file-transfer → web-server → directory. De menor a mayor complejidad;
   `directory` al final debido al coste de facturación y ~30 min de tiempo de aprovisionamiento.
 - **`stacks/` en la raíz del repo** — coherencia estructural con
   `containerize-your-infra`, que utiliza el mismo patrón.
@@ -198,9 +196,5 @@ explícita del autor.
 
 ## Método de Trabajo (2026-11-02)
 
-- Estructura y decisiones primero, luego documentos de implementación generados por el
-  asistente arquitecto, después el autor los ejecuta paso a paso y reporta los
-  errores de vuelta a los documentos.
-- Las tareas mecánicas pueden delegarse al agente de código (Antigravity);
-  diseño, docs y justificaciones no se delegan. Los prompts son redactados por el
-  autor y el asistente.
+- Estructura y decisiones primero, luego documentos de implementación generados por el asistente arquitecto, después el autor los ejecuta paso a paso y reporta los errores de vuelta a los documentos.
+- Las tareas mecánicas pueden delegarse al agente de código (Antigravity); diseño, docs y justificaciones no se delegan. Los prompts son redactados por el autor y el asistente.

@@ -322,21 +322,13 @@ Ver `continuous-integration.md` para el diseño completo.
 
 ## Método de Trabajo
 
-1. El autor y el asistente arquitecto definen primero la estructura y las
-   decisiones, y las registran en `decision-log.md`.
-2. El asistente genera los documentos de implementación (`.md`) siguiendo
-   los estándares obligatorios de este archivo.
+1. El autor y el asistente arquitecto definen primero la estructura y las decisiones, y las registran en `decision-log.md`.
+2. El asistente genera los documentos de implementación (`.md`) siguiendo los estándares obligatorios de este archivo.
 3. El autor sigue el documento paso a paso sobre infraestructura real,
    aprendiendo mientras lo aplica y reportando cada error encontrado.
-4. Los errores se corrigen en el documento, de modo que termine reflejando lo que
-   realmente se verificó.
+4. Los errores se corrigen en el documento, de modo que termine reflejando lo que realmente se verificó.
 
 ### Delegación al agente de código
 
-Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código
-(Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces,
-incorporación de jobs de CI a partir de un patrón definido. Las decisiones de diseño, documentos
-de implementación y justificaciones (`### Why`) permanecen con el autor y el asistente arquitecto.
-Todos los prompts e instrucciones para el agente son redactados por el autor y el
-asistente — el agente recibe el alcance, archivos objetivo, estándares obligatorios y
-criterios de aceptación, y nunca decide la estructura.
+Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código (Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces, incorporación de jobs de CI a partir de un patrón definido. Las decisiones de diseño, documentos de implementación y justificaciones (`### Why`) permanecen con el autor y el asistente arquitecto.
+Todos los prompts e instrucciones para el agente son redactados por el autor y el asistente — el agente recibe el alcance, archivos objetivo, estándares obligatorios y criterios de aceptación, y nunca decide la estructura.
