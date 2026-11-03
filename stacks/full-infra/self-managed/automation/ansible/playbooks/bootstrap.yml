@@ -31,3 +31,4 @@
         hardening_admin_password_hash: "{{ hardening_admin_password | password_hash('sha512') }}"
       tags:
         - hardening_step0
+

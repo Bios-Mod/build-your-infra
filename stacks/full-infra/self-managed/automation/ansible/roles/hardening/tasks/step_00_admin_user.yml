@@ -58,3 +58,4 @@
     group: "{{ hardening_admin_username }}"
     mode: "0600"
   when: is_cloud # EC2 only
+
