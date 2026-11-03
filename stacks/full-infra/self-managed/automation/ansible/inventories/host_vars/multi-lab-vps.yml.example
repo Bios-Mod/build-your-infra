@@ -4,13 +4,20 @@
 # Requires:    none
 #
 # Host-specific variable definitions for EC2 VPS host (multi-lab-vps).
-# Why:         Defines cloud-init default user and peer public keys without hardcoding secrets.
+# Why:         Defines cloud-init default user, SSH keys, and peer public keys without hardcoding secrets.
 # Doc ref:     context/ansible-implementation.md — Section 4
 # Targets:     ec2
 
 ---
 # Default cloud-init user on Ubuntu Server AWS AMI (used in connection_mode: "pre")
-initial_user: "ubuntu"
+ec2_initial_user: "ubuntu"
+
+# Dedicated lab SSH key pair (never use personal or GitHub keys)
+# Path to the public key installed on target host for dedicated administrator (Step 0)
+admin_public_key_file: "~/.ssh/<lab_key>.pub"
+
+# Private key file used by Ansible control node to connect via SSH
+ansible_ssh_private_key_file: "~/.ssh/<lab_key>"
 
 # WireGuard peer public keys mapped for the EC2 VPS hub
 # Note: real keys must never be committed; configure in multi-lab-vps.yml (gitignored)

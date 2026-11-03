@@ -4,7 +4,7 @@
 # Requires:    none
 #
 # Host-specific variable definitions for local VM host (multi-lab-local).
-# Why:         Defines installer user, network addressing, and peer public keys without hardcoding secrets.
+# Why:         Defines installer user, network addressing, SSH keys, and peer public keys without hardcoding secrets.
 # Doc ref:     context/ansible-implementation.md — Section 4
 # Targets:     vm
 
@@ -26,6 +26,13 @@ vm_gateway: "192.168.1.1"
 
 # Trusted local LAN CIDR permitted through UFW and whitelisted in Fail2Ban
 lan_trusted_cidr: "192.168.1.0/24"
+
+# Dedicated lab SSH key pair (never use personal or GitHub keys)
+# Path to the public key installed on target host for dedicated administrator (Step 0)
+admin_public_key_file: "~/.ssh/<lab_key>.pub"
+
+# Private key file used by Ansible control node to connect via SSH
+ansible_ssh_private_key_file: "~/.ssh/<lab_key>"
 
 # WireGuard peer public keys mapped for the local VM
 wireguard_peer_public_keys: []

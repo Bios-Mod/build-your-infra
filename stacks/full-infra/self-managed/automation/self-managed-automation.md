@@ -494,7 +494,7 @@ ansible-galaxy collection install -r requirements.yml
 cp inventories/hosts.yml.example inventories/hosts.yml
 cp inventories/host_vars/multi-lab-local.yml.example inventories/host_vars/multi-lab-local.yml
 
-ssh-copy-id -i ~/.ssh/id_ed25519.pub <installer_user>@<vm_ip>
+ssh-copy-id -i ~/.ssh/<lab_key>.pub <vm_initial_user>@<vm_lan_ip>
 ```
 
 Edit `inventories/host_vars/multi-lab-local.yml` (created from its `.example`)
@@ -505,6 +505,21 @@ interface (`vm_interface`), static IP (`vm_static_ip`), gateway router
 is done exclusively in this host file; no host-specific network values are edited
 in `inventories/group_vars/vm.yml`.
 
+#### SSH Key Configuration
+
+Generate and use a dedicated Ed25519 SSH key pair for the lab (e.g., `~/.ssh/<lab_key>`),
+rather than personal, system, or GitHub keys. Configure both the public key installed
+onto the dedicated administrator account (`admin_public_key_file: "~/.ssh/<lab_key>.pub"`)
+and the private key used by the Ansible control node (`ansible_ssh_private_key_file: "~/.ssh/<lab_key>"`)
+in `inventories/host_vars/multi-lab-local.yml`.
+
+In `~/.ssh/config`, add `IdentityFile ~/.ssh/<lab_key>` and `IdentitiesOnly yes` to the
+`Host multi-lab-local` block. Step 3 hardening restricts authentication attempts to 3
+(`MaxAuthTries 3`); without `IdentitiesOnly yes`, the SSH client presents all keys loaded
+in `ssh-agent`, which can exhaust allowed attempts and trigger a lockout before reaching
+the correct key. If the private key is protected with a passphrase, load it into your agent
+once per terminal session using `ssh-add ~/.ssh/<lab_key>`.
+
 > **Optional but recommended:** take a hypervisor snapshot of the VM before
 > the first run.
 
@@ -512,6 +527,7 @@ in `inventories/group_vars/vm.yml`.
 📄 [`requirements.yml`](ansible/requirements.yml)
 📄 [`inventories/hosts.yml.example`](ansible/inventories/hosts.yml.example)
 📄 [`inventories/host_vars/multi-lab-local.yml.example`](ansible/inventories/host_vars/multi-lab-local.yml.example)
+📄 [`inventories/host_vars/multi-lab-vps.yml.example`](ansible/inventories/host_vars/multi-lab-vps.yml.example)
 
 ### Why
 
