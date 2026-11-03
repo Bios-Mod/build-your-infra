@@ -497,10 +497,13 @@ cp inventories/host_vars/multi-lab-local.yml.example inventories/host_vars/multi
 ssh-copy-id -i ~/.ssh/id_ed25519.pub <installer_user>@<vm_ip>
 ```
 
-Edit `inventories/host_vars/multi-lab-local.yml` and replace the example values
-with the real ones (installer user and VM IP). Check that
-`inventories/group_vars/vm.yml` matches your VM (`vm_lan_ip`, `vm_interface`,
-`vm_static_ip`, `vm_gateway`).
+Edit `inventories/host_vars/multi-lab-local.yml` (created from its `.example`)
+and replace the example values with your real environment parameters: initial
+installer user (`vm_initial_user`), current reachable IP (`vm_lan_ip`), network
+interface (`vm_interface`), static IP (`vm_static_ip`), gateway router
+(`vm_gateway`), and trusted LAN subnet (`lan_trusted_cidr`). Inventory editing
+is done exclusively in this host file; no host-specific network values are edited
+in `inventories/group_vars/vm.yml`.
 
 > **Optional but recommended:** take a hypervisor snapshot of the VM before
 > the first run.
@@ -508,6 +511,7 @@ with the real ones (installer user and VM IP). Check that
 📄 [`requirements.txt`](ansible/requirements.txt)
 📄 [`requirements.yml`](ansible/requirements.yml)
 📄 [`inventories/hosts.yml.example`](ansible/inventories/hosts.yml.example)
+📄 [`inventories/host_vars/multi-lab-local.yml.example`](ansible/inventories/host_vars/multi-lab-local.yml.example)
 
 ### Why
 

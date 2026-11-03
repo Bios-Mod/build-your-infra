@@ -22,7 +22,7 @@
     name: "{{ hardening_admin_username }}"
     groups: "{{ hardening_admin_groups }}"
     append: true
-    shell: /bin/bash
+    shell: "{{ hardening_admin_shell }}"
     state: present
     password: "{{ hardening_admin_password_hash if (hardening_admin_password_hash | length > 0) else omit }}"
     update_password: on_create
@@ -58,4 +58,3 @@
     group: "{{ hardening_admin_username }}"
     mode: "0600"
   when: is_cloud # EC2 only
-

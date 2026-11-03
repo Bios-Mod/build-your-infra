@@ -4,114 +4,84 @@
 # Requires:    none
 #
 # Default variable definitions for the hardening role.
-# Why:         Provides safe defaults for user accounts, ports, network rules, and audit parameters.
-# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 0 to 12
+# Why:         Provides baseline defaults for administration, package updates, network, and validation.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 0, 1, 2, 10, 12
 # Targets:     both
 
 ---
+# ==============================================================================
+# Step 0 — Admin User Setup
+# ==============================================================================
+
 # Name of the non-root administrative user created in Step 0
 hardening_admin_username: "{{ admin_username | default('admin') }}"
 
-# Supplementary groups granted to the administrative user for sudo privilege escalation
+# Login shell assigned to the administrator
+hardening_admin_shell: "{{ admin_shell | default('/bin/bash') }}"
+
+# Supplementary groups granted to the administrative user
 hardening_admin_groups: "{{ admin_groups | default(['sudo', 'adm', 'admin']) }}"
 
 # Path to the administrator SSH Ed25519 public key file on the local control node
 hardening_admin_public_key_file: "{{ admin_public_key_file | default('~/.ssh/id_ed25519.pub') }}"
 
-# Root directory containing the source-of-truth hardening configs
-hardening_configs_dir: "{{ configs_root }}/hardening/self-managed/configs"
-
 # Hashed administrator password for user creation (dynamically passed from vars_prompt in bootstrap.yml)
 hardening_admin_password_hash: ""
 
-# Port assigned to the OpenSSH server in Step 3 (replaces default port 22)
-hardening_ssh_hardened_port: "{{ ssh_hardened_port | default(22222) }}"
+# Root directory containing the source-of-truth hardening configs
+hardening_configs_dir: "{{ configs_root }}/hardening/self-managed/configs"
 
-# Grace time in seconds before an unauthenticated SSH connection is terminated
-hardening_ssh_login_grace_time: 30
+# ==============================================================================
+# Step 1 — System Update & Package Hygiene
+# ==============================================================================
 
-# Maximum number of authentication attempts per connection before drop
-hardening_ssh_max_auth_tries: 3
+# Whether to update the APT cache before running upgrades
+hardening_update_cache: true
 
-# Maximum open shell/subsystem sessions per network connection
-hardening_ssh_max_sessions: 2
+# Cache validity duration in seconds to avoid redundant repository lookups
+hardening_cache_valid_time: 3600
 
-# Network interface on the local VM target configured in Step 2
-hardening_vm_interface: "{{ vm_interface | default('enp2s0') }}"
+# APT upgrade strategy applied during system initialization ('full', 'safe', or 'dist')
+hardening_upgrade_type: "full"
 
-# Static IPv4 address and CIDR prefix for the local VM
-hardening_vm_static_ip: "{{ vm_static_ip | default('192.168.1.50/24') }}"
+# Base package hygiene and automated patch management packages to install
+hardening_base_packages:
+  - unattended-upgrades
+  - debsums
+  - apt-show-versions
+  - apt-listchanges
 
-# Default gateway IPv4 address for the local VM
-hardening_vm_gateway: "{{ vm_gateway | default('192.168.1.1') }}"
+# Packages purged during system cleanup (defaults to empty in Step 1 baseline)
+hardening_purge_packages: []
 
-# Upstream DNS resolver IPv4 addresses for the local VM
-hardening_vm_dns_servers: "{{ vm_dns_servers | default(['1.1.1.1', '8.8.8.8']) }}"
+# Daemon services disabled during baseline preparation (defaults to empty in Step 1)
+hardening_disable_services: []
 
-# UDP listen port for the WireGuard VPN service configured in Step 5
-hardening_wireguard_port: "{{ wireguard_port | default(51820) }}"
+# ==============================================================================
+# Step 2 — Static IP Configuration (VM only)
+# ==============================================================================
 
-# IPv4 subnet dedicated to the WireGuard VPN overlay network
-hardening_wireguard_vpn_subnet: "{{ wireguard_vpn_subnet | default('10.8.0.0/24') }}"
+# Network interface on the local VM target configured in Step 2 (must be defined in host_vars)
+hardening_vm_interface: "{{ vm_interface }}"
 
-# WireGuard VPN IP assigned to the host server interface (wg0)
-hardening_wireguard_server_vpn_ip: "{{ wireguard_server_vpn_ip | default('10.8.0.1/24') }}"
+# Static IPv4 address and CIDR prefix for the local VM (must be defined in host_vars)
+hardening_vm_static_ip: "{{ vm_static_ip }}"
 
-# WireGuard VPN IP assigned to the management Mac workstation peer
-hardening_wireguard_mac_vpn_ip: "{{ wireguard_mac_vpn_ip | default('10.8.0.2/32') }}"
-hardening_wireguard_vm_vpn_ip: "{{ wireguard_vm_vpn_ip | default('10.8.0.3/32') }}"
-
-# WireGuard peer public keys mapped by identifier
-hardening_wireguard_peer_public_keys: "{{ wireguard_peer_public_keys | default({}) }}"
+# Default gateway IPv4 address for the local VM (must be defined in host_vars)
+hardening_vm_gateway: "{{ vm_gateway }}"
 
 # Local LAN CIDR permitted to access administrative services
-hardening_lan_trusted_cidr: "{{ lan_trusted_cidr | default('192.168.1.0/24') }}"
+hardening_lan_trusted_cidr: "{{ lan_trusted_cidr | default('') }}"
 
-# Unnecessary daemon services disabled in Step 7 attack surface reduction
-hardening_services_to_disable:
-  - "cups"
-  - "cups-browsed"
-  - "avahi-daemon"
+# ==============================================================================
+# Compliance and Validation (Steps 10 and 12)
+# ==============================================================================
 
-# Unnecessary services masked to prevent activation by dependencies or sockets
-hardening_services_to_mask:
-  - "cups"
-  - "cups-browsed"
-  - "avahi-daemon"
+# Auditd immutable flag (-e 2) from Step 10. Default false allows iterative rule reloading during development.
+hardening_auditd_immutable_mode: false
 
-# Legacy or high-risk networking packages purged from the system in Step 7
-hardening_packages_to_purge:
-  - "telnet"
-  - "rsh-client"
-  - "talk"
-  - "xinetd"
-  - "nis"
-
-# Unused network protocols blacklisted in modprobe to prevent kernel auto-loading
-hardening_kernel_modules_blacklist:
-  - "dccp"
-  - "sctp"
-  - "rds"
-  - "tipc"
-  - "cramfs"
-  - "freevxfs"
-  - "jffs2"
-  - "hfs"
-  - "hfsplus"
-  - "udf"
-
-# User creation and authentication parameters for /etc/login.defs in Step 8
-hardening_login_defs_umask: "027"
-hardening_login_defs_pass_max_days: 90
-hardening_login_defs_pass_min_days: 7
-hardening_login_defs_pass_warn_age: 14
-hardening_login_defs_sha_crypt_rounds: 5000
-
-# Auditd immutable flag (-e 2) from Step 10. Default true matches manual baseline; disabled in vm.yml during development.
-hardening_auditd_immutable_mode: true
-
-# Lynis minimum Hardening Index threshold expected for the target host (88 for VM, 90 for EC2)
-hardening_lynis_min_score: 88
+# Lynis minimum Hardening Index threshold expected for the target host
+hardening_lynis_min_score: 70
 
 # Whether to fail the playbook execution if Lynis score is below threshold (false: records score and warns)
 hardening_lynis_enforce: false

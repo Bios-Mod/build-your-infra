@@ -24,11 +24,6 @@
     - name: Provision administrator account and SSH keys
       ansible.builtin.include_role:
         name: hardening
-        apply:
-          tags:
-            - hardening_step0
+        tasks_from: step_00_admin_user.yml
       vars:
         hardening_admin_password_hash: "{{ hardening_admin_password | password_hash('sha512') }}"
-      tags:
-        - hardening_step0
-

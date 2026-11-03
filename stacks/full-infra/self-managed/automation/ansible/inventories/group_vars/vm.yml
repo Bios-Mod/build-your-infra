@@ -4,7 +4,7 @@
 # Requires:    none
 #
 # Group variables for local virtualization environment (VMware / VirtualBox).
-# Why:         Defines local network parameters, static Netplan IP, and self-signed TLS.
+# Why:         Defines environment identity, connection defaults, TLS mode, and audit policy.
 # Doc ref:     context/ansible-implementation.md — Section 4
 # Targets:     vm
 
@@ -12,32 +12,20 @@
 # Environment identity flag
 is_cloud: false
 
-# Connection phase selector:
-# 'pre'  -> Initial connection: LAN IP, default SSH port 22, installer user.
-# 'post' -> Hardened connection: WireGuard tunnel IP, port 22222, admin user.
-connection_mode: "pre"
-
-# Target IP and initial credentials for pre-hardening bootstrap
-vm_initial_user: "localuser"
-vm_lan_ip: "192.168.1.50"
-vm_wg0_ip: "{{ wireguard_vm_vpn_ip }}"
-
-# Dynamic Ansible connection settings driven by connection_mode
-ansible_host: "{{ vm_lan_ip if connection_mode == 'pre' else vm_wg0_ip }}"
-ansible_port: "{{ 22 if connection_mode == 'pre' else ssh_hardened_port }}"
-ansible_user: "{{ vm_initial_user if connection_mode == 'pre' else admin_username }}"
+# Connection phase selector
+connection_mode: "local"
 
 # TLS certificate strategy for Nginx web server (Step 6 of full infra)
-tls_mode: "self_signed"
-
-# Local network parameters for Netplan and Fail2Ban whitelist (Step 2 and Step 6)
-vm_interface: "ens160"
-vm_static_ip: "192.168.1.50/24"
-vm_gateway: "192.168.1.1"
-lan_trusted_cidr: "192.168.1.0/24"
-
-# WireGuard client endpoint for local VM
-wireguard_endpoint: "{{ vm_lan_ip }}:{{ wireguard_port }}"
+tls_mode: "internal"
 
 # Disable auditd immutable mode (-e 2) during development to allow rule reloading without rebooting
 hardening_auditd_immutable_mode: false
+
+# Ansible connection parameters
+ansible_host: "{{ vm_lan_ip }}"
+ansible_port: 22
+ansible_user: "{{ admin_username }}"
+
+# WireGuard overlay network parameters
+vm_wg0_ip: "10.10.0.1/24"
+wireguard_endpoint: "{{ vm_lan_ip }}:51820"

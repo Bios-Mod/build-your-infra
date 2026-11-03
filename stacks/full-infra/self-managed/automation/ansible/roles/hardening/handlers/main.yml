@@ -5,10 +5,30 @@
 #
 # Service handlers for the hardening role.
 # Why:         Ensures affected daemons absorb configuration changes idempotently at play boundaries.
-# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 1, 3, 4, 5, 6, 7, 9, 10, 11
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 1, 2, 3, 4, 5, 6, 7, 9, 10, 11
 # Targets:     both
 
 ---
+# Reloads systemd daemon to recognize dropped-in network unit files from Step 2
+- name: Reload systemd daemon
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not is_cloud
+
+# Restarts systemd-networkd to apply drop-in configuration from Step 2
+- name: Restart systemd-networkd
+  ansible.builtin.systemd_service:
+    name: systemd-networkd
+    state: restarted
+  when: not is_cloud
+
+# Applies Netplan network configuration to runtime interfaces from Step 2
+- name: Apply netplan
+  ansible.builtin.command:
+    cmd: netplan apply
+  changed_when: true
+  when: not is_cloud
+
 # Restarts the OpenSSH server to apply hardened configuration from Step 3
 - name: Restart sshd
   ansible.builtin.systemd_service:

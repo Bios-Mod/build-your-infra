@@ -10,8 +10,8 @@
 
 ---
 # Root path to the repository's modules configuration directory (source of truth)
-# Resolved relative to the executed playbook directory
-configs_root: "{{ playbook_dir }}/../../../../../modules"
+# Resolved relative to the executed playbook directory (6 levels up to repository root)
+configs_root: "{{ playbook_dir }}/../../../../../../modules"
 
 # Non-root administration username created in hardening Step 0 and whitelisted in sshd_config
 admin_username: "admin"

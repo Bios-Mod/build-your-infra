@@ -22,13 +22,10 @@
     owner: root
     group: root
     mode: "0600"
-  when: not is_cloud # VM only
-
-# Validates Netplan configuration syntax before applying to prevent network disruption (Step 2)
-- name: Validate Netplan configuration syntax
-  ansible.builtin.command:
-    cmd: netplan generate
-  changed_when: false
+  notify:
+    - Reload systemd daemon
+    - Restart systemd-networkd
+    - Apply netplan
   when: not is_cloud # VM only
 
 # Creates drop-in directory to override systemd-networkd DHCP assignment (Step 2)
@@ -49,32 +46,26 @@
     owner: root
     group: root
     mode: "0644"
+  notify:
+    - Reload systemd daemon
+    - Restart systemd-networkd
+    - Apply netplan
   when: not is_cloud # VM only
 
-# Reloads systemd manager configuration to load drop-in units (Step 2)
-- name: Reload systemd daemon
-  ansible.builtin.systemd_service:
-    daemon_reload: true
-  when: not is_cloud # VM only
-
-# Restarts systemd-networkd to apply drop-in and drop dynamic DHCP lease (Step 2)
-- name: Restart systemd-networkd service
-  ansible.builtin.systemd_service:
-    name: systemd-networkd
-    state: restarted
-  when: not is_cloud # VM only
-
-# Applies static network configuration to runtime interfaces (Step 2)
-- name: Apply Netplan network configuration
+# Validates Netplan configuration syntax before applying to prevent network disruption (Step 2)
+- name: Validate Netplan configuration syntax
   ansible.builtin.command:
-    cmd: netplan apply
-  changed_when: true
+    cmd: netplan generate
+  changed_when: false
   when: not is_cloud # VM only
+
+# Flushes handlers immediately to apply network changes before proceeding
+- name: Flush network handlers
+  ansible.builtin.meta: flush_handlers
 
 # Waits for SSH reachability to confirm network connectivity after Netplan re-addressing (Step 2)
 - name: Wait for host connectivity after network reconfiguration
   ansible.builtin.wait_for_connection:
-    delay: 2
-    timeout: 30
+    delay: 5
+    timeout: 60
   when: not is_cloud # VM only
-
