@@ -471,7 +471,7 @@ once the VM has passed every gate.
 
 > **Prerequisites:** a local VM created with
 > [`environments/local/local-vm-setup.md`](../../../../environments/local/local-vm-setup.md)
-> (ends at the first SSH connection), Python >= 3.12 on the control node, and
+> (ends at the first SSH connection), Python 3.12 to 3.14 (not 3.15) on the control node, and
 > the repository cloned at `~/build-your-infra`.
 
 ---
@@ -485,8 +485,14 @@ collections, create the real inventory files from their `.example` pairs, and
 install the public key on the installer user so Ansible can connect without a
 password.
 
+> **Python version:** verify your interpreter with `python3.14 --version` before
+> creating the virtual environment. `ansible-core 2.21` supports Python 3.12 to
+> 3.14 on the control node; Python 3.15 is incompatible and fails at startup.
+> If Python 3.14 is not installed, use an explicit `python3.12` or `python3.13`
+> binary.
+
 ```bash
-python3 -m venv .venv
+python3.14 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ansible-galaxy collection install -r requirements.yml
