@@ -15,7 +15,7 @@ ingeniería senior. Reclutadores y equipos de ingeniería revisarán este reposi
 - Sin ruido ni redundancia — cada sección existe porque aporta valor.
 - Coherencia estructural, lógica y de tono en todos los documentos.
 - Antes de tomar cualquier decisión que afecte al autor, preguntar primero.
-- `AGENTS.md` y `decision-log.md` son los únicos documentos de contexto. No existe ningún archivo de estado por iteración: el estado reside en las tablas de módulos y en el log de decisiones.
+- `AGENTS.md`, `decision-log.md` y los planes de implementación en `context/` (hoy, `ansible-implementation.md`) son los únicos documentos de contexto. No existe ningún archivo de estado por iteración: el estado reside en las tablas de módulos y en el log de decisiones.
 - Reparto entre documentos: `AGENTS.md` define cómo escribir y trabajar (reglas imperativas); `decision-log.md` registra qué se decidió y por qué.
 - El contenido del repositorio (docs de módulos y entornos, README, configs, comentarios en línea, YAML y código) está en inglés. Los documentos internos y de contexto (AGENTS.md y context/decision-log.md) están en español.
 
@@ -74,6 +74,7 @@ de AWS documentado por separado.
     │       ├── push-ci.yml
     │       └── pull-request.yml
     ├── context/
+    │   ├── ansible-implementation.md
     │   └── decision-log.md
     ├── environments/
     │   ├── README.md
@@ -309,5 +310,5 @@ Reglas al editar el CI:
 Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código (Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces, jobs de CI a partir de un patrón definido. Las decisiones de diseño, los documentos de implementación y las justificaciones (`### Why`) permanecen con el autor y el asistente.
 
 - El agente trabaja en feature branches, puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea cada pull request.
-- Cada tarea indica: alcance de archivos, lectura obligatoria (`AGENTS.md`, `decision-log.md`), criterios de aceptación y lo que queda fuera de límites.
+- Cada tarea indica: alcance de archivos, lectura obligatoria (`AGENTS.md`, `decision-log.md` y, para tareas de Ansible, `context/ansible-implementation.md`), criterios de aceptación y lo que queda fuera de límites.
 - El agente ejecuta la estructura definida en `decision-log.md`; nunca la decide.

@@ -14,7 +14,7 @@ Two implementations are provided, one per environment path:
 | Implementation | Tool | Scope | Doc |
 |---|---|---|---|
 | `aws-native/` | Terraform | All AWS Native modules composed as a single deployment | [`aws-native/aws-native-automation.md`](aws-native/aws-native-automation.md) |
-| `self-managed/` | Terraform | EC2 instance launched from pre-hardened AMI snapshot — infrastructure layer only | [`self-managed/self-managed-automation.md`](self-managed/self-managed-automation.md) |
+| `self-managed/` | Terraform | EC2 instance launched from pre-hardened AMI snapshot — infrastructure layer only | [`self-managed/automation/self-managed-automation.md`](self-managed/automation/self-managed-automation.md) |
 
 ---
 
@@ -43,8 +43,8 @@ assignment, and Security Groups.
 
 The configuration layer (OS hardening, service setup, hardening baseline)
 was applied manually and is documented in each module under
-`modules/*/self-managed/`. A future Ansible layer will close this gap and
-enable full from-scratch provisioning without relying on a snapshot.
+`modules/*/self-managed/`. Ansible roles (in progress) will cover this layer
+and enable full from-scratch provisioning without relying on a snapshot.
 `self-managed-automation.md` is the single automation doc for this
 environment — it will grow to cover the Ansible layer when implemented.
 

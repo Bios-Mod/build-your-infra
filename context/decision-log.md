@@ -199,6 +199,35 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Monitorización (Prometheus + Grafana)** es un módulo posterior, solo self-managed,
   añadido tras cerrar la base de Ansible. También existe en
   `containerize-your-infra`, donde por ahora no se planifica Ansible.
+  
+---
+
+## Plan de Implementación de Ansible (2026-11-03)
+
+- **Documento de referencia:** `context/ansible-implementation.md`. Es la fuente
+  única de fases, hitos de verificación, matriz módulo × destino, cadenas de
+  snapshots/AMIs y riesgos de la implementación de Ansible. Las decisiones que lo
+  sustentan están en la sección anterior; el plan las aplica y no las reabre.
+- **Lectura obligatoria** para el autor, el asistente y el agente de código en
+  cualquier tarea relacionada con Ansible.
+- **Fases (orden fijo):** 0 alineación de contexto · 1 análisis de hardening +
+  scaffolding · 2 hardening (2A preparación, 2B cadena de acceso, 2C resto de
+  capas, 2D réplica en EC2) · 3 Ansible en el CI · 4 file-transfer · 5 dns ·
+  6 web-server · 7 directory · 8 dhcp · 9 orquestación y cierre.
+- **Regla de puertas.** No se inicia una fase sin cumplir el hito de verificación
+  de la anterior. Los hitos se definen por destino (VM y/o EC2) según la matriz
+  del plan.
+- **Verificación estándar por módulo y destino:** `ansible-lint` y
+  `--syntax-check`; `--check --diff`; ejecución real; segunda ejecución con
+  0 `changed`; verificaciones del doc manual; prueba de equivalencia contra el
+  snapshot/AMI manual del módulo.
+- **Cambios al plan.** Cualquier cambio de fases, hitos, matriz u orden se edita
+  en `context/ansible-implementation.md` y se registra aquí con fecha. El estado
+  de avance no se anota en ninguno de los dos documentos (se vuelve obsoleto);
+  lo reflejan los PRs mergeados y las tablas de módulos.
+- **Alcance del plan:** Ansible en self-managed. La monitorización
+  (Prometheus + Grafana) se planificará en un documento aparte cuando se cierre
+  la base de Ansible.
 
 ---
 
