@@ -1,0 +1,38 @@
+# Deploy to:   vm:ec2, localhost
+# Apply:       ansible-playbook playbooks/ping.yml [--check]
+# Module:      foundation
+# Requires:    inventories/hosts.yml
+#
+# Connectivity and environment verification playbook.
+# Why:         Confirms target network reachability and verifies local path to source-of-truth configs.
+# Doc ref:     context/ansible-implementation.md — Section 5 (Fase 1)
+# Targets:     both
+
+---
+- name: Verify control node environment and repository structure
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tasks:
+    # Verifies that configs_root resolves to the real modules/ directory on the control machine
+    - name: Check that source-of-truth configs directory exists
+      ansible.builtin.stat:
+        path: "{{ configs_root }}"
+      register: modules_dir_check
+
+    # Halts execution with an informative message if the repository root cannot be found
+    - name: Assert that configs_root exists and is a valid directory
+      ansible.builtin.assert:
+        that:
+          - modules_dir_check.stat.exists
+          - modules_dir_check.stat.isdir
+        fail_msg: "ERROR: configs_root path '{{ configs_root }}' does not exist or is not a directory."
+        success_msg: "OK: configs_root verified at '{{ configs_root }}'."
+
+- name: Test connectivity to lab hosts
+  hosts: vm:ec2
+  gather_facts: false
+  tasks:
+    # Tests SSH authentication and Python availability on the target host
+    - name: Ping target hosts
+      ansible.builtin.ping:

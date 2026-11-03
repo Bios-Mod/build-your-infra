@@ -1,0 +1,36 @@
+# Deploy to:   local control node (Mac)
+# Apply:       cp inventories/hosts.yml.example inventories/hosts.yml
+# Module:      stacks/full-infra/self-managed/automation/ansible
+# Requires:    none
+#
+# Inventory template for self-managed lab environments (VM and EC2).
+# Why:         Separates host definitions and group membership from committed code.
+# Doc ref:     context/ansible-implementation.md — Section 4.1
+# Targets:     both
+
+all:
+  children:
+    # Local VMware / VirtualBox environment
+    vm:
+      hosts:
+        multi-lab-local:
+
+    # AWS EC2 self-managed environment
+    ec2:
+      hosts:
+        multi-lab-vps:
+
+    # BIND9 DNS server — deployed exclusively on EC2 WireGuard hub
+    dns_servers:
+      hosts:
+        multi-lab-vps:
+
+    # Samba 4 Active Directory Domain Controller — deployed exclusively on EC2
+    directory_servers:
+      hosts:
+        multi-lab-vps:
+
+    # Kea DHCP server — deployed exclusively on local VM for LAN clients
+    dhcp_servers:
+      hosts:
+        multi-lab-local:

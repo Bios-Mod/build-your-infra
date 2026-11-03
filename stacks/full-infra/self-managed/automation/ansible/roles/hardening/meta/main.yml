@@ -1,0 +1,35 @@
+# Deploy to:   local Ansible controller (metadata only)
+# Apply:       read by Ansible Galaxy and dependency resolver
+# Module:      hardening
+# Requires:    none
+#
+# Role metadata and platform compatibility definitions for the hardening role.
+# Why:         Declares author, license, supported OS distributions, and dependencies for the role.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md
+# Targets:     both
+
+---
+galaxy_info:
+  author: Bios-Mod
+  description: Baseline OS hardening role implementing defense-in-depth across 12 layers on Ubuntu Server 24.04 LTS (Noble Numbat).
+  company: build-your-infra
+  license: MIT
+  min_ansible_version: "2.16"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+  galaxy_tags:
+    - hardening
+    - security
+    - ufw
+    - ssh
+    - wireguard
+    - auditd
+    - aide
+    - lynis
+    - ubuntu
+
+dependencies: []

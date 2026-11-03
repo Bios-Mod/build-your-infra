@@ -31,4 +31,14 @@ crash.log
 crash.*.log
 
 # cursorignore file
-.cursorignore   
+.cursorignore
+
+# Ansible — local inventory with real host data, never commit
+stacks/full-infra/self-managed/automation/ansible/inventories/hosts.yml
+hosts.yml
+
+# Ansible — virtual environment and retry files
+.venv/
+venv/
+*.retry
+.ansible/
