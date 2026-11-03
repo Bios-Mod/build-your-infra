@@ -30,7 +30,7 @@ Ciclo por módulo: **rol + sección del doc → ejecución manual en cada destin
 | Doc | `self-managed-automation.md` del stack, con una sección por módulo (What was done / Why / Verification). |
 | Selección de módulos | Grupos de inventario + tags. Hardening siempre primero; cada módulo comprueba que hardening está aplicado. |
 | Fuente de configs | `configs/` de cada módulo; los roles las leen desde el nodo de control (`configs_root`) y sustituyen placeholders con variables de inventario. |
-| Nodo de control | Mac, Ansible nativo en `venv`, versiones fijadas en `requirements.txt`. |
+| Nodo de control | Mac, Ansible nativo en `venv` con Python 3.12 a 3.14 (no 3.15), versiones fijadas en `requirements.txt`. |
 | Partida | Desde cero en ambos entornos, sin depender de snapshots ni AMIs. VM nueva con `local-vm-setup.md`; EC2 lanzada por Terraform desde Ubuntu 24.04 ARM64 base, pasando su AMI en la variable `ami_id` existente. El acceso SSH inicial se abre con una variable de Terraform (CIDR de bootstrap). |
 | Desarrollo | Incremental: un módulo por fase sobre el mismo host. Reconstrucción completa desde cero al cerrar hardening y en el cierre. |
 | Orden | hardening → file-transfer → dns → web-server → directory → dhcp. |
@@ -153,7 +153,7 @@ Cada hito es una **puerta**: no se pasa a la siguiente fase sin cumplirlo.
 - **Entregables (agente):**
   - `ANALYSIS.md` de hardening: pasos (archivos, método de aplicación, clasificación automatizable/manual/riesgo de lockout), módulo Ansible candidato, handlers, orden, dependencias y diferencias VM/EC2. Mapeo definitivo de los pasos 6–12 y de los placeholders de `configs/`.
   - `ansible.cfg`, `requirements.txt`, `requirements.yml`, `hosts.yml.example` (grupos de 4.1), `group_vars` comentados, `playbooks/ping.yml`, esqueleto del rol `hardening`.
-- **Pasos manuales (autor):** crear la VM nueva con `local-vm-setup.md`; `venv` en el Mac; copiar `hosts.yml.example` a `hosts.yml`; `ansible all -m ping`.
+- **Pasos manuales (autor):** crear la VM nueva con `local-vm-setup.md`; `venv` en el Mac (Python 3.12 a 3.14, no 3.15); copiar `hosts.yml.example` a `hosts.yml`; `ansible all -m ping`.
 - **Hito:** versiones de Ansible = `requirements.txt`; `ping` correcto en la VM; `ansible-lint` y `--syntax-check` pasan; preguntas abiertas de `ANALYSIS.md` resueltas y registradas.
 
 ### Fase 2 — Hardening
