@@ -35,3 +35,6 @@ lan_trusted_cidr: ""
 
 # WireGuard hub endpoint reachable publicly via Elastic IP
 wireguard_endpoint: "{{ ec2_elastic_ip }}:{{ wireguard_port }}"
+
+# Lynis minimum Hardening Index threshold expected for AWS EC2 Graviton host
+hardening_lynis_min_score: 90
