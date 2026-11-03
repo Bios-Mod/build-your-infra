@@ -10,7 +10,7 @@
 ## 0. Reparto de trabajo
 
 | Quién | Qué hace |
-|---|---|
+| --- | --- |
 | Autor | Ejecuta manualmente cada paso de los `.md` en la VM y en EC2, reporta errores y aprende. Revisa y mergea los PR. |
 | Asistente (arquitecto) | Genera los `.md` de implementación y los prompts del agente. Corrige los docs con los errores reportados. |
 | Agente Flash (Antigravity) | Trabaja en ramas, hace commits y abre PR. Ejecuta tareas mecánicas: scaffolding, roles, tareas y handlers con comentarios, jobs de CI, enlaces. Ejecuta la estructura del decision-log; no la decide. Nunca hace push a `main` ni merge. |
@@ -22,7 +22,7 @@ Ciclo por módulo: **rol + sección del doc → ejecución manual en cada destin
 ## 1. Decisiones aplicadas (resumen)
 
 | Tema | Decisión |
-|---|---|
+| --- | --- |
 | Alcance | Se automatiza lo ya aplicado a mano, por destino (sección 4). Sin funcionalidad nueva; las limitaciones conocidas se reproducen. |
 | Nivel | Ansible solo a nivel de stack, como el Terraform de self-managed. Los módulos self-managed no tienen carpeta `automation/`. |
 | Ubicación | Todo en `stacks/full-infra/self-managed/automation/ansible/`: `ansible.cfg`, `requirements.txt`, `inventories/`, `playbooks/`, `roles/<module>/`. |
@@ -31,7 +31,7 @@ Ciclo por módulo: **rol + sección del doc → ejecución manual en cada destin
 | Selección de módulos | Grupos de inventario + tags. Hardening siempre primero; cada módulo comprueba que hardening está aplicado. |
 | Fuente de configs | `configs/` de cada módulo; los roles las leen desde el nodo de control (`configs_root`) y sustituyen placeholders con variables de inventario. |
 | Nodo de control | Mac, Ansible nativo en `venv`, versiones fijadas en `requirements.txt`. |
-| Partida | Desde cero en ambos entornos, sin depender de snapshots ni AMIs. VM nueva con `local-vm-setup.md`; EC2 lanzada por Terraform desde Ubuntu 24.04 ARM64 base (variable de AMI). |
+| Partida | Desde cero en ambos entornos, sin depender de snapshots ni AMIs. VM nueva con `local-vm-setup.md`; EC2 lanzada por Terraform desde Ubuntu 24.04 ARM64 base, pasando su AMI en la variable `ami_id` existente. El acceso SSH inicial se abre con una variable de Terraform (CIDR de bootstrap). |
 | Desarrollo | Incremental: un módulo por fase sobre el mismo host. Reconstrucción completa desde cero al cerrar hardening y en el cierre. |
 | Orden | hardening → file-transfer → dns → web-server → directory → dhcp. |
 | Pruebas | `ansible-lint` + `--syntax-check` en CI; `--check --diff` y 0 `changed` en la segunda pasada; verificaciones del módulo; Lynis ≥ 88 (VM) / ≥ 90 (EC2). Sin Molecule. |
@@ -99,7 +99,7 @@ Ficheros con IPs, usuarios o rutas reales llevan su pareja `*.example`, y el rea
 ### 4.1 Qué se automatiza y dónde
 
 | Módulo | VM local | EC2 | Diferencias que el rol respeta |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | hardening | Sí (Lynis 88) | Sí (Lynis 90) | Step 2 (Netplan) solo VM; Step 3.1 (SSM) fuera de Ansible; cloud-init solo EC2 |
 | file-transfer (SFTP) | Sí | Sí | Comparte `sshd_config` con hardening |
 | dns (BIND9) | No | Sí (hub, `lab.internal`) | Netplan overlay para coexistir con el DNS de la VPC |
@@ -112,9 +112,9 @@ Grupos de inventario: `vm`, `ec2`, `dns_servers` (EC2), `directory_servers` (EC2
 ### 4.2 Puntos de partida (desde cero)
 
 | Destino | Cómo se parte | Punto de retorno |
-|---|---|---|
+| --- | --- | --- |
 | VM | VM nueva creada siguiendo `environments/local/local-vm-setup.md` (el doc termina en la primera conexión SSH). | Snapshot local de seguridad antes del bloque 2B. No es una dependencia. |
-| EC2 | Terraform (`stacks/full-infra/self-managed/`) lanza Ubuntu 24.04 ARM64 base mediante la variable de AMI. | Terminar la instancia y relanzar. Opcional: un único AMI `multi-lab-aws-ansible-hardening` tras hardening, solo por comodidad. |
+| EC2 | Terraform (`stacks/full-infra/self-managed/`) lanza Ubuntu 24.04 ARM64 base pasando su AMI en `ami_id`. Una variable de bootstrap abre el puerto 22 en el security group solo mientras hace falta. | Terminar la instancia y relanzar. Opcional: un único AMI `multi-lab-aws-ansible-hardening` tras hardening, solo por comodidad. |
 
 La VM actual (con sus snapshots `sftp`, `web-server`, `dhcp`) se conserva intacta y apagada hasta cerrar Ansible. No se usa para nada del plan.
 
@@ -127,7 +127,7 @@ Sin AMIs, el gasto es el de la instancia mientras esté encendida y el del volum
 ### 4.4 Diferencias VM / EC2 y su gestión
 
 | Diferencia | Gestión |
-|---|---|
+| --- | --- |
 | Netplan (Step 2) | `when: not is_cloud` |
 | cloud-init puede reescribir red y claves | `when: is_cloud` |
 | SSM (3.1) | Fuera de Ansible |
@@ -152,17 +152,18 @@ Cada hito es una **puerta**: no se pasa a la siguiente fase sin cumplirlo.
 - **Entregables (agente):**
   - `ANALYSIS.md` de hardening: pasos (archivos, método de aplicación, clasificación automatizable/manual/riesgo de lockout), módulo Ansible candidato, handlers, orden, dependencias y diferencias VM/EC2. Mapeo definitivo de los pasos 6–12 y de los placeholders de `configs/`.
   - `ansible.cfg`, `requirements.txt`, `hosts.yml.example` (grupos de 4.1), `group_vars` comentados, `playbooks/ping.yml`, esqueleto del rol `hardening`.
-  - Variable de AMI en el stack de Terraform, tras revisar cómo se define hoy y qué recursos crea o asume (VPC, subred, SG, IAM, Elastic IP, key pair).
 - **Pasos manuales (autor):** crear la VM nueva con `local-vm-setup.md`; `venv` en el Mac; copiar `hosts.yml.example` a `hosts.yml`; `ansible all -m ping`.
-- **Hito:** versiones de Ansible = `requirements.txt`; `ping` correcto en la VM; `ansible-lint` y `--syntax-check` pasan; `terraform validate` pasa; preguntas abiertas de `ANALYSIS.md` resueltas y registradas.
+- **Hito:** versiones de Ansible = `requirements.txt`; `ping` correcto en la VM; `ansible-lint` y `--syntax-check` pasan; preguntas abiertas de `ANALYSIS.md` resueltas y registradas.
 
 ### Fase 2 — Hardening
 
 **2A — Preparación (VM, bajo riesgo)**
+
 - Alcance: Step 0 (usuario admin, `bootstrap.yml`, puerto 22), Step 1 (updates + unattended-upgrades + debsums), Step 2 (Netplan, solo VM).
 - **Hito 2A:** `--check --diff` revisado; ejecución real; 0 `changed` en la segunda pasada; verificaciones de Step 1–2.
 
 **2B — Cadena de acceso (VM, alto riesgo de lockout)**
+
 - Alcance: Step 3 (SSH 22 → 22222), Step 4 (UFW), Step 5 (WireGuard + `ufw route`), y Fail2Ban si pertenece aquí según `ANALYSIS.md`.
 - Antes de empezar: snapshot local de seguridad de la VM.
 - Puntos críticos:
@@ -172,12 +173,15 @@ Cada hito es una **puerta**: no se pasa a la siguiente fase sin cumplirlo.
 - **Hito 2B:** sin pérdida de acceso; verificaciones de Step 3–5 (`sshd -T`, `ufw status verbose`, `wg show`); el acceso persiste tras reiniciar; 0 `changed`.
 
 **2C — Resto de capas (VM, pasos 6–12)**
+
 - Alcance provisional: Fail2Ban (si no está en 2B), sysctl, AppArmor, superficie, auditd, rsyslog, AIDE, Lynis. Definitivo en `ANALYSIS.md`.
 - A confirmar: auditd con reglas inmutables (`-e 2`) y su efecto en la idempotencia; AIDE se inicializa una vez (`creates:`); orden entre `/etc/ufw/sysctl.conf` y `/etc/sysctl.d/`.
 - **Hito 2C:** Lynis ≥ **88**; 0 `changed`; **reconstrucción desde cero** de la VM solo con `bootstrap.yml` + el rol hardening.
 
 **2D — Hardening en EC2**
-- Pasos manuales previos (fuera de Ansible): lanzar la instancia con Terraform desde Ubuntu base; Security Group con el puerto 22 abierto solo para el bootstrap y `51820/udp`; quitar el puerto 22 tras 2B (decision-log).
+
+- **Preparación de Terraform (agente, antes de lanzar la instancia):** actualizar la descripción de `ami_id` en `variables.tf`; añadir una variable de CIDR de bootstrap SSH que habilite de forma condicional el ingreso al puerto 22 en `multi-lab-sg` (vacía = cerrado); actualizar `main.tf.example` y `terraform.tfvars.example`; documentar en `self-managed-automation.md` la ruta greenfield (sin ciclo de import).
+- **Pasos manuales previos (autor, fuera de Ansible):** lanzar la instancia con Terraform desde Ubuntu base con el CIDR de bootstrap definido; `51820/udp` ya abierto por el stack; tras el bloque 2B, vaciar la variable y aplicar de nuevo para cerrar el puerto 22.
 - **Hito 2D:** puertas 2A–2C superadas en EC2; Lynis ≥ **90**.
 
 ### Fase 3 — Ansible en el CI
@@ -190,7 +194,7 @@ Cada hito es una **puerta**: no se pasa a la siguiente fase sin cumplirlo.
 Todos requieren hardening. Cada módulo se añade sobre el mismo host: rol → sección del doc → ejecución → **hito por cada destino donde aplica**.
 
 | Fase | Módulo | Destinos | Puntos críticos | Hito específico (además del estándar) |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | 4 | file-transfer | VM + EC2 | Bloque `Match Group` en `sshd_config`, usuarios y chroot; comparte fichero con hardening: `blockinfile` con marcador propio o drop-in | Login SFTP enjaulado; SSH de administración intacto; 0 `changed` en `sshd_config` |
 | 5 | dns | EC2 | Netplan overlay con el DNS de la VPC; `validate:` con `named-checkconf`/`named-checkzone`; zonas con `;`; regla UFW 53 | `dig` resuelve `lab.internal` en EC2 y desde la VM por el túnel (`172.16.0.1`) |
 | 6 | web-server | VM + EC2 | `tls_mode`; plantillas de vhost/proxy (`<upstream_port>`); `validate: nginx -t`; Certbot con `creates:` y `staging` en ensayos | VM: `curl -k` OK. EC2: certificado válido emitido y renovación probada con `--dry-run` |
@@ -223,13 +227,13 @@ La instancia EC2 se mantiene entre las fases 4 y 7 (apagada entre sesiones).
 ## 7. Riesgos transversales
 
 | Riesgo | Mitigación |
-|---|---|
+| --- | --- |
 | Lockout al cambiar SSH/UFW/WireGuard | Bloque 2B con snapshot local, `validate:`, reconexión explícita, túnel activo y segunda sesión. UFW: abrir antes de cerrar. |
 | Cambio de IP y puerto durante la ejecución | `connection_mode` pre/post por host y cambio de inventario documentado. |
 | Contraseña de sudo | `--ask-become-pass`. |
 | Recursos AWS fuera de Ansible (Security Group) | Paso manual previo en cada hito EC2. |
 | Sin oráculo: el doc manual puede no reflejar el estado real | El doc es la especificación; los fallos se corrigen en el doc o en el rol y se registran. |
-| El stack de Terraform self-managed no puede lanzar nada hoy (AMI inexistente) | Variable de AMI en Fase 1 y revisión de recursos que crea o asume. |
+| | El stack de Terraform self-managed no abre el puerto 22 y apunta a un AMI inexistente | `ami_id` ya es variable; en 2D se añade el CIDR de bootstrap SSH condicional. |
 | Límites de emisión de Let's Encrypt | `staging` en ensayos; emisión real una vez por entorno. |
 | Samba 4.19.5 en aarch64 | Se reproduce el estado documentado; SMB2 fuera de alcance. |
 | Ficheros compartidos entre roles (`sshd_config`) | Un rol dueño del fichero; el resto usa drop-ins o bloques con marcador propio. |

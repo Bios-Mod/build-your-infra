@@ -188,10 +188,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Orden de implementación:** hardening → file-transfer → dns → web-server → directory →
   dhcp. Refleja el orden real de despliegue manual de los módulos.
 - **Partida desde cero en ambos entornos, sin depender de snapshots ni AMIs.**
-  VM: una VM nueva creada con `environments/local/local-vm-setup.md`. EC2: el stack de Terraform
-  self-managed lanza Ubuntu Server 24.04 ARM64 base mediante una variable de AMI (se revisa
-  primero cómo está definido hoy y qué recursos crea o asume). Los docs de implementación
-  de cada módulo son la especificación del estado deseado.
+  VM: una VM nueva creada con `environments/local/local-vm-setup.md`. EC2: el stack de Terraform self-managed lanza Ubuntu Server 24.04 ARM64 base pasando su AMI en la variable `ami_id` existente. El acceso SSH inicial se abre con una variable de Terraform (CIDR de bootstrap) que habilita de forma condicional el puerto 22 en el security group y se vacía tras el bloque de acceso de hardening. Los docs de implementación de cada módulo son la especificación del estado deseado.
 - **Desarrollo incremental.** Cada fase añade un módulo sobre el mismo host. La reconstrucción completa
   desde cero se hace al cerrar hardening y al final del plan.
 - **Puntos de retorno.** VM: snapshot local de seguridad antes del bloque de acceso de hardening (SSH,
@@ -234,6 +231,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Alcance del plan:** Ansible en self-managed. La monitorización
   (Prometheus + Grafana) se planificará en un documento aparte cuando se cierre
   la base de Ansible.
+- **2026-11-03 — Cambio al plan:** el trabajo de Terraform del stack self-managed (descripción de `ami_id` y variable de CIDR de bootstrap SSH) pasa de la Fase 1 a la preparación de la fase 2D. La variable `ami_id` ya existe; lo que falta es la apertura condicional del puerto 22.
 
 ---
 
