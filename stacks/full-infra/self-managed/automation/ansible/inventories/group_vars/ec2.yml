@@ -1,0 +1,37 @@
+# Deploy to:   ec2 group (multi-lab-vps)
+# Apply:       included automatically by Ansible for hosts in the 'ec2' group
+# Module:      stacks/full-infra/self-managed/automation/ansible
+# Requires:    none
+#
+# Group variables for AWS EC2 self-managed environment (t4g.micro Graviton).
+# Why:         Configures cloud-specific parameters, Elastic IP routing, and Let's Encrypt TLS.
+# Doc ref:     context/ansible-implementation.md — Section 4
+# Targets:     ec2
+
+---
+# Environment identity flag
+is_cloud: true
+
+# Connection phase selector:
+# 'pre'  -> Initial connection: AWS Elastic IP, default SSH port 22, default AMI user 'ubuntu'.
+# 'post' -> Hardened connection: WireGuard hub IP, port 22222, admin user.
+connection_mode: "pre"
+
+# Target IP and initial credentials for pre-hardening bootstrap
+ec2_initial_user: "ubuntu"
+ec2_elastic_ip: "X.X.X.X"
+ec2_wg0_ip: "{{ wireguard_server_vpn_ip }}"
+
+# Dynamic Ansible connection settings driven by connection_mode
+ansible_host: "{{ ec2_elastic_ip if connection_mode == 'pre' else ec2_wg0_ip }}"
+ansible_port: "{{ 22 if connection_mode == 'pre' else ssh_hardened_port }}"
+ansible_user: "{{ ec2_initial_user if connection_mode == 'pre' else admin_username }}"
+
+# TLS certificate strategy for Nginx web server (Step 6 of full infra)
+tls_mode: "letsencrypt"
+
+# On EC2, Fail2Ban ignoreip excludes dynamic home IPs — only loopback and VPN subnet are trusted
+lan_trusted_cidr: ""
+
+# WireGuard hub endpoint reachable publicly via Elastic IP
+wireguard_endpoint: "{{ ec2_elastic_ip }}:{{ wireguard_port }}"

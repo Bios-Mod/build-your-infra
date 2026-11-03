@@ -1,0 +1,32 @@
+# Deploy to:   all hosts
+# Apply:       included automatically by Ansible for all groups
+# Module:      stacks/full-infra/self-managed/automation/ansible
+# Requires:    none
+#
+# Global variables shared across all self-managed environments.
+# Why:         Centralizes repository paths, network parameters, and security policies.
+# Doc ref:     context/ansible-implementation.md — Section 1 & Section 4
+# Targets:     both
+
+---
+# Root path to the repository's modules configuration directory (source of truth)
+# Resolved relative to the executed playbook directory
+configs_root: "{{ playbook_dir }}/../../../../../modules"
+
+# Non-root administration username created in hardening Step 0 and whitelisted in sshd_config
+admin_username: "admin"
+
+# Target hardened OpenSSH port configured in Step 3
+ssh_hardened_port: 22222
+
+# WireGuard VPN network perimeter parameters (Step 5)
+wireguard_port: 51820
+wireguard_vpn_subnet: "172.16.0.0/24"
+wireguard_server_vpn_ip: "172.16.0.1"
+
+# WireGuard peer IP assignments
+wireguard_mac_vpn_ip: "172.16.0.2"
+wireguard_vm_vpn_ip: "172.16.0.3"
+
+# SSH host key type enforced across all servers
+ssh_host_key_type: "ed25519"

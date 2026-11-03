@@ -1,0 +1,65 @@
+# Deploy to:   vm:ec2
+# Apply:       triggered via notify from hardening tasks
+# Module:      hardening
+# Requires:    none
+#
+# Service handlers for the hardening role.
+# Why:         Ensures affected daemons absorb configuration changes idempotently at play boundaries.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 1, 3, 4, 5, 6, 7, 9, 10, 11
+# Targets:     both
+
+---
+# Restarts the OpenSSH server to apply hardened configuration from Step 3
+- name: Restart sshd
+  ansible.builtin.systemd_service:
+    name: ssh
+    state: restarted
+
+# Reloads UFW rules to enforce updated firewall and sysctl policies from Step 4 and Step 5
+# Uses native ufw reload CLI as ufw does not provide a standard daemon reload interface and avoids external collection dependencies
+- name: Reload ufw
+  ansible.builtin.command:
+    cmd: ufw reload
+  changed_when: true
+
+# Restarts unattended-upgrades to load daily update intervals from Step 1
+- name: Restart unattended-upgrades
+  ansible.builtin.systemd_service:
+    name: unattended-upgrades
+    state: restarted
+
+# Restarts WireGuard VPN tunnel to apply wg0.conf updates from Step 5
+- name: Restart wireguard
+  ansible.builtin.systemd_service:
+    name: wg-quick@wg0
+    state: restarted
+
+# Restarts Fail2Ban service to apply jail.local and aggressive filters from Step 6
+- name: Restart fail2ban
+  ansible.builtin.systemd_service:
+    name: fail2ban
+    state: restarted
+
+# Reloads kernel runtime parameters from all /etc/sysctl.d/ files from Step 7
+- name: Reload sysctl
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: false
+
+# Rebuilds the initial ramdisk to enforce kernel module blacklisting from Step 9.3
+- name: Update-initramfs
+  ansible.builtin.command:
+    cmd: update-initramfs -u
+  changed_when: false
+
+# Restarts rsyslog daemon to bind new dedicated log channels from Step 11
+- name: Restart rsyslog
+  ansible.builtin.systemd_service:
+    name: rsyslog
+    state: restarted
+
+# Restarts auditd daemon to reset and reapply syscall audit rules from Step 10
+- name: Restart auditd
+  ansible.builtin.systemd_service:
+    name: auditd
+    state: restarted
