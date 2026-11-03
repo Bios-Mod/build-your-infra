@@ -102,6 +102,7 @@ de AWS documentado por separado.
                 ├── ansible/
                 │   ├── ansible.cfg
                 │   ├── requirements.txt
+                │   ├── requirements.yml
                 │   ├── inventories/
                 │   ├── playbooks/
                 │   └── roles/<module>/
@@ -271,8 +272,14 @@ Reglas de escritura. El alcance, la estructura y las decisiones están en `decis
 - Las tareas con riesgo de lockout llevan `# WARNING:` y una comprobación previa. Las
   diferencias VM/EC2 llevan `# VM only` / `# EC2 only` junto al `when:`.
 - Cada variable de `defaults/main.yml` y cada handler llevan un comentario.
-- Módulos `ansible.builtin.*` con nombre completo; preferir módulos declarativos. Si se
-  usa `command`/`shell`, justificarlo y emplear `creates:` o `changed_when`.
+- Usar módulos con nombre completo (FQCN): `ansible.builtin.*` por defecto
+  y, solo si no existe equivalente builtin, módulos de las colecciones
+  fijadas en `requirements.yml` (`community.general`, `ansible.posix`).
+  Preferir módulos declarativos; si se usa `command`/`shell`, justificarlo
+  y emplear `creates:` o `changed_when`.
+- Los configs con placeholders se despliegan con `ansible.builtin.copy` y
+  `content` (lookup del fichero de `configs/` + `replace`), nunca con
+  `template` sobre copias dentro del rol.
 - Usar `validate:` con el validador nativo del servicio cuando exista.
 - Los comentarios y el contenido van en inglés.
 - El doc de implementación de Ansible es `self-managed-automation.md` del stack, con una

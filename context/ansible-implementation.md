@@ -74,6 +74,7 @@ stacks/full-infra/self-managed/automation/
 └── ansible/
     ├── ansible.cfg
     ├── requirements.txt
+    ├── requirements.yml
     ├── inventories/
     │   ├── hosts.yml.example                 (grupos vm / ec2 + grupos por módulo; sin IPs reales)
     │   └── group_vars/ · host_vars/
@@ -151,7 +152,7 @@ Cada hito es una **puerta**: no se pasa a la siguiente fase sin cumplirlo.
 
 - **Entregables (agente):**
   - `ANALYSIS.md` de hardening: pasos (archivos, método de aplicación, clasificación automatizable/manual/riesgo de lockout), módulo Ansible candidato, handlers, orden, dependencias y diferencias VM/EC2. Mapeo definitivo de los pasos 6–12 y de los placeholders de `configs/`.
-  - `ansible.cfg`, `requirements.txt`, `hosts.yml.example` (grupos de 4.1), `group_vars` comentados, `playbooks/ping.yml`, esqueleto del rol `hardening`.
+  - `ansible.cfg`, `requirements.txt`, `requirements.yml`, `hosts.yml.example` (grupos de 4.1), `group_vars` comentados, `playbooks/ping.yml`, esqueleto del rol `hardening`.
 - **Pasos manuales (autor):** crear la VM nueva con `local-vm-setup.md`; `venv` en el Mac; copiar `hosts.yml.example` a `hosts.yml`; `ansible all -m ping`.
 - **Hito:** versiones de Ansible = `requirements.txt`; `ping` correcto en la VM; `ansible-lint` y `--syntax-check` pasan; preguntas abiertas de `ANALYSIS.md` resueltas y registradas.
 
@@ -164,7 +165,7 @@ Cada hito es una **puerta**: no se pasa a la siguiente fase sin cumplirlo.
 
 **2B — Cadena de acceso (VM, alto riesgo de lockout)**
 
-- Alcance: Step 3 (SSH 22 → 22222), Step 4 (UFW), Step 5 (WireGuard + `ufw route`), y Fail2Ban si pertenece aquí según `ANALYSIS.md`.
+- Alcance: Step 3 (SSH 22 → 22222), Step 4 (UFW), Step 5 (WireGuard + `ufw route`), y Fail2Ban (Step 6).
 - Antes de empezar: snapshot local de seguridad de la VM.
 - Puntos críticos:
   - La conexión cambia de puerto e IP (LAN → `wg0`): `validate: sshd -t`, `meta: flush_handlers`, `meta: reset_connection` + `wait_for_connection`, y cambio de `connection_mode`.
@@ -174,7 +175,7 @@ Cada hito es una **puerta**: no se pasa a la siguiente fase sin cumplirlo.
 
 **2C — Resto de capas (VM, pasos 6–12)**
 
-- Alcance provisional: Fail2Ban (si no está en 2B), sysctl, AppArmor, superficie, auditd, rsyslog, AIDE, Lynis. Definitivo en `ANALYSIS.md`.
+- Alcance provisional: sysctl, AppArmor, superficie, auditd, rsyslog, AIDE, Lynis. Definitivo en `ANALYSIS.md`.
 - A confirmar: auditd con reglas inmutables (`-e 2`) y su efecto en la idempotencia; AIDE se inicializa una vez (`creates:`); orden entre `/etc/ufw/sysctl.conf` y `/etc/sysctl.d/`.
 - **Hito 2C:** Lynis ≥ **88**; 0 `changed`; **reconstrucción desde cero** de la VM solo con `bootstrap.yml` + el rol hardening.
 
