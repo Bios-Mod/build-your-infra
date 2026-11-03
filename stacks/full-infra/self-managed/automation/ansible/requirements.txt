@@ -1,12 +1,12 @@
 # Deploy to:   local control node (Mac)
 # Apply:       pip install -r requirements.txt (in project virtualenv)
 # Module:      stacks/full-infra/self-managed/automation/ansible
-# Requires:    python >= 3.12
+# Requires:    Python 3.12 to 3.14 (not 3.15)
 #
 # Pinned Python package dependencies for Ansible control node execution.
 # Parameters modified from baseline: strictly pinned to verified stable versions.
 #
-# Source: PyPI / official Ansible support matrix. Control node requires Python >= 3.12
+# Source: PyPI / official Ansible support matrix. Control node requires Python 3.12 to 3.14 (not 3.15)
 ansible-core==2.21.6
 
 # Source: PyPI / Homebrew stable release. Requires Python >= 3.10
