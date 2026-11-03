@@ -205,7 +205,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Nodo de control: el Mac, con Ansible nativo en un `venv`** y versiones fijadas en
   `requirements.txt`. Tras el Step 5 de hardening, SSH solo escucha por `wg0`; el túnel
   de WireGuard del Mac es nativo y evita el routing adicional de un contenedor o una VM.
-  ansible-core 2.21.6 (Python >= 3.12) y ansible-lint 26.10.1.
+  ansible-core 2.21.6 (Python 3.12 a 3.14, no 3.15) y ansible-lint 26.10.1.
 - **Orden de implementación:** hardening → file-transfer → dns → web-server → directory →
   dhcp. Refleja el orden real de despliegue manual de los módulos.
 - **Partida desde cero en ambos entornos, sin depender de snapshots ni AMIs.**
