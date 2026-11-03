@@ -52,9 +52,6 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   El estado queda desactualizado de inmediato y no es de confianza.
 - **DNS desplegado solo en EC2 — la VM local es un cliente peer.** BIND9 se ejecuta solo
   en el hub de WireGuard en EC2; la VM local resuelve mediante `172.16.0.1` a través del túnel.
-- **`context/current-iteration.md` eliminado.** Duplicaba información
-  ya contenida en las tablas de módulos y en este log, y quedaba obsoleto. El contexto está
-  limitado a `AGENTS.md` y `decision-log.md`.
 - **Idioma del repositorio (2026-11-03)** — El contenido del repositorio (docs de módulos y entornos, README, configs, comentarios en línea, YAML y código) está en inglés. Los documentos internos y de contexto (`AGENTS.md` y `context/decision-log.md`) están en español.
 
 ---
@@ -99,8 +96,8 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **`stacks/full-infra/self-managed/`** despliega EC2 desde el snapshot de la AMI
   (`multi-lab-aws-active-directory`) — capa de infraestructura únicamente. La
   configuración del SO se aplicó manualmente y se documentó por módulo. Ansible
-  cerrará esta brecha en una iteración futura; este es el patrón correcto (no
-  forzar Terraform donde no corresponde).
+  cerrará esta brecha; este es el patrón correcto (no forzar Terraform donde no
+  corresponde).
 - **Orden de implementación de módulos (aws-native):** hardening → dns → file-transfer → web-server → directory. De menor a mayor complejidad;
   `directory` al final debido al coste de facturación y ~30 min de tiempo de aprovisionamiento.
 - **`stacks/` en la raíz del repo** — coherencia estructural con
@@ -137,8 +134,71 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   gestión de configuración sobre la capa de infraestructura del snapshot,
   no un reemplazo para el rol de aprovisionamiento de infraestructura de Terraform. No
   confundir ambos — Terraform aprovisiona, Ansible configura. Ansible está
-  planificado pero aún no aprendido/implementado por el autor; esta es la fase
-  final del repositorio.
+  planificado pero aún no implementado; junto con la monitorización constituye la
+  fase final del repositorio.
+
+---
+
+## Fase de Automatización — Decisiones de Ansible (2026-11-03)
+
+**Alcance y estructura**
+
+- **Alcance: self-managed únicamente.** `aws-native` aprovisiona servicios gestionados con
+  Terraform; no hay SO que configurar. Ansible cierra la brecha de configuración
+  del snapshot self-managed, no una brecha de Terraform.
+- **Se automatiza exactamente lo ya aplicado a mano, en cada destino donde se aplicó**
+  (fuente: `snapshots/README.md`). hardening, file-transfer y web-server: VM y EC2.
+  dns y directory: solo EC2. dhcp: solo VM. Sin funcionalidad nueva; las limitaciones
+  conocidas se reproducen tal cual (p. ej. SMB2 bloqueado por el bug de Samba 4.19.5 en aarch64).
+- **Estructura en dos niveles.** Un rol por módulo en
+  `modules/<module>/self-managed/automation/ansible/roles/<module>/` (con `tasks/`,
+  `handlers/`, `defaults/`, `templates/` y `meta/`). Inventario, `ansible.cfg`,
+  `requirements.txt` y playbooks (`bootstrap.yml`, `site.yml` y uno por módulo) en
+  `stacks/full-infra/self-managed/automation/ansible/` — el mismo patrón de módulo + stack
+  utilizado para Terraform. `roles_path` en `ansible.cfg` lista una ruta por módulo, añadida
+  al llegar a su fase.
+- **`terraform/` y `ansible/` coexisten dentro de `automation/`** y ambos se mantienen
+  separados de `configs/`, que es hermano de `automation/`.
+- **Docs de implementación de Ansible:** `<module>-self-managed-automation.md` dentro de
+  `modules/<module>/self-managed/automation/`, con el estándar What was done / Why / Verification.
+- **Módulos elegibles.** Un playbook por módulo y `site.yml` con un tag por módulo; cada módulo
+  comprueba al inicio que hardening está aplicado y falla con un mensaje claro si no lo está.
+
+**Diseño de los roles**
+
+- **`configs/` se mantiene como la única fuente de verdad.** Los roles consumen los archivos
+  existentes desde el nodo de control; sin contenido de configuración duplicado. Los
+  placeholders (`<username>`, `192.168.X.X`, `<upstream_port>`) se sustituyen al desplegar
+  con variables de inventario.
+- **Un rol por módulo para ambos destinos.** Las diferencias VM/EC2 se resuelven con variables
+  (`is_cloud`, `tls_mode`, ...) y los módulos se asignan a hosts mediante grupos de inventario
+  que reflejan la matriz real. TLS: autofirmado en VM, Let's Encrypt en EC2.
+- **Fuera de Ansible:** Security Groups y SSM (Terraform/consola). Cada hito en EC2 lista
+  estos pasos como previos y manuales.
+- **Seguridad.** Sin secretos en el repo; `--ask-become-pass` para el sudo; las claves
+  privadas de WireGuard se generan en su host y nunca viajan al repo ni a variables.
+
+**Entorno de trabajo y pruebas**
+
+- **Nodo de control: el Mac, con Ansible nativo en un `venv`** y versiones fijadas en
+  `requirements.txt`. Tras el Step 5 de hardening, SSH solo escucha por `wg0`; el túnel
+  de WireGuard del Mac es nativo y evita el routing adicional de un contenedor o una VM.
+- **Orden de implementación:** hardening → file-transfer → dns → web-server → directory →
+  dhcp. Sigue la cadena real de snapshots, de modo que cada módulo dispone de su snapshot
+  acumulativo como oráculo. Sustituye al orden anterior (dns antes de file-transfer).
+- **Punto de partida: siempre una base limpia.** VM: snapshot `ubuntu-base-install`. EC2: AMI
+  `multi-lab-aws-base-install`. Nunca el AMI ya configurado como destino de construcción.
+- **El stack de Terraform self-managed** admite elegir el AMI mediante una variable, para
+  poder lanzar `multi-lab-aws-base-install` además del AMI actual. Se revisa primero cómo
+  está definido hoy.
+- **Oráculos.** Los snapshots y AMIs manuales existentes se conservan hasta cerrar Ansible y se
+  usan para comprobar equivalencia (`--check --diff` vacío). Lo creado durante Ansible lleva
+  el prefijo `multi-lab-local-ansible-` / `multi-lab-aws-ansible-`.
+- **Pruebas.** `ansible-lint` y `--syntax-check` en CI; `--check --diff` y una segunda
+  ejecución con 0 `changed` en cada destino. Sin Molecule.
+- **Monitorización (Prometheus + Grafana)** es un módulo posterior, solo self-managed,
+  añadido tras cerrar la base de Ansible. También existe en
+  `containerize-your-infra`, donde por ahora no se planifica Ansible.
 
 ---
 
@@ -162,6 +222,8 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **`path-consistency` es solo para PR**, para mantener el ciclo de push enfocado en la
   corrección de los módulos.
 
+---
+
 ## Cierre y Alcance del Repositorio (2026-11-02)
 
 - **Criterios de cierre.** El repositorio se considera cerrado una vez que Ansible esté aplicado en todos
@@ -175,26 +237,10 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   introducción de problema/enfoque y cada README de módulo abre con el problema que
   resuelve. Las secciones `### Why` a nivel de paso se mantienen tal cual están.
 
-## Fase de Automatización — Decisiones de Ansible
-
-- **Alcance: self-managed únicamente.** `aws-native` aprovisiona servicios gestionados con
-  Terraform; no hay SO que configurar. Ansible cierra la brecha de configuración
-  del snapshot self-managed, no una brecha de Terraform.
-- **Estructura en dos niveles.** Roles por módulo en
-  `modules/<module>/self-managed/automation/ansible/`; inventario y
-  playbook orquestador en `stacks/full-infra/self-managed/automation/ansible/`
-  — el mismo patrón de módulo + stack utilizado para Terraform.
-- **`configs/` se mantiene como la única fuente de verdad.** Los roles consumen los archivos
-  existentes; sin contenido de configuración duplicado.
-- **Orden de implementación:** hardening → dns → file-transfer → web-server →
-  directory → dhcp, de menor a mayor complejidad. Hardening primero porque
-  es la única base obligatoria.
-- **Monitorización (Prometheus + Grafana)** es un módulo posterior, solo self-managed,
-  añadido tras cerrar la base de Ansible. También existe en
-  `containerize-your-infra`, donde por ahora no se planifica Ansible.
-- **El repositorio se considera cerrado una vez aplicados Ansible y la monitorización.**
+---
 
 ## Método de Trabajo (2026-11-02)
 
 - Estructura y decisiones primero, luego documentos de implementación generados por el asistente arquitecto, después el autor los ejecuta paso a paso y reporta los errores de vuelta a los documentos.
 - Las tareas mecánicas pueden delegarse al agente de código (Antigravity); diseño, docs y justificaciones no se delegan. Los prompts son redactados por el autor y el asistente.
+- El agente de código trabaja en feature branches y abre pull requests; nunca hace push a `main` ni merge, y ejecuta la estructura definida aquí sin decidirla.

@@ -1,7 +1,7 @@
 # build-your-infra — Contexto del Proyecto (Permanente)
 
 **Repo:** github.com/Bios-Mod/build-your-infra
-**Assistant role:** Senior SysAdmin / Cloud Architect / Cybersecurity Senior
+**Rol del asistente:** Senior SysAdmin / Cloud Architect / Cybersecurity Senior
 **Propósito:** laboratorio de infraestructura funcional + portfolio técnico para el primer
 rol en IT (SysAdmin / Cloud Engineer). Cada decisión técnica debe reflejar criterio de
 ingeniería senior. Reclutadores y equipos de ingeniería revisarán este repositorio.
@@ -15,9 +15,8 @@ ingeniería senior. Reclutadores y equipos de ingeniería revisarán este reposi
 - Sin ruido ni redundancia — cada sección existe porque aporta valor.
 - Coherencia estructural, lógica y de tono en todos los documentos.
 - Antes de tomar cualquier decisión que afecte al autor, preguntar primero.
-- El autor revisa y hace merge de todo. El asistente y los agentes delegados nunca hacen push a `main` y nunca hacen merge; trabajan en feature branches y abren pull requests.
-- Los documentos de implementación (`*-self-managed.md`, `*-aws-native.md`) son redactados por el asistente y validados por el autor al aplicar cada paso. Los errores encontrados durante la aplicación se incorporan de vuelta al documento.
 - `AGENTS.md` y `decision-log.md` son los únicos documentos de contexto. No existe ningún archivo de estado por iteración: el estado reside en las tablas de módulos y en el log de decisiones.
+- Reparto entre documentos: `AGENTS.md` define cómo escribir y trabajar (reglas imperativas); `decision-log.md` registra qué se decidió y por qué.
 - El contenido del repositorio (docs de módulos y entornos, README, configs, comentarios en línea, YAML y código) está en inglés. Los documentos internos y de contexto (AGENTS.md y context/decision-log.md) están en español.
 
 ---
@@ -87,7 +86,9 @@ de AWS documentado por separado.
     │       ├── self-managed/
     │       │   ├── configs/
     │       │   ├── automation/
-    │       │   │   └── ansible/
+    │       │   │   ├── ansible/
+    │       │   │   │   └── roles/<module>/
+    │       │   │   └── <module>-self-managed-automation.md
     │       │   └── <module>-self-managed.md
     │       └── aws-native/
     │           ├── automation/
@@ -102,6 +103,10 @@ de AWS documentado por separado.
             └── automation/
                 ├── terraform/
                 ├── ansible/
+                │   ├── ansible.cfg
+                │   ├── requirements.txt
+                │   ├── inventories/
+                │   └── playbooks/
                 └── self-managed-automation.md
 
 > **Convención de nomenclatura (decisión 2026-07-10):** los documentos de
@@ -184,13 +189,13 @@ Los comandos del paso siempre hacen referencia directa a la ruta del repositorio
 - **Reemplazar un archivo completo:**
 
   ```bash
-  sudo cp ~/build-your-infra/<module>/self-managed/configs/<file> /etc/<dest>/<file>
+  sudo cp ~/build-your-infra/modules/<module>/self-managed/configs/<file> /etc/<dest>/<file>
   ```
 
 - **Anexar un bloque a un archivo existente:**
 
   ```bash
-  sudo tee -a /etc/<dest>/<file> < ~/build-your-infra/<module>/self-managed/configs/<file>
+  sudo tee -a /etc/<dest>/<file> < ~/build-your-infra/modules/<module>/self-managed/configs/<file>
   ```
 
 La referencia `📄 configs/filename` en el paso debe coincidir con el archivo utilizado en
@@ -255,68 +260,39 @@ configuración; la justificación detallada corresponde a la sección `### Why` 
 - Todos los nombres de recursos siguen el prefijo `multi-lab-*`.
 - Región de referencia: `eu-west-1`. Excepción: los certificados ACM para CloudFront
   deben crearse en `us-east-1` mediante un alias de proveedor.
-- `terraform/` y `ansible/` coexisten dentro de `automation/`, y ambos se mantienen
-  separados de `configs/`, que es hermano de `automation/` al nivel de
-  `self-managed/`. Los archivos `.tf` y los playbooks no son configuraciones del sistema.
 
 ## Convenciones de Ansible
 
-- Alcance: `self-managed` únicamente. `aws-native` no tiene capa de SO que configurar.
-- Los roles residen en `modules/<module>/self-managed/automation/ansible/`. El inventario
-  y el playbook orquestador residen en
-  `stacks/full-infra/self-managed/automation/ansible/`.
-- `configs/` sigue siendo la única fuente de verdad: los roles despliegan esos archivos
-  (`copy`, `blockinfile`, `template`); el contenido de configuración nunca se duplica
-  dentro de los roles.
-- La implementación de Ansible sigue el mismo estándar de documentación que cada módulo:
-  What was done / Why / Verification, incluyendo `--check --diff` y una
-  re-ejecución de idempotencia.
-- Las conexiones respetan la línea base de hardening (SSH Ed25519, puerto 22222) —
-  los roles de hardening deben contemplar la transición del puerto 22 → 22222.
+Reglas de escritura. El alcance, la estructura y las decisiones están en `decision-log.md`.
 
-## Agentes Delegados
-
-- Los agentes pueden crear y modificar archivos en feature branches y commitear allí.
-  Nunca hacen push a `main` ni merge.
-- Cada tarea de agente especifica: alcance de archivos, lectura obligatoria
-  (`AGENTS.md`, `decision-log.md`), criterios de aceptación y lo que queda fuera de
-  límites (contenido técnico no solicitado explícitamente).
-- Los agentes se encargan del trabajo mecánico (scaffolding, actualización de enlaces, jobs de CI,
-  migración de configs a estructura de roles). Las decisiones de diseño y el razonamiento de los
-  documentos de implementación permanecen con el autor y el asistente.
-
-> **Nota de alcance:** Terraform cubre únicamente el aprovisionamiento de infraestructura. En
-> `aws-native`, esto representa los recursos AWS de cada módulo. En `self-managed`,
-> esto representa exclusivamente el lanzamiento de la instancia EC2 desde el snapshot de la AMI en
-> `stacks/full-infra/self-managed/` — los módulos individuales self-managed no tienen
-> Terraform, ya que no hay infraestructura cloud que aprovisionar a nivel de
-> módulo. La capa de configuración a nivel de SO (aplicada manualmente hoy,
-> documentada por módulo) es la brecha exacta que cerrará Ansible — ver
-> decision-log.md para el alcance completo.
-> Los módulos individuales self-managed no tienen Terraform; su carpeta `automation/` aloja el rol de Ansible para ese módulo (`automation/ansible/`).
+- Todo fichero YAML de Ansible lleva cabecera con los campos `Deploy to:`, `Apply:`,
+  `Module:`, `Requires:`, descripción de una línea, `Why:`, `Doc ref:` y `Targets:`
+  (vm | ec2 | both). Comentarios con `#`.
+- Cada tarea lleva `name:` y un comentario encima que explica qué hace, por qué y a qué
+  Step del doc manual corresponde.
+- Las tareas con riesgo de lockout llevan `# WARNING:` y una comprobación previa. Las
+  diferencias VM/EC2 llevan `# VM only` / `# EC2 only` junto al `when:`.
+- Cada variable de `defaults/main.yml` y cada handler llevan un comentario.
+- Módulos `ansible.builtin.*` con nombre completo; preferir módulos declarativos. Si se
+  usa `command`/`shell`, justificarlo y emplear `creates:` o `changed_when`.
+- Usar `validate:` con el validador nativo del servicio cuando exista.
+- Los comentarios y el contenido van en inglés.
+- Los docs de automatización siguen What was done / Why / Verification, incluyendo
+  `--check --diff` y una segunda ejecución con 0 `changed`.
 
 ---
 
 ## Convenciones de CI (GitHub Actions)
 
-- Un único workflow reutilizable, `modules-ci.yml` (solo `workflow_call`), define
-  cada job de módulo una sola vez. `push-ci.yml` (push a `actions-implementation`) y
-  `pull-request.yml` (pull_request a `main`) lo invocan.
-- Un job `changes` ejecuta `dorny/paths-filter` y expone un output por
-  módulo-entorno más `any-module`. Cada job de módulo se ejecuta condicionalmente en
-  función de su propio output.
-- Los jobs de `self-managed` ejecutan únicamente lint estático (sin credenciales, sin llamadas a AWS).
-- Los jobs de `aws-native` ejecutan únicamente `terraform fmt -check` + `terraform validate`.
-  `terraform plan` queda excluido intencionadamente (ver decision-log).
-- `full-infra` se ejecuta siempre que cualquier módulo cambie (output `any-module`).
-- `path-consistency` reside únicamente en `pull-request.yml` y verifica que cada
-  ruta de configuración referenciada por `cp`/`tee -a` en un doc de módulo exista.
-- La validación de Ansible (`ansible-lint`, `--syntax-check`) se añade como un nuevo
-  filtro + job dentro de `modules-ci.yml`; los workflows de punto de entrada no se tocan.
-- La autenticación de AWS en CI (cuando sea necesaria) utiliza OIDC (`role-to-assume`), nunca
-  claves de acceso estáticas.
+El diseño está en `continuous-integration.md` y las decisiones en `decision-log.md`.
+Reglas al editar el CI:
 
-Ver `continuous-integration.md` para el diseño completo.
+- Toda validación nueva se añade como filtro + job en `modules-ci.yml`; `push-ci.yml` y
+  `pull-request.yml` no se tocan.
+- `self-managed`: solo lint estático, sin credenciales. `aws-native`:
+  `terraform fmt -check` + `terraform validate`, sin `plan`.
+- La validación de Ansible (`ansible-lint`, `--syntax-check`) sigue el mismo patrón.
+- La autenticación de AWS en CI usa OIDC (`role-to-assume`), nunca claves estáticas.
 
 ---
 
@@ -330,5 +306,8 @@ Ver `continuous-integration.md` para el diseño completo.
 
 ### Delegación al agente de código
 
-Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código (Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces, incorporación de jobs de CI a partir de un patrón definido. Las decisiones de diseño, documentos de implementación y justificaciones (`### Why`) permanecen con el autor y el asistente arquitecto.
-Todos los prompts e instrucciones para el agente son redactados por el autor y el asistente — el agente recibe el alcance, archivos objetivo, estándares obligatorios y criterios de aceptación, y nunca decide la estructura.
+Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código (Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces, jobs de CI a partir de un patrón definido. Las decisiones de diseño, los documentos de implementación y las justificaciones (`### Why`) permanecen con el autor y el asistente.
+
+- El agente trabaja en feature branches, puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea cada pull request.
+- Cada tarea indica: alcance de archivos, lectura obligatoria (`AGENTS.md`, `decision-log.md`), criterios de aceptación y lo que queda fuera de límites.
+- El agente ejecuta la estructura definida en `decision-log.md`; nunca la decide.
