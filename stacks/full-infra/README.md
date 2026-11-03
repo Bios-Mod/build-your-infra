@@ -43,8 +43,9 @@ assignment, and Security Groups.
 
 The configuration layer (OS hardening, service setup, hardening baseline)
 was applied manually and is documented in each module under
-`modules/*/self-managed/`. Ansible roles (in progress) will cover this layer
-and enable full from-scratch provisioning without relying on a snapshot.
+`modules/*/self-managed/`. Ansible roles (in progress) will live in
+`self-managed/automation/ansible/` and cover this layer, enabling full
+from-scratch provisioning without relying on a snapshot.
 `self-managed-automation.md` is the single automation doc for this
 environment — it will grow to cover the Ansible layer when implemented.
 

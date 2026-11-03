@@ -117,7 +117,7 @@ Each layer of the lab is automated with the tool that matches its scope. Terrafo
 | --- | --- | --- | --- |
 | aws-native | Terraform | Per-module import + redeploy | `modules/<name>/aws-native/automation/terraform/` |
 | self-managed | Terraform | EC2 from AMI snapshot — infrastructure layer | `stacks/full-infra/self-managed/automation/terraform/` |
-| self-managed | Ansible | OS configuration layer, role per module | `modules/<name>/self-managed/automation/ansible/` · orchestration in `stacks/full-infra/self-managed/automation/ansible/` |
+| self-managed | Ansible (in progress) | OS configuration layer | `stacks/full-infra/self-managed/automation/ansible/` (roles, inventory, playbooks) |
 
 The aws-native implementation order is `hardening` → `dns` → `file-transfer` → `web-server` → `directory`. Each module is independently deployable, and the full-stack composition sources them all.
 
