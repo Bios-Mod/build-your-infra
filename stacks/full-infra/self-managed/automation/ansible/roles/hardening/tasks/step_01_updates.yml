@@ -1,0 +1,70 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step1 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 0 completed
+#
+# Step 1 — System updates, package audit tools, and unattended upgrades configuration.
+# Why:         Eliminates known vulnerabilities and ensures daily automated security patching without unattended reboot.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 1
+# Targets:     both
+
+---
+# Updates package index and applies full upgrade to eliminate known vulnerabilities (Step 1)
+- name: Update APT package cache and perform full upgrade
+  ansible.builtin.apt:
+    update_cache: true
+    upgrade: full
+    cache_valid_time: 3600
+
+# Removes obsolete dependencies and cleans downloaded package archive cache (Step 1)
+- name: Remove unused packages and clean APT archive cache
+  ansible.builtin.apt:
+    autoremove: true
+    autoclean: true
+
+# Installs unattended-upgrades and package hygiene audit tools (Step 1)
+- name: Install unattended-upgrades and package audit tools
+  ansible.builtin.apt:
+    name:
+      - unattended-upgrades
+      - debsums
+      - apt-show-versions
+      - apt-listchanges
+    state: present
+
+# Enables automated weekly package integrity checks against dpkg checksum database (Step 1)
+- name: Configure weekly integrity verification in /etc/default/debsums
+  ansible.builtin.lineinfile:
+    path: /etc/default/debsums
+    regexp: '^#?CRON_CHECK='
+    line: 'CRON_CHECK=weekly'
+    state: present
+    create: true
+    mode: "0644"
+
+# Deploys unattended-upgrades security-only policy with Automatic-Reboot false (Step 1)
+- name: Deploy 50unattended-upgrades configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/unattended-upgrades/50unattended-upgrades"
+    dest: /etc/apt/apt.conf.d/50unattended-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart unattended-upgrades
+
+# Deploys daily update and upgrade schedule configuration (Step 1)
+- name: Deploy 20auto-upgrades configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/unattended-upgrades/20auto-upgrades"
+    dest: /etc/apt/apt.conf.d/20auto-upgrades
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Restart unattended-upgrades
+
+# Ensures unattended-upgrades service unit is active and enabled on boot (Step 1)
+- name: Ensure unattended-upgrades service is enabled and started
+  ansible.builtin.systemd_service:
+    name: unattended-upgrades
+    state: started
+    enabled: true

@@ -13,7 +13,16 @@
 hardening_admin_username: "{{ admin_username | default('admin') }}"
 
 # Supplementary groups granted to the administrative user for sudo privilege escalation
-hardening_admin_groups: "{{ admin_groups | default(['sudo', 'adm']) }}"
+hardening_admin_groups: "{{ admin_groups | default(['sudo', 'adm', 'admin']) }}"
+
+# Path to the administrator SSH Ed25519 public key file on the local control node
+hardening_admin_public_key_file: "{{ admin_public_key_file | default('~/.ssh/id_ed25519.pub') }}"
+
+# Root directory containing the source-of-truth hardening configs
+hardening_configs_dir: "{{ configs_root }}/hardening/self-managed/configs"
+
+# Hashed administrator password for user creation (dynamically passed from vars_prompt in bootstrap.yml)
+hardening_admin_password_hash: ""
 
 # Port assigned to the OpenSSH server in Step 3 (replaces default port 22)
 hardening_ssh_hardened_port: "{{ ssh_hardened_port | default(22222) }}"
@@ -28,7 +37,7 @@ hardening_ssh_max_auth_tries: 3
 hardening_ssh_max_sessions: 2
 
 # Network interface on the local VM target configured in Step 2
-hardening_vm_interface: "{{ vm_interface | default('ens33') }}"
+hardening_vm_interface: "{{ vm_interface | default('enp2s0') }}"
 
 # Static IPv4 address and CIDR prefix for the local VM
 hardening_vm_static_ip: "{{ vm_static_ip | default('192.168.1.50/24') }}"

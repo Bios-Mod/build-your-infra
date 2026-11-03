@@ -1,0 +1,60 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/bootstrap.yml --limit <host> --ask-become-pass
+# Module:      hardening
+# Requires:    initial_user SSH key access on port 22
+#
+# Step 0 — Dedicated non-root administrator account provisioning.
+# Why:         Creates an auditable administrative identity, grants sudo privileges, and installs authorized SSH keys.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 0
+# Targets:     both
+
+---
+# Creates dedicated admin group if not already present on system (Step 0)
+- name: Ensure admin group exists
+  ansible.builtin.group:
+    name: admin
+    state: present
+
+# WARNING: If this user is not properly configured before SSH lockdown in Step 3, permanent lockout occurs.
+# Provisions dedicated administrator account with sudo, adm, and admin groups and password hash (Step 0)
+- name: Ensure administrator user exists
+  ansible.builtin.user:
+    name: "{{ hardening_admin_username }}"
+    groups: "{{ hardening_admin_groups }}"
+    append: true
+    shell: /bin/bash
+    state: present
+    password: "{{ hardening_admin_password_hash if (hardening_admin_password_hash | length > 0) else omit }}"
+    update_password: on_create
+
+# VM only
+# Installs authorized Ed25519 public key on local VM for passwordless administrative access (Step 0)
+- name: Install administrator SSH public key from control node
+  ansible.posix.authorized_key:
+    user: "{{ hardening_admin_username }}"
+    key: "{{ lookup('file', hardening_admin_public_key_file) }}"
+    state: present
+  when: not is_cloud # VM only
+
+# EC2 only, untested until block 2D
+# Ensures .ssh directory exists with secure 0700 permissions on EC2 (Step 0)
+- name: Ensure .ssh directory exists for administrator on EC2
+  ansible.builtin.file:
+    path: "/home/{{ hardening_admin_username }}/.ssh"
+    state: directory
+    owner: "{{ hardening_admin_username }}"
+    group: "{{ hardening_admin_username }}"
+    mode: "0700"
+  when: is_cloud # EC2 only
+
+# EC2 only, untested until block 2D
+# Copies launch authorized_keys from cloud-init ubuntu user to dedicated administrator (Step 0)
+- name: Copy authorized_keys from ubuntu user to administrator on EC2
+  ansible.builtin.copy:
+    src: /home/ubuntu/.ssh/authorized_keys
+    dest: "/home/{{ hardening_admin_username }}/.ssh/authorized_keys"
+    remote_src: true
+    owner: "{{ hardening_admin_username }}"
+    group: "{{ hardening_admin_username }}"
+    mode: "0600"
+  when: is_cloud # EC2 only

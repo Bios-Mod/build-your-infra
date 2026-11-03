@@ -1,0 +1,18 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --limit <host> [options] --ask-become-pass
+# Module:      hardening
+# Requires:    bootstrap.yml executed (Step 0 verified)
+#
+# Master playbook for executing the hardening baseline.
+# Why:         Applies defense-in-depth security layers across system, access, and audit.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md
+# Targets:     both
+
+---
+- name: Apply hardening baseline
+  hosts: vm:ec2
+  become: true
+  gather_facts: true
+
+  roles:
+    - role: hardening

@@ -451,3 +451,231 @@ terraform destroy -auto-approve
 terraform show
 # → The state file is empty. No resources.
 ```
+
+---
+
+## Phase 3 — Ansible configuration layer
+
+Terraform provisions the EC2 host; Ansible configures the operating system of
+both self-managed targets (local VM and EC2) from the same roles. The roles
+deploy the files in `modules/<module>/self-managed/configs/` — the single
+source of truth — and reproduce, step by step, what the manual module docs
+describe. All commands run on the control node (the Mac) from:
+
+```bash
+cd ~/build-your-infra/stacks/full-infra/self-managed/automation/ansible
+```
+
+This phase starts with the local VM. EC2 is added in the hardening EC2 block,
+once the VM has passed every gate.
+
+> **Prerequisites:** a local VM created with
+> [`environments/local/local-vm-setup.md`](../../../../environments/local/local-vm-setup.md)
+> (ends at the first SSH connection), Python >= 3.12 on the control node, and
+> the repository cloned at `~/build-your-infra`.
+
+---
+
+## Step 8 — Prepare the control node
+
+### What was done
+
+Create an isolated Python environment, install the pinned dependencies and
+collections, create the real inventory files from their `.example` pairs, and
+install the public key on the installer user so Ansible can connect without a
+password.
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+ansible-galaxy collection install -r requirements.yml
+
+cp inventories/hosts.yml.example inventories/hosts.yml
+cp inventories/host_vars/multi-lab-local.yml.example inventories/host_vars/multi-lab-local.yml
+
+ssh-copy-id -i ~/.ssh/id_ed25519.pub <installer_user>@<vm_ip>
+```
+
+Edit `inventories/host_vars/multi-lab-local.yml` and replace the example values
+with the real ones (installer user and VM IP). Check that
+`inventories/group_vars/vm.yml` matches your VM (`vm_lan_ip`, `vm_interface`,
+`vm_static_ip`, `vm_gateway`).
+
+> **Optional but recommended:** take a hypervisor snapshot of the VM before
+> the first run.
+
+📄 [`requirements.txt`](ansible/requirements.txt)
+📄 [`requirements.yml`](ansible/requirements.yml)
+📄 [`inventories/hosts.yml.example`](ansible/inventories/hosts.yml.example)
+
+### Why
+
+`requirements.txt` and `requirements.yml` pin the exact versions of
+`ansible-core`, `ansible-lint` and the two collections, so every run — on the
+control node, on a delegated agent and in CI — uses the same toolchain. The
+virtual environment keeps those versions isolated from the system Python.
+`hosts.yml` and `host_vars/*.yml` contain real addresses and usernames, so
+they are gitignored; only the `.example` pairs are versioned. Ansible runs over
+SSH and cannot type a password, so key authentication on the installer user is
+required before the first connection.
+
+### Verification
+
+```bash
+ansible --version
+# → ansible [core 2.21.6]
+
+ansible-galaxy collection list | grep -E "community.general|ansible.posix"
+# → community.general ...
+# → ansible.posix ...
+
+ansible-playbook playbooks/ping.yml --limit multi-lab-local
+# → multi-lab-local : ok=2 changed=0 unreachable=0 failed=0
+```
+
+---
+
+## Step 9 — Bootstrap the admin user (Hardening Step 0)
+
+### What was done
+
+Create the dedicated non-root admin user, add it to the `sudo`, `adm` and
+`admin` groups, set its password and install your Ed25519 public key. The
+playbook asks for the admin password at runtime.
+
+```bash
+ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass
+# → Admin password: (hidden)
+```
+
+`--ask-become-pass` asks for the **installer user's** sudo password. The same
+playbook can be run again safely: the password is only set when the user is
+created.
+
+📄 [`roles/hardening/tasks/step_00_admin_user.yml`](ansible/roles/hardening/tasks/step_00_admin_user.yml)
+
+### Why
+
+Step 3 of hardening restricts SSH to `AllowUsers <admin_username>` with key-only
+authentication. The user and its key must exist and be verified before that
+step, or the host is locked out. The password is asked at runtime and hashed in
+memory, so no password or hash is ever written to the repository. A password
+for `sudo` is kept on purpose: it is a second factor for any privileged
+operation even when SSH uses keys.
+
+> **Do not continue until the check below succeeds from a new terminal.**
+> The access chain (Step 3 onward) disables password authentication.
+
+### Verification
+
+```bash
+ssh -i ~/.ssh/id_ed25519 -p 22 <admin_username>@<vm_ip>
+# → must authenticate without a password prompt
+
+id <admin_username>
+# → uid=... groups=...,27(sudo),4(adm),...
+
+ls -la /home/<admin_username>/.ssh/
+# → drwx------ .ssh            <admin_username>:<admin_username>
+# → -rw------- authorized_keys <admin_username>:<admin_username>
+
+ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass
+# → changed=0 on the second run
+```
+
+---
+
+## Step 10 — System update and automated security upgrades (Hardening Step 1)
+
+### What was done
+
+Update the package index, apply a full upgrade, install the package audit tools
+and unattended-upgrades, enable the weekly `debsums` check and deploy the two
+unattended-upgrades configuration files. Review the change set first with
+`--check --diff`, then apply.
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step1 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step1 --ask-become-pass
+```
+
+📄 [`configs/unattended-upgrades/50unattended-upgrades`](../../../../modules/hardening/self-managed/configs/unattended-upgrades/50unattended-upgrades)
+📄 [`configs/unattended-upgrades/20auto-upgrades`](../../../../modules/hardening/self-managed/configs/unattended-upgrades/20auto-upgrades)
+
+### Why
+
+Same reasoning as manual Step 1: known CVEs are exploited automatically, and
+automating only security patches keeps the system current without risking
+unattended service changes (`Automatic-Reboot: false`). `--check --diff` shows
+exactly what Ansible would change before it touches the host — a habit that
+matters more as the playbook grows. A second run reporting zero changes proves
+the role is idempotent.
+
+### Verification
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step1 --ask-become-pass
+# → changed=0 on the second run
+
+sudo unattended-upgrade --dry-run --debug
+systemctl status unattended-upgrades
+grep CRON_CHECK /etc/default/debsums
+# → CRON_CHECK=weekly
+sudo debsums -s
+# → no output = package integrity clean
+```
+
+---
+
+## Step 11 — Static IP configuration (Hardening Step 2, VM only)
+
+### What was done
+
+Deploy the hardened Netplan configuration and the systemd-networkd drop-in that
+fixes the Netplan DHCP bug, then apply them. The role skips this step on EC2.
+
+> **Lockout risk.** `vm_static_ip`, `vm_gateway` and `vm_interface` must match
+> your VM. Check the interface name with `ip link` on the VM first. A wrong
+> value drops the network and the SSH session with it. Keep the hypervisor
+> console open and take a snapshot before applying.
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step2 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step2 --ask-become-pass
+```
+
+📄 [`configs/netplan/00-installer-config.yaml`](../../../../modules/hardening/self-managed/configs/netplan/00-installer-config.yaml)
+📄 [`configs/netplan/no-dhcp.conf`](../../../../modules/hardening/self-managed/configs/netplan/no-dhcp.conf)
+
+### Why
+
+Same reasoning as manual Step 2: a static address is a prerequisite for every
+service, and the drop-in disables the dynamic address that Netplan 0.106 still
+requests. The role fills the placeholders of the repository files (`192.168.X.X`,
+gateway, interface) from the inventory, so the committed configs stay the single
+source of truth.
+
+### Verification
+
+```bash
+ip a show <vm_interface>
+# → single static IP, no secondary dynamic address
+
+ip route show
+# → default route via <vm_gateway>
+
+resolvectl status | grep "DNS Servers"
+# → 9.9.9.9 149.112.112.112
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_2a --ask-become-pass
+# → changed=0 (gate for block 2A: second run with no changes)
+```

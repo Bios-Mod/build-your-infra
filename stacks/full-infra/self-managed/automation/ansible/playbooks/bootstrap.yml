@@ -1,0 +1,33 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/bootstrap.yml --limit <host> --ask-become-pass
+# Module:      hardening
+# Requires:    initial_user SSH key access on port 22
+#
+# Bootstrap playbook for dedicated administrator account creation (Step 0).
+# Why:         Sets up the non-root admin user, authorized key, and sudo privileges before lockdown.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 0
+# Targets:     both
+
+---
+- name: Bootstrap admin user (Hardening Step 0)
+  hosts: vm:ec2
+  become: true
+  gather_facts: true
+
+  vars_prompt:
+    - name: hardening_admin_password
+      prompt: "Admin password"
+      private: true
+
+  tasks:
+    # Executes Step 0 tasks from the hardening role with runtime-hashed password
+    - name: Provision administrator account and SSH keys
+      ansible.builtin.include_role:
+        name: hardening
+        apply:
+          tags:
+            - hardening_step0
+      vars:
+        hardening_admin_password_hash: "{{ hardening_admin_password | password_hash('sha512') }}"
+      tags:
+        - hardening_step0

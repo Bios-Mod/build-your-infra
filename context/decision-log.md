@@ -294,6 +294,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Enfoque orientado al problema sin reescribir.** El README raíz incorpora una breve
   introducción de problema/enfoque y cada README de módulo abre con el problema que
   resuelve. Las secciones `### Why` a nivel de paso se mantienen tal cual están.
+- **`ANALYSIS.md` es un documento de trabajo.** Permanece en `stacks/full-infra/self-managed/automation/ansible/` mientras dure la implementación de Ansible y se elimina en la Fase 9, tras absorber su contenido útil en `self-managed-automation.md`.
 
 ---
 

@@ -1,5 +1,5 @@
 # Deploy to:   vm:ec2
-# Apply:       ansible-playbook playbooks/site.yml --tags hardening [--check --diff]
+# Apply:       ansible-playbook playbooks/hardening.yml [--tags <tag>] [--check --diff] --ask-become-pass
 # Module:      hardening
 # Requires:    none
 #
@@ -10,32 +10,33 @@
 
 ---
 # ==============================================================================
-# Hardening Role — Task Execution Skeleton
-# Real tasks will be implemented in Phase 2 according to context/ansible-implementation.md
+# Block 2A — Preparation Tasks (Steps 0, 1, 2)
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
-# Block 2A — Preparation (Low Risk)
-# ------------------------------------------------------------------------------
-# Step 0 — Admin User Setup:
-#   - Create dedicated non-root admin account (ansible.builtin.user)
-#   - Assign sudo and adm groups for privilege escalation
-#   - Install Ed25519 public key in authorized_keys (ansible.builtin.authorized_key)
-#
-# Step 1 — System Updates & Automated Security Upgrades:
-#   - Update apt cache and run full-upgrade (ansible.builtin.apt)
-#   - Install unattended-upgrades, debsums, apt-show-versions, apt-listchanges
-#   - Configure /etc/default/debsums with CRON_CHECK=weekly
-#   - Deploy 50unattended-upgrades and 20auto-upgrades configurations
-#
-# Step 2 — Static IP Configuration (VM only):
-#   - Deploy /etc/netplan/00-installer-config.yaml with static IP and Quad9 DNS
-#   - Deploy /etc/systemd/network/10-netplan-*.network.d/no-dhcp.conf drop-in
-#   - Apply Netplan configuration via command (when: not is_cloud)
+# Step 0 — Admin User Setup (Lockout prevention prerequisite)
+- name: "Step 0 — Admin user setup"
+  ansible.builtin.import_tasks: step_00_admin_user.yml
+  tags:
+    - hardening_2a
+    - hardening_step0
 
-# ------------------------------------------------------------------------------
-# Block 2B — Access Chain (High Lockout Risk)
-# ------------------------------------------------------------------------------
+# Step 1 — System Update & Automated Security Upgrades
+- name: "Step 1 — System update & automated security upgrades"
+  ansible.builtin.import_tasks: step_01_updates.yml
+  tags:
+    - hardening_2a
+    - hardening_step1
+
+# Step 2 — Static IP Configuration (VM only)
+- name: "Step 2 — Static IP configuration"
+  ansible.builtin.import_tasks: step_02_static_ip.yml
+  tags:
+    - hardening_2a
+    - hardening_step2
+
+# ==============================================================================
+# Block 2B — Access Chain (High Lockout Risk) — Untested until Phase 2B
+# ==============================================================================
 # Step 3 — SSH Hardening:
 #   - Deploy /etc/ssh/sshd_config (AllowUsers, port 22222, key-only auth)
 #   - Deploy /etc/issue.net and /etc/issue legal warning banners
@@ -62,9 +63,9 @@
 #   - Deploy /etc/fail2ban/jail.local (port 22222, banaction=ufw, ignoreip VPN subnet)
 #   - Enable and restart fail2ban service
 
-# ------------------------------------------------------------------------------
-# Block 2C — System Hardening & Compliance
-# ------------------------------------------------------------------------------
+# ==============================================================================
+# Block 2C — System Hardening & Compliance — Untested until Phase 2C
+# ==============================================================================
 # Step 7 — Kernel Hardening (sysctl):
 #   - Deploy /etc/sysctl.d/99-z-hardening.conf (memory, network, filesystem flags)
 #   - Trigger sysctl --system reload command
@@ -99,10 +100,3 @@
 #   - Install lynis package (version 3.0.9)
 #   - Deploy /etc/lynis/custom.prf
 #   - Execute lynis audit system and assert minimum score (88 VM / 90 EC2)
-
-- name: Hardening role structure outline
-  ansible.builtin.debug:
-    msg: "Hardening role skeleton initialized. Real tasks will be implemented in Phase 2."
-  tags:
-    - hardening
-    - skeleton

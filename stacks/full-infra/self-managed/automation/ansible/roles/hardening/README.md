@@ -22,6 +22,8 @@ Variables are declared with sensible defaults in `defaults/main.yml` (prefixed w
 | Variable | Default (Fallback) | Description |
 |---|---|---|
 | `hardening_admin_username` | `admin_username` (`"admin"`) | Name of the dedicated non-root administrator account. |
+| `hardening_admin_groups` | `admin_groups` (`["sudo", "adm", "admin"]`) | Supplementary groups for administrator privilege escalation. |
+| `hardening_admin_public_key_file` | `admin_public_key_file` (`"~/.ssh/id_ed25519.pub"`) | Path to administrator SSH public key on control node. |
 | `hardening_ssh_hardened_port` | `ssh_hardened_port` (`22222`) | Hardened TCP listening port for OpenSSH daemon. |
 | `hardening_wireguard_port` | `wireguard_port` (`51820`) | UDP listening port for WireGuard VPN service. |
 | `hardening_wireguard_vpn_subnet` | `wireguard_vpn_subnet` (`"10.8.0.0/24"`) | Dedicated non-conflicting VPN CIDR. |

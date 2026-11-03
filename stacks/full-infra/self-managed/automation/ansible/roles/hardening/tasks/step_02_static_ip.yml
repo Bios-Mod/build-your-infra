@@ -1,0 +1,79 @@
+# Deploy to:   vm
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step2 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 0 and Step 1 completed
+#
+# Step 2 — Static IP and systemd-networkd drop-in configuration (VM only).
+# Why:         Establishes deterministic IP outside DHCP pool and fixes Netplan 0.106 dual-IP DHCP bug.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 2
+# Targets:     vm
+
+---
+# WARNING: Lockout risk. Incorrect interface name, static IP, or gateway drops network connectivity and locks out Ansible.
+# Deploys static Netplan configuration with replaced placeholders and Quad9 DNS resolvers (Step 2)
+- name: Deploy static Netplan network configuration
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('file', hardening_configs_dir ~ '/netplan/00-installer-config.yaml')
+         | replace('enp2s0:', hardening_vm_interface ~ ':')
+         | replace('192.168.X.X/X', hardening_vm_static_ip)
+         | replace('192.168.X.1', hardening_vm_gateway) }}
+    dest: /etc/netplan/00-installer-config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  when: not is_cloud # VM only
+
+# Validates Netplan configuration syntax before applying to prevent network disruption (Step 2)
+- name: Validate Netplan configuration syntax
+  ansible.builtin.command:
+    cmd: netplan generate
+  changed_when: false
+  when: not is_cloud # VM only
+
+# Creates drop-in directory to override systemd-networkd DHCP assignment (Step 2)
+- name: Ensure systemd-networkd drop-in directory exists
+  ansible.builtin.file:
+    path: "/etc/systemd/network/10-netplan-{{ hardening_vm_interface }}.network.d"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not is_cloud # VM only
+
+# Deploys drop-in to disable dynamic DHCP address requested by Netplan 0.106 bug (Step 2)
+- name: Deploy systemd-networkd no-dhcp drop-in
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/netplan/no-dhcp.conf"
+    dest: "/etc/systemd/network/10-netplan-{{ hardening_vm_interface }}.network.d/no-dhcp.conf"
+    owner: root
+    group: root
+    mode: "0644"
+  when: not is_cloud # VM only
+
+# Reloads systemd manager configuration to load drop-in units (Step 2)
+- name: Reload systemd daemon
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not is_cloud # VM only
+
+# Restarts systemd-networkd to apply drop-in and drop dynamic DHCP lease (Step 2)
+- name: Restart systemd-networkd service
+  ansible.builtin.systemd_service:
+    name: systemd-networkd
+    state: restarted
+  when: not is_cloud # VM only
+
+# Applies static network configuration to runtime interfaces (Step 2)
+- name: Apply Netplan network configuration
+  ansible.builtin.command:
+    cmd: netplan apply
+  changed_when: true
+  when: not is_cloud # VM only
+
+# Waits for SSH reachability to confirm network connectivity after Netplan re-addressing (Step 2)
+- name: Wait for host connectivity after network reconfiguration
+  ansible.builtin.wait_for_connection:
+    delay: 2
+    timeout: 30
+  when: not is_cloud # VM only

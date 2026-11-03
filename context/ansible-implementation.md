@@ -206,7 +206,7 @@ La instancia EC2 se mantiene entre las fases 4 y 7 (apagada entre sesiones).
 
 ### Fase 9 — Orquestación y cierre
 
-- **Entregables:** `site.yml` con tags; `self-managed-automation.md` completo; README raíz (quitar "in progress" y dejar la tabla de Automation definitiva), `continuous-integration.md` y decision-log; enlaces desde cada README de módulo.
+- **Entregables:** `site.yml` con tags; `self-managed-automation.md` completo; README raíz (quitar "in progress" y dejar la tabla de Automation definitiva), `continuous-integration.md` y decision-log; enlaces desde cada README de módulo; eliminar `ANALYSIS.md`.
 - **Pasos manuales (autor):**
   1. Reconstrucción completa de la VM desde cero: `bootstrap.yml` + `site.yml` (módulos de la VM); luego `site.yml` por segunda vez.
   2. Reconstrucción completa de EC2 desde Ubuntu base con Terraform (módulos de EC2); segunda ejecución. Destruir la infraestructura al terminar.
