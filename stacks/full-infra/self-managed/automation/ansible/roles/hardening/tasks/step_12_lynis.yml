@@ -91,3 +91,4 @@
   when:
     - not ansible_check_mode
     - hardening_lynis_enforce
+
