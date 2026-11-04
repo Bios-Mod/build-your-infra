@@ -1,0 +1,174 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step5 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 4 completed (UFW enabled)
+#
+# Step 5 — WireGuard VPN perimeter deployment, peer configuration, and UFW tunnel rules.
+# Why:         Creates an encrypted network perimeter hiding SSH behind cryptographic key exchange.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 5
+# Targets:     both
+
+---
+# Installs WireGuard kernel tools and userspace utilities (Step 5)
+- name: Install WireGuard package
+  ansible.builtin.apt:
+    name: wireguard
+    state: present
+
+# Ensures WireGuard configuration directory exists with restrictive permissions (Step 5)
+- name: Ensure WireGuard directory exists
+  ansible.builtin.file:
+    path: /etc/wireguard
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+# Generates host WireGuard private key idempotently if not already generated on disk (Step 5)
+- name: Generate WireGuard private key
+  ansible.builtin.shell:
+    cmd: set -o pipefail && wg genkey | tee /etc/wireguard/server_private.key
+    creates: /etc/wireguard/server_private.key
+    executable: /bin/bash
+  no_log: true
+
+# Sets restrictive permissions on WireGuard private key (Step 5)
+- name: Set permissions on WireGuard private key
+  ansible.builtin.file:
+    path: /etc/wireguard/server_private.key
+    owner: root
+    group: root
+    mode: "0600"
+
+# Generates host WireGuard public key from private key (Step 5)
+- name: Generate WireGuard public key
+  ansible.builtin.shell:
+    cmd: set -o pipefail && wg pubkey < /etc/wireguard/server_private.key > /etc/wireguard/server_public.key
+    creates: /etc/wireguard/server_public.key
+    executable: /bin/bash
+
+# Sets permissions on WireGuard public key (Step 5)
+- name: Set permissions on WireGuard public key
+  ansible.builtin.file:
+    path: /etc/wireguard/server_public.key
+    owner: root
+    group: root
+    mode: "0644"
+
+# Reads host WireGuard public key to present to operator without exposing private material (Step 5)
+- name: Read WireGuard public key
+  ansible.builtin.slurp:
+    src: /etc/wireguard/server_public.key
+  register: hardening_wg_public_key_b64
+
+# Displays WireGuard public key for inventory and client template population (Step 5)
+- name: Display host WireGuard public key
+  ansible.builtin.debug:
+    msg: "WireGuard Public Key for {{ inventory_hostname }}: {{ hardening_wg_public_key_b64.content | b64decode | trim }}"
+
+# Slurps local private key for template insertion without logging (Step 5)
+- name: Slurp local WireGuard private key
+  ansible.builtin.slurp:
+    src: /etc/wireguard/server_private.key
+  register: hardening_wg_private_key_b64
+  no_log: true
+
+# Deploys WireGuard server hub configuration (EC2 only) (Step 5)
+- name: Deploy WireGuard hub configuration (EC2)
+  vars:
+    hardening_wg_priv: "{{ hardening_wg_private_key_b64.content | b64decode | trim }}"
+    hardening_wg_mac_peer: "{{ hardening_wireguard_peer_public_keys.mac | default('CHANGE_ME_MAC_WIREGUARD_PUBLIC_KEY') }}"
+    hardening_wg_vm_peer_block: >-
+      {{- "\n# Local VM\n[Peer]\nPublicKey  = " ~ hardening_wireguard_peer_public_keys.local_vm ~ "\nAllowedIPs = 172.16.0.3/32"
+          if (hardening_wireguard_peer_public_keys.local_vm is defined and hardening_wireguard_peer_public_keys.local_vm != '')
+          else "" -}}
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('file', hardening_configs_dir ~ '/wireguard/wg0.conf')
+         | replace('<server-private-key>', hardening_wg_priv)
+         | replace('<mac-public-key>', hardening_wg_mac_peer)
+         | replace('# Add more peers as needed:\n# [Peer]\n# PublicKey  = <device-public-key>\n# AllowedIPs = 172.16.0.X/32', hardening_wg_vm_peer_block) }}
+    dest: /etc/wireguard/wg0.conf
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify:
+    - Restart wireguard
+  when: hardening_wireguard_role == 'hub' # EC2 only
+
+# Deploys WireGuard client configuration (Local VM only) (Step 5)
+- name: Deploy WireGuard client configuration (VM)
+  vars:
+    hardening_wg_priv: "{{ hardening_wg_private_key_b64.content | b64decode | trim }}"
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('file', hardening_configs_dir ~ '/wireguard/client-template.conf')
+         | replace('172.16.0.X/32', hardening_wireguard_vm_vpn_ip)
+         | replace('<client-private-key>', hardening_wg_priv)
+         | replace('<server-public-key>', hardening_wireguard_hub_public_key)
+         | replace('<server-ip-or-domain>:51820', hardening_wireguard_endpoint) }}
+    dest: /etc/wireguard/wg0.conf
+    owner: root
+    group: root
+    mode: "0600"
+  no_log: true
+  notify:
+    - Restart wireguard
+  when: hardening_wireguard_role == 'client' # VM only
+
+# Deploys sysctl configuration to enable IPv4 packet forwarding for WireGuard routing (Step 5)
+- name: Deploy WireGuard sysctl ip_forward configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/sysctl/99-wireguard.conf"
+    dest: /etc/sysctl.d/99-wireguard.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload sysctl
+
+# Ensures WireGuard tunnel service wg-quick@wg0 is enabled and started (Step 5)
+- name: Ensure WireGuard wg-quick@wg0 service is enabled and started
+  ansible.builtin.systemd_service:
+    name: wg-quick@wg0
+    state: started
+    enabled: true
+
+# Allows inbound WireGuard UDP traffic on VPN listening port (Step 5)
+- name: Allow WireGuard UDP traffic in UFW
+  community.general.ufw:
+    rule: allow
+    port: "{{ hardening_wireguard_port | string }}"
+    proto: udp
+    comment: "WireGuard VPN"
+
+# Restricts SSH access exclusively to WireGuard tunnel interface wg0 (Step 5)
+- name: Allow SSH inbound exclusively via WireGuard interface in UFW
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: wg0
+    to_port: "{{ hardening_ssh_port | string }}"
+    proto: tcp
+    comment: "SSH via WireGuard only"
+
+# Allows peer-to-peer forwarded traffic between WireGuard clients on hub (EC2 only) (Step 5)
+- name: Allow peer-to-peer WireGuard routed forwarding in UFW (hub only)
+  community.general.ufw:
+    route: true
+    rule: allow
+    interface_in: wg0
+    interface_out: wg0
+    comment: "WireGuard peer-to-peer forwarding"
+  when: hardening_wireguard_role == 'hub' # EC2 only
+
+# WARNING: Lockout risk. Do not delete public rate-limited rule until tunnel connectivity is fully tested from the control node.
+# Deletes public rate-limited SSH rule only when explicitly confirmed by operator (Step 5)
+- name: Remove public rate-limited SSH rule after tunnel verification
+  community.general.ufw:
+    rule: limit
+    port: "{{ hardening_ssh_port | string }}"
+    proto: tcp
+    delete: true
+  when: hardening_wg_close_public_ssh

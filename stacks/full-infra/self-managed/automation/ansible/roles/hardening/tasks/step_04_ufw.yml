@@ -1,0 +1,52 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step4 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 3 completed (SSH active on port 22222)
+#
+# Step 4 — UFW firewall configuration, rate limiting, and sysctl overrides.
+# Why:         Enforces default-deny incoming policy, rate limits port 22222, and persists log_martians overrides.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 4
+# Targets:     both
+
+---
+# WARNING: Lockout risk. Rate-limited rule for port 22222 must be configured before enabling firewall to avoid dropping active SSH connection.
+# Sets UFW default incoming policy to deny (Step 4)
+- name: Set UFW default incoming policy to deny
+  community.general.ufw:
+    direction: incoming
+    default: "{{ hardening_ufw_default_incoming_policy }}"
+
+# Sets UFW default outgoing policy to allow (Step 4)
+- name: Set UFW default outgoing policy to allow
+  community.general.ufw:
+    direction: outgoing
+    default: "{{ hardening_ufw_default_outgoing_policy }}"
+
+# Configures rate limiting on SSH port 22222 to prevent brute-force attacks (Step 4)
+- name: Allow rate-limited incoming connections on hardened SSH port
+  community.general.ufw:
+    rule: limit
+    port: "{{ hardening_ssh_port | string }}"
+    proto: tcp
+    comment: "SSH rate limited"
+
+# Sets UFW logging level to medium to capture dropped packets from default policy (Step 4)
+- name: Set UFW logging level to medium
+  community.general.ufw:
+    logging: "{{ hardening_ufw_logging }}"
+
+# Deploys UFW sysctl configuration ensuring log_martians persistence across reloads (Step 4)
+- name: Deploy UFW sysctl configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/ufw/sysctl.conf"
+    dest: /etc/ufw/sysctl.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload ufw
+
+# Enables UFW firewall service after rule definition to avoid lockout (Step 4)
+- name: Enable UFW firewall
+  community.general.ufw:
+    state: enabled

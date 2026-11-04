@@ -35,33 +35,36 @@
     - hardening_step2
 
 # ==============================================================================
-# Block 2B — Access Chain (High Lockout Risk) — Untested until Phase 2B
+# Block 2B — Access Chain (Steps 3, 4, 5, 6)
 # ==============================================================================
-# Step 3 — SSH Hardening:
-#   - Deploy /etc/ssh/sshd_config (AllowUsers, port 22222, key-only auth)
-#   - Deploy /etc/issue.net and /etc/issue legal warning banners
-#   - Remove unused RSA and ECDSA host key pairs from disk (ansible.builtin.file)
-#   - Validate syntax with sshd -t before restarting the daemon
-#
-# Step 4 — UFW Firewall:
-#   - Set default policies: incoming deny, outgoing allow (community.general.ufw)
-#   - Add initial rate-limited rule: limit 22222/tcp
-#   - Deploy /etc/ufw/sysctl.conf (log_martians=1 persistence)
-#   - Enable UFW and set logging to medium
-#
-# Step 5 — WireGuard VPN:
-#   - Install wireguard package
-#   - Generate server private and public keypair idempotently (creates: check)
-#   - Deploy /etc/wireguard/wg0.conf with authorized peer public keys
-#   - Deploy /etc/sysctl.d/99-wireguard.conf (net.ipv4.ip_forward = 1)
-#   - Enable and start wg-quick@wg0
-#   - UFW perimeter transition: allow 51820/udp, allow 22222 on wg0, delete limit 22222
-#
-# Step 6 — Fail2Ban:
-#   - Install fail2ban package
-#   - Deploy /etc/fail2ban/fail2ban.d/allowipv6.conf
-#   - Deploy /etc/fail2ban/jail.local (port 22222, banaction=ufw, ignoreip VPN subnet)
-#   - Enable and restart fail2ban service
+
+# Step 3 — SSH Hardening
+- name: "Step 3 — SSH hardening"
+  ansible.builtin.import_tasks: step_03_ssh.yml
+  tags:
+    - hardening_2b
+    - hardening_step3
+
+# Step 4 — UFW Firewall
+- name: "Step 4 — UFW firewall"
+  ansible.builtin.import_tasks: step_04_ufw.yml
+  tags:
+    - hardening_2b
+    - hardening_step4
+
+# Step 5 — WireGuard VPN
+- name: "Step 5 — WireGuard VPN"
+  ansible.builtin.import_tasks: step_05_wireguard.yml
+  tags:
+    - hardening_2b
+    - hardening_step5
+
+# Step 6 — Fail2Ban
+- name: "Step 6 — Fail2Ban"
+  ansible.builtin.import_tasks: step_06_fail2ban.yml
+  tags:
+    - hardening_2b
+    - hardening_step6
 
 # ==============================================================================
 # Block 2C — System Hardening & Compliance — Untested until Phase 2C

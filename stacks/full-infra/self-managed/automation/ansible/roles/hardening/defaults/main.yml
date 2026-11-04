@@ -74,6 +74,54 @@ hardening_vm_gateway: "{{ vm_gateway }}"
 hardening_lan_trusted_cidr: "{{ lan_trusted_cidr | default('') }}"
 
 # ==============================================================================
+# Block 2B — Access Chain (Steps 3, 4, 5, 6)
+# ==============================================================================
+
+# Target hardened SSH port configured in Step 3
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"
+
+# UFW default incoming and outgoing firewall policies (Step 4)
+hardening_ufw_default_incoming_policy: "deny"
+hardening_ufw_default_outgoing_policy: "allow"
+
+# UFW packet logging verbosity (Step 4)
+hardening_ufw_logging: "medium"
+
+# WireGuard topology role: 'hub' on EC2, 'client' on VM (Step 5)
+hardening_wireguard_role: "{{ wireguard_role | default('hub' if is_cloud else 'client') }}"
+
+# WireGuard UDP listen port (Step 5)
+hardening_wireguard_port: "{{ wireguard_port | default(51820) }}"
+
+# WireGuard VPN subnet (Step 5)
+hardening_wireguard_subnet: "{{ wireguard_subnet | default('172.16.0.0/24') }}"
+
+# WireGuard hub VPN address (Step 5)
+hardening_wireguard_hub_vpn_ip: "{{ wireguard_server_vpn_ip | default('172.16.0.1/24') }}"
+
+# WireGuard local VM peer VPN address (Step 5)
+hardening_wireguard_vm_vpn_ip: "{{ wireguard_vm_vpn_ip | default('172.16.0.3/32') }}"
+
+# WireGuard hub public key configured on client peers (Step 5)
+hardening_wireguard_hub_public_key: "{{ wireguard_hub_public_key | default('') }}"
+
+# Mapping of authorized WireGuard peer public keys configured on hub (Step 5)
+hardening_wireguard_peer_public_keys: "{{ wireguard_peer_public_keys | default({}) }}"
+
+# WireGuard public endpoint for remote clients (Step 5)
+hardening_wireguard_endpoint: "{{ wireguard_endpoint | default('') }}"
+
+# Whether to close public/LAN SSH port 22222 after confirming WireGuard tunnel access (Step 5)
+# Set to false by default for safety; switch to true only after tunnel connectivity is verified
+hardening_wg_close_public_ssh: false
+
+# Fail2Ban default ban parameters (Step 6)
+hardening_fail2ban_bantime: 86400
+hardening_fail2ban_findtime: 300
+hardening_fail2ban_maxretry: 3
+hardening_fail2ban_ssh_bantime: 172800
+
+# ==============================================================================
 # Compliance and Validation (Steps 10 and 12)
 # ==============================================================================
 

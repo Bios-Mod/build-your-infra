@@ -1,0 +1,57 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step6 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 4 completed (UFW backend configured)
+#
+# Step 6 — Fail2Ban automated brute-force protection and jail configuration.
+# Why:         Detects persistent authentication failures, bans via UFW, and configures aggressive filters.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 6
+# Targets:     both
+
+---
+# Installs Fail2Ban log analysis and dynamic IP banning service (Step 6)
+- name: Install Fail2Ban package
+  ansible.builtin.apt:
+    name: fail2ban
+    state: present
+
+# Ensures Fail2Ban configuration drop-in directory exists (Step 6)
+- name: Ensure Fail2Ban drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/fail2ban/fail2ban.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Deploys allowipv6 override to suppress deprecation warning on CLI invocations (Step 6)
+- name: Deploy Fail2Ban allowipv6 configuration override
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/fail2ban/fail2ban.d/allowipv6.conf"
+    dest: /etc/fail2ban/fail2ban.d/allowipv6.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart fail2ban
+
+# Note: [recidive] jail reads from /var/log/fail2ban.log, which is created and routed via rsyslog in Step 11 (Block 2C).
+# Deploys Fail2Ban jail.local override with environment-specific ignoreip whitelist (Step 6)
+- name: Deploy Fail2Ban jail.local configuration
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('file', hardening_configs_dir ~ '/fail2ban/jail.local')
+         | replace('192.168.X.X/X ', (hardening_lan_trusted_cidr ~ ' ') if (hardening_lan_trusted_cidr != '') else '') }}
+    dest: /etc/fail2ban/jail.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart fail2ban
+
+# Ensures Fail2Ban service is enabled and started across system reboots (Step 6)
+- name: Ensure Fail2Ban service is enabled and started
+  ansible.builtin.systemd_service:
+    name: fail2ban
+    state: started
+    enabled: true
