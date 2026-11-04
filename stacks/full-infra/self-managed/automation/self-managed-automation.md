@@ -458,6 +458,7 @@ terraform show
 ## Step 7b — Greenfield provisioning from a clean account
 
 ### What was done
+
 Provision the entire self-managed EC2 infrastructure directly from a clean AWS account without running an import cycle.
 
 > **Account Isolation Warning:** Do not deploy the `aws-native` hardening module in the same AWS account as the self-managed stack. Both stacks share identical global and regional resource names (`multi-lab-vpc`, `multi-lab-sg`, `multi-lab-ec2-role`), causing collision errors during resource creation.
@@ -465,6 +466,7 @@ Provision the entire self-managed EC2 infrastructure directly from a clean AWS a
 > **Billing Alert (EBS & Elastic IP):** The 20 GiB gp3 root volume persists and accrues cost even when the instance is stopped. The allocated Elastic IP is free only while associated with a running EC2 instance; stopped instances with associated Elastic IPs or unassociated Elastic IPs accrue hourly charges (~$0.005/hr). Release resources when no longer needed.
 
 Prerequisites:
+
 - AWS CLI configured with profile `multi-lab-admin` in region `eu-west-1`.
 - Terraform `>= 1.15.6`.
 - Dedicated Ed25519 lab SSH key generated at `~/.ssh/id_ed25519_multi-lab`.
@@ -535,6 +537,7 @@ aws ssm describe-instance-information \
 📄 [`outputs.tf.example`](terraform/outputs.tf.example)
 
 ### Why
+
 A reproducible greenfield deployment allows provisioning the self-managed EC2 target on demand in any clean AWS account without importing pre-existing resources. The self-contained stack deploys the dedicated VPC (`10.0.0.0/16`), public subnet, route table, internet gateway, Elastic IP, and EC2 instance profile (`multi-lab-ec2-role`) with `AmazonSSMManagedInstanceCore` attached.
 
 IMDSv2 is enforced at the instance layer (`http_tokens = "required"`, `http_put_response_hop_limit = 1`) to eliminate SSRF attack vectors against the metadata service. Dynamic ingress rules open ports 22 and 22222 restricted strictly to the operator's current public workstation IP (`/32`), preventing exposure to automated scanning bots before WireGuard is fully established.
@@ -648,7 +651,7 @@ once per terminal session using `ssh-add ~/.ssh/CHANGE_ME_lab_key`.
 Host inventories track three progressive network connection states via `connection_mode`:
 
 | Mode | Destination Port | SSH User | Target IP | When it applies |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | `pre` | `22` | Initial OS user (`vm_initial_user` on VM, `ubuntu` on EC2) | LAN IP (`vm_lan_ip`) or Elastic IP (`ec2_eip`) | Default state. Used during initial provisioning (`bootstrap.yml`) and pre-hardening tasks. |
 | `hardened` | `22222` | Dedicated administrator (`admin_username`) | LAN IP (`vm_lan_ip`) or Elastic IP (`ec2_eip`) | Set in `host_vars/<host>.yml` after completing Step 3 (SSH Hardening), before WireGuard perimeter lockdown. |
 | `wg` | `22222` | Dedicated administrator (`admin_username`) | WireGuard interface IP (`172.16.0.1` on EC2 hub, `172.16.0.3` on VM peer) | Set in `host_vars/<host>.yml` after Step 5 (WireGuard) is deployed and the VPN tunnel on the Mac control node is active. |
@@ -834,6 +837,7 @@ Deploy the hardened Netplan configuration and the systemd-networkd drop-in that
 fixes the Netplan DHCP bug, then apply them. The role skips this step on EC2.
 
 > **Operational warnings & lockout prevention:**
+>
 > - **DHCP pool exclusion:** Choose `vm_static_ip` strictly outside your router's DHCP pool to prevent IP collisions and subtle connection drops.
 > - **IP consistency & recovery:** `vm_static_ip` must be consistent with the host IP reached in Step 0. If a network misconfiguration occurs, SSH connectivity is lost immediately; recovery requires logging in directly through the hypervisor console (VMware / VirtualBox window). Keep the console open and take a hypervisor snapshot before applying.
 > - **Netplan file precedence & cloud-init override:** Netplan processes files in `/etc/netplan/` in alphabetical order where lexicographically later files override earlier ones (e.g. `50-cloud-init.yaml` overrides `00-installer-config.yaml` and re-enables dynamic DHCP). The role automatically quarantines any extra `*.yaml` files to `/root/netplan-backup/` and disables cloud-init network configuration (`/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg`) to ensure the static configuration persists across reboots.
@@ -904,6 +908,7 @@ cp inventories/host_vars/multi-lab-vps.yml.example inventories/host_vars/multi-l
 ```
 
 Edit `inventories/host_vars/multi-lab-vps.yml` and configure your instance parameters:
+
 - `ec2_eip`: Elastic IP address from `terraform output instance_public_ip`.
 - `admin_username`: dedicated administrator account name.
 - `admin_public_key_file`: path to your dedicated Ed25519 public key (`~/.ssh/id_ed25519_multi-lab.pub`).
@@ -1099,6 +1104,7 @@ Install WireGuard, generate the server key pair idempotently with restrictive pe
 ### Safe Sequence & Lockout Prevention
 
 > **Safe Progression Protocol:**
+>
 > 1. **Deploy Step 5 on EC2:** Apply the WireGuard role with `hardening_wg_close_public_ssh: false`. Ansible displays the generated WireGuard public key for EC2.
 > 2. **Configure Mac Client:** Generate client keypair on Mac (`wg genkey | tee mac_private.key | wg pubkey > mac_public.key`). Create `/etc/wireguard/wg0.conf` on Mac using `client-template.conf` with `Address = 172.16.0.2/32`, `Endpoint = <ec2_eip>:51820`, and EC2 public key.
 > 3. **Register Mac Peer:** Set `wireguard_peer_public_keys.mac` in `host_vars/multi-lab-vps.yml` and re-run Step 5.
@@ -1197,9 +1203,6 @@ Install Fail2Ban, deploy the `allowipv6.conf` override to suppress CLI warnings,
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
-  --tags hardening_step6 --check --diff --ask-become-pass
-
-ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step6 --ask-become-pass
 ```
 
@@ -1237,4 +1240,3 @@ sudo fail2ban-client status sshd
 sudo fail2ban-client get sshd failregex | wc -l
 # → 33 (or greater)
 ```
-
