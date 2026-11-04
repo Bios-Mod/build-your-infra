@@ -50,3 +50,4 @@
 - name: Enable UFW firewall
   community.general.ufw:
     state: enabled
+
