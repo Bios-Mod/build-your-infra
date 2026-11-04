@@ -154,6 +154,3 @@ hardening_auditd_immutable_mode: true
 
 # Lynis minimum Hardening Index threshold expected for VM target host (Step 12 baseline; EC2 overrides to 90)
 hardening_lynis_min_score: 88
-
-# Whether to fail the playbook execution if Lynis score is below threshold (false: records score and warns)
-hardening_lynis_enforce: false

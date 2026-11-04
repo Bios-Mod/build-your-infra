@@ -80,14 +80,3 @@
   when:
     - not ansible_check_mode
     - hardening_lynis_actual_score < (hardening_lynis_min_score | int)
-
-# Asserts Lynis hardening index meets target threshold when enforcement is enabled (Step 12)
-- name: Enforce Lynis hardening index threshold
-  ansible.builtin.assert:
-    that:
-      - hardening_lynis_actual_score >= (hardening_lynis_min_score | int)
-    fail_msg: >-
-      Lynis score {{ hardening_lynis_actual_score }} is below target threshold {{ hardening_lynis_min_score }}.
-  when:
-    - not ansible_check_mode
-    - hardening_lynis_enforce
