@@ -162,6 +162,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Doc de implementación único:** `stacks/full-infra/self-managed/automation/self-managed-automation.md`,
   con una sección por módulo (What was done / Why / Verification). Los hitos de verificación de
   cada módulo se reutilizan en el full stack para comprobar que cada módulo quedó bien aplicado.
+- **(2026-11-04) Estructura del doc de Ansible:** cada módulo (excepto hardening) tiene dos steps — Apply (tabla paso manual -> tarea de Ansible, comando y decisiones propias) y Verify. Hardening mantiene un step por paso por su riesgo de lockout.
 - **Módulos elegibles.** La selección se hace por grupos de inventario (qué módulos se aplican a cada
   host) y por tags (`--tags <module>`) para ejecutar un módulo concreto. Hardening se aplica siempre
   primero y cada módulo comprueba al inicio que hardening está aplicado, fallando con un mensaje claro si no.
@@ -305,3 +306,4 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - El agente de código trabaja en feature branches y abre pull requests; nunca hace push a `main` ni merge, y ejecuta la estructura definida aquí sin decidirla.
 - **(2026-11-03)** El agente trabaja en una feature branch por módulo (hardening usa `feat/hardening-2a`; los siguientes, `feat/ansible-<módulo>`), con un commit por cambio; no crea ramas por correcciones ni por tareas pequeñas. Puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea el pull request del módulo cuando está cerrado.
 - **(2026-11-03)** El agente escribe su informe final en `context/last-report.md` (ignorado por git y sobrescrito en cada ejecución) y responde en el chat solo con un resumen breve.
+- **(2026-11-04)** Antes de cada bloque, el asistente solicita el doc manual del módulo, lo contrasta con el código y solo entonces emite el prompt; no se emiten prompts con decisiones abiertas.
