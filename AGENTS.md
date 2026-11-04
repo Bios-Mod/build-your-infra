@@ -312,6 +312,13 @@ Reglas al editar el CI:
    aprendiendo mientras lo aplica y reportando cada error encontrado.
 4. Los errores se corrigen en el documento, de modo que termine reflejando lo que realmente se verificó.
 
+### Lectura de documentos por el asistente
+
+- El asistente no da por leído ningún documento que no haya recibido completo. Antes de cada bloque pide al autor los documentos que necesita (doc manual del módulo, configs relevantes, docs de entorno); no los busca ni los infiere por su cuenta.
+- Los documentos largos (más de unos 25.000 caracteres) se adjuntan partidos por secciones, porque las herramientas de lectura pueden truncar o resumir la salida.
+- Al empezar cada bloque, el asistente declara qué documentos ha leído completos y cuáles no. Si una herramienta devuelve texto truncado o resumido, lo indica y pide el texto original.
+- Sin los documentos necesarios, el asistente no contrasta, no afirma equivalencias y no emite prompts que dependan de ellos.
+
 ### Delegación al agente de código
 
 Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código (Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces, jobs de CI a partir de un patrón definido. Las decisiones de diseño, los documentos de implementación y las justificaciones (`### Why`) permanecen con el autor y el asistente.
