@@ -505,7 +505,7 @@ ansible-galaxy collection install -r requirements.yml
 cp inventories/hosts.yml.example inventories/hosts.yml
 cp inventories/host_vars/multi-lab-local.yml.example inventories/host_vars/multi-lab-local.yml
 
-ssh-copy-id -i ~/.ssh/<lab_key>.pub <vm_initial_user>@<vm_lan_ip>
+ssh-copy-id -i ~/.ssh/CHANGE_ME_lab_key.pub CHANGE_ME_installer_user@192.168.1.CHANGE_ME
 ```
 
 Edit `inventories/host_vars/multi-lab-local.yml` (created from its `.example`)
@@ -527,18 +527,18 @@ administrator account.
 
 #### SSH Key Configuration
 
-Generate and use a dedicated Ed25519 SSH key pair for the lab (e.g., `~/.ssh/<lab_key>`),
+Generate and use a dedicated Ed25519 SSH key pair for the lab (e.g., `~/.ssh/CHANGE_ME_lab_key`),
 rather than personal, system, or GitHub keys. Configure both the public key installed
-onto the dedicated administrator account (`admin_public_key_file: "~/.ssh/<lab_key>.pub"`)
-and the private key used by the Ansible control node (`ansible_ssh_private_key_file: "~/.ssh/<lab_key>"`)
+onto the dedicated administrator account (`admin_public_key_file: "~/.ssh/CHANGE_ME_lab_key.pub"`)
+and the private key used by the Ansible control node (`ansible_ssh_private_key_file: "~/.ssh/CHANGE_ME_lab_key"`)
 in `inventories/host_vars/multi-lab-local.yml`.
 
-In `~/.ssh/config`, add `IdentityFile ~/.ssh/<lab_key>` and `IdentitiesOnly yes` to the
+In `~/.ssh/config`, add `IdentityFile ~/.ssh/CHANGE_ME_lab_key` and `IdentitiesOnly yes` to the
 `Host multi-lab-local` block. Step 3 hardening restricts authentication attempts to 3
 (`MaxAuthTries 3`); without `IdentitiesOnly yes`, the SSH client presents all keys loaded
 in `ssh-agent`, which can exhaust allowed attempts and trigger a lockout before reaching
 the correct key. If the private key is protected with a passphrase, load it into your agent
-once per terminal session using `ssh-add ~/.ssh/<lab_key>`.
+once per terminal session using `ssh-add ~/.ssh/CHANGE_ME_lab_key`.
 
 > **Optional but recommended:** take a hypervisor snapshot of the VM before
 > the first run.
@@ -625,7 +625,7 @@ Test passwordless SSH authentication with the newly provisioned administrator ac
 **Run on the control node (Mac):**
 
 ```bash
-ssh -i ~/.ssh/<lab_key> -o IdentitiesOnly=yes -p 22 <admin_username>@<vm_lan_ip>
+ssh -i ~/.ssh/CHANGE_ME_lab_key -o IdentitiesOnly=yes -p 22 <admin_username>@<vm_lan_ip>
 # → must authenticate without a password prompt
 ```
 

@@ -9,20 +9,22 @@
 # Targets:     ec2
 
 ---
+# Replace the entire value, including the CHANGE_ME prefix.
+
 # Default cloud-init user on Ubuntu Server AWS AMI (used in connection_mode: "pre")
 ec2_initial_user: "ubuntu"
 
 # Dedicated lab SSH key pair (never use personal or GitHub keys)
 # Path to the public key installed on target host for dedicated administrator (Step 0)
-admin_public_key_file: "~/.ssh/<lab_key>.pub"
+admin_public_key_file: "~/.ssh/CHANGE_ME_lab_key.pub"
 
 # Private key file used by Ansible control node to connect via SSH
-ansible_ssh_private_key_file: "~/.ssh/<lab_key>"
+ansible_ssh_private_key_file: "~/.ssh/CHANGE_ME_lab_key"
 
 # WireGuard peer public keys mapped for the EC2 VPS hub
 # Note: real keys must never be committed; configure in multi-lab-vps.yml (gitignored)
 wireguard_peer_public_keys:
   # Management Mac workstation peer public key
-  mac: "REPLACE_WITH_MAC_WIREGUARD_PUBLIC_KEY"
+  mac: "CHANGE_ME_MAC_WIREGUARD_PUBLIC_KEY"
   # Local VM peer public key
-  local_vm: "REPLACE_WITH_LOCAL_VM_WIREGUARD_PUBLIC_KEY"
+  local_vm: "CHANGE_ME_LOCAL_VM_WIREGUARD_PUBLIC_KEY"

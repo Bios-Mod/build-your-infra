@@ -9,21 +9,23 @@
 # Targets:     vm
 
 ---
+# Replace the entire value, including the CHANGE_ME prefix.
+
 # Non-root administrator account hardening restricts SSH to (AllowUsers).
 # Can equal vm_initial_user on the local VM.
-admin_username: "<admin_user>"
+admin_username: "CHANGE_ME_admin_user"
 
 # Initial username created during Ubuntu Server ISO installation (used for pre-hardening bootstrap)
-vm_initial_user: "<user_created_at_os_install>"
+vm_initial_user: "CHANGE_ME_installer_user"
 
 # Current DHCP / static LAN IP address reachable before network reconfiguration
-vm_lan_ip: "192.168.1.xxx"
+vm_lan_ip: "192.168.1.CHANGE_ME"
 
 # Primary network interface name identified via 'ip link' (e.g., enp2s0, ens160)
-vm_interface: "<interface_name>"
+vm_interface: "CHANGE_ME_interface"
 
 # Target static IP and subnet prefix for Netplan (outside router DHCP pool)
-vm_static_ip: "192.168.1.xxx/24"
+vm_static_ip: "192.168.1.CHANGE_ME/24"
 
 # Default gateway router IP
 vm_gateway: "192.168.1.1"
@@ -33,10 +35,10 @@ lan_trusted_cidr: "192.168.1.0/24"
 
 # Dedicated lab SSH key pair (never use personal or GitHub keys)
 # Path to the public key installed on target host for dedicated administrator (Step 0)
-admin_public_key_file: "~/.ssh/<lab_key>.pub"
+admin_public_key_file: "~/.ssh/CHANGE_ME_lab_key.pub"
 
 # Private key file used by Ansible control node to connect via SSH
-ansible_ssh_private_key_file: "~/.ssh/<lab_key>"
+ansible_ssh_private_key_file: "~/.ssh/CHANGE_ME_lab_key"
 
 # WireGuard peer public keys mapped for the local VM
 wireguard_peer_public_keys: []
