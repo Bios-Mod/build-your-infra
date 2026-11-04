@@ -135,7 +135,7 @@ Sin AMIs, el gasto es el de la instancia mientras esté encendida y el del volum
 | Security Group (quitar puerto 22, abrir `51820/udp`) | Fuera de Ansible (Terraform/consola); paso manual previo en cada hito EC2 |
 | TLS | `tls_mode: self_signed` (VM) / `letsencrypt` (EC2). Certbot con `creates:` y entorno `staging` en los ensayos para no agotar los límites de emisión |
 | Rango de WireGuard | `172.16.0.0/24` en ambos |
-| Conexión inicial | EC2: `ubuntu` + Elastic IP; VM: usuario del instalador + IP de la LAN. Tras 2B: IP de `wg0`, puerto 22222 (variable `connection_mode` pre/post por host) |
+| Conexión inicial | EC2: `ubuntu` + Elastic IP; VM: usuario del instalador + IP de la LAN. Tras 2B: IP de `wg0`, puerto 22222 (variable `connection_mode` pre / hardened / wg por host) |
 
 ---
 
@@ -156,34 +156,38 @@ Cada hito es una **puerta**: no se pasa a la siguiente fase sin cumplirlo.
 - **Pasos manuales (autor):** crear la VM nueva con `local-vm-setup.md`; `venv` en el Mac (Python 3.12 a 3.14, no 3.15); copiar `hosts.yml.example` a `hosts.yml`; `ansible all -m ping`.
 - **Hito:** versiones de Ansible = `requirements.txt`; `ping` correcto en la VM; `ansible-lint` y `--syntax-check` pasan; preguntas abiertas de `ANALYSIS.md` resueltas y registradas.
 
-### Fase 2 — Hardening
+### Fase 2 — Hardening (EC2 primero)
 
-**2A — Preparación (VM, bajo riesgo)**
+El código de cada bloque se escribe una vez y sirve a ambos destinos.
+Orden de ejecución: 2A VM (hecho) -> Terraform EC2 -> 2A EC2 -> 2B EC2 ->
+2C EC2 -> 2B VM -> 2C VM. Motivo: el hub de WireGuard es EC2 (doc manual,
+Step 5) y la VM es un peer, así que su bloque de acceso necesita el hub
+activo.
 
-- Alcance: Step 0 (usuario admin, `bootstrap.yml`, puerto 22), Step 1 (updates + unattended-upgrades + debsums), Step 2 (Netplan, solo VM).
-- **Hito 2A:** `--check --diff` revisado; ejecución real; 0 `changed` en la segunda pasada; verificaciones de Step 1–2.
+Bloques de código: 2A = Steps 0-2 (Step 2 solo VM); 2B = Steps 3, 3.1
+(fuera de Ansible), 4, 5, 6; 2C = Steps 7-12.
 
-**2B — Cadena de acceso (VM, alto riesgo de lockout)**
+Estados de conexión (`connection_mode`): `pre` (puerto 22, usuario
+inicial: usuario del instalador por LAN en la VM, `ubuntu` por Elastic IP
+en EC2); `hardened` (puerto 22222, usuario admin, LAN/Elastic IP, tras el
+Step 3); `wg` (puerto 22222, usuario admin, IP de `wg0`, tras el Step 5 y
+con el túnel de la Mac activo).
 
-- Alcance: Step 3 (SSH 22 → 22222), Step 4 (UFW), Step 5 (WireGuard + `ufw route`), y Fail2Ban (Step 6).
-- Antes de empezar: snapshot local de seguridad de la VM.
-- Puntos críticos:
-  - La conexión cambia de puerto e IP (LAN → `wg0`): `validate: sshd -t`, `meta: flush_handlers`, `meta: reset_connection` + `wait_for_connection`, y cambio de `connection_mode`.
-  - UFW: abrir `51820/udp` y la regla por `wg0` **antes** de borrar `limit 22222/tcp`.
-  - Túnel del Mac activo y segunda sesión abierta.
-- **Hito 2B:** sin pérdida de acceso; verificaciones de Step 3–5 (`sshd -T`, `ufw status verbose`, `wg show`); el acceso persiste tras reiniciar; 0 `changed`.
+Seguridad del bloque 2B: Ansible no cierra el acceso SSH por LAN/Elastic IP
+hasta que el autor confirma el acceso por el túnel (variable
+`hardening_wg_close_public_ssh`, por defecto `false`).
 
-**2C — Resto de capas (VM, pasos 6–12)**
-
-- Alcance provisional: sysctl, AppArmor, superficie, auditd, rsyslog, AIDE, Lynis. Definitivo en `ANALYSIS.md`.
-- A confirmar: auditd con reglas inmutables (`-e 2`) y su efecto en la idempotencia; AIDE se inicializa una vez (`creates:`); orden entre `/etc/ufw/sysctl.conf` y `/etc/sysctl.d/`.
-- **Hito 2C:** Lynis ≥ **88**; 0 `changed`; **reconstrucción desde cero** de la VM solo con `bootstrap.yml` + el rol hardening.
-
-**2D — Hardening en EC2**
-
-- **Preparación de Terraform (agente, antes de lanzar la instancia):** actualizar la descripción de `ami_id` en `variables.tf`; añadir una variable de CIDR de bootstrap SSH que habilite de forma condicional el ingreso al puerto 22 en `multi-lab-sg` (vacía = cerrado); actualizar `main.tf.example` y `terraform.tfvars.example`; documentar en `self-managed-automation.md` la ruta greenfield (sin ciclo de import).
-- **Pasos manuales previos (autor, fuera de Ansible):** lanzar la instancia con Terraform desde Ubuntu base con el CIDR de bootstrap definido; `51820/udp` ya abierto por el stack; tras el bloque 2B, vaciar la variable y aplicar de nuevo para cerrar el puerto 22.
-- **Hito 2D:** puertas 2A–2C superadas en EC2; Lynis ≥ **90**.
+Hitos:
+- Terraform EC2: instancia en ejecución, `ssh` como `ubuntu` por la
+  Elastic IP, SSM `Online`.
+- 2A EC2: Steps 0-1 aplicados, 0 `changed` en la segunda pasada.
+- 2B EC2: SSH 22222 + UFW + hub de WireGuard + Fail2Ban; acceso por el
+  túnel verificado desde la Mac; puerto 22 y 22222 cerrados en el
+  Security Group; 0 `changed`.
+- 2C EC2: Steps 7-12; Lynis >= 90; 0 `changed`.
+- 2B VM: igual, como peer del hub; acceso por el túnel verificado.
+- 2C VM: Lynis >= 88; reconstrucción desde cero de la VM solo con
+  `bootstrap.yml` + el rol hardening.
 
 ### Fase 3 — Ansible en el CI
 
@@ -230,11 +234,11 @@ La instancia EC2 se mantiene entre las fases 4 y 7 (apagada entre sesiones).
 | Riesgo | Mitigación |
 | --- | --- |
 | Lockout al cambiar SSH/UFW/WireGuard | Bloque 2B con snapshot local, `validate:`, reconexión explícita, túnel activo y segunda sesión. UFW: abrir antes de cerrar. |
-| Cambio de IP y puerto durante la ejecución | `connection_mode` pre/post por host y cambio de inventario documentado. |
+| Cambio de IP y puerto durante la ejecución | `connection_mode` (`pre`, `hardened`, `wg`) por host y cambio de inventario documentado. |
 | Contraseña de sudo | `--ask-become-pass`. |
 | Recursos AWS fuera de Ansible (Security Group) | Paso manual previo en cada hito EC2. |
 | Sin oráculo: el doc manual puede no reflejar el estado real | El doc es la especificación; los fallos se corrigen en el doc o en el rol y se registran. |
-| | El stack de Terraform self-managed no abre el puerto 22 y apunta a un AMI inexistente | `ami_id` ya es variable; en 2D se añade el CIDR de bootstrap SSH condicional. |
+| | El stack de Terraform self-managed no abre el puerto 22 y apunta a un AMI inexistente | `ami_id` ya es variable; en Terraform EC2 se añade el CIDR de bootstrap SSH condicional. |
 | Límites de emisión de Let's Encrypt | `staging` en ensayos; emisión real una vez por entorno. |
 | Samba 4.19.5 en aarch64 | Se reproduce el estado documentado; SMB2 fuera de alcance. |
 | Ficheros compartidos entre roles (`sshd_config`) | Un rol dueño del fichero; el resto usa drop-ins o bloques con marcador propio. |

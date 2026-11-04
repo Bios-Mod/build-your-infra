@@ -138,6 +138,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   confundir ambos — Terraform aprovisiona, Ansible configura. Ansible está
   planificado pero aún no implementado; junto con la monitorización constituye la
   fase final del repositorio.
+- **Stack self-managed autocontenido (2026-11-04):** incluye el rol y perfil de instancia `multi-lab-ec2-role` con `AmazonSSMManagedInstanceCore`, IMDSv2 obligatorio en la instancia y el Security Group con dos variables de CIDR (puerto 22 y puerto 22222) pasadas en cada `apply` con `$(curl -s ifconfig.me)/32`, vacías = cerrado. No se aplica el módulo aws-native de hardening en la misma cuenta (mismos nombres de VPC, Security Group y rol).
 
 ---
 
@@ -225,6 +226,12 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Monitorización (Prometheus + Grafana)** es un módulo posterior, solo self-managed,
   añadido tras cerrar la base de Ansible. También existe en
   `containerize-your-infra`, donde por ahora no se planifica Ansible.
+- **(2026-11-04) Orden de ejecución de hardening: EC2 primero.** El hub de WireGuard es EC2 y la VM es un peer; el bloque de acceso de la VM necesita el hub. Orden: 2A VM -> Terraform EC2 -> 2A, 2B, 2C EC2 -> 2B, 2C VM. Se dispone de créditos de AWS para el laboratorio.
+- **(2026-11-04) Estados de conexión `pre` / `hardened` / `wg`.** Sustituyen a `pre` / `post`: `hardened` es puerto 22222 con admin por LAN/Elastic IP; `wg` es por la IP de `wg0`.
+- **(2026-11-04) Cierre del SSH por LAN/Elastic IP:** solo con la variable explícita `hardening_wg_close_public_ssh: true`, tras confirmar el acceso por el túnel.
+- **(2026-11-04) WireGuard:** variable `hardening_wireguard_role` (`hub` en EC2, `client` en la VM). El par del hub se genera en el host con `creates:`; los pares de la Mac y la VM se generan en cada cliente y sus claves públicas van en `host_vars`. La clave privada nunca aparece en logs ni diffs (`no_log`).
+- **(2026-11-04) Step 9.1:** la tabla VM/VPS es orientativa; solo se reproducen los comandos de los bloques de código (ModemManager, packagekit/udisks2, apport y, en EC2, migración de amazon-ssm-agent y purga de snapd).
+- **(2026-11-04) Step 9.2:** se automatiza `chage -M 90 -m 1 -W 14` para el admin y los usuarios nuevos se crean con 65536 rondas SHA512. Quedan manuales: `chage -E` (ejemplo de verificación, riesgo de lockout) y `passwd` de re-cifrado (interactivo).
 
 ---
 
