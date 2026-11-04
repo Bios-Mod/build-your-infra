@@ -217,7 +217,7 @@ it produces conflicting or incomplete attributes that the AWS provider rejects.
 #### Lines to delete
 
 | Resource | Remove this line | Why |
-|---|---|---|
+| --- | --- | --- |
 | `aws_subnet.public` | `availability_zone_id = ...` | Conflicts with `availability_zone` |
 | `aws_subnet.public` | `enable_lni_at_device_index = 0` | Invalid outside AWS Outposts |
 | `aws_subnet.public` | `map_customer_owned_ip_on_launch = ...` | Requires `outpost_arn` — not applicable |
@@ -360,6 +360,7 @@ terraform plan
 ```
 
 > **Expected.** `main.tf` is the intended state, not a copy of the imported state.
+>
 > - **replace** `aws_key_pair` — placeholder `public_key = ""` replaced with real key.
 > Instance access unaffected.
 > - **change** `aws_eip` — adds name tag.
@@ -504,12 +505,21 @@ ssh-copy-id -i ~/.ssh/<lab_key>.pub <vm_initial_user>@<vm_lan_ip>
 ```
 
 Edit `inventories/host_vars/multi-lab-local.yml` (created from its `.example`)
-and replace the example values with your real environment parameters: initial
-installer user (`vm_initial_user`), current reachable IP (`vm_lan_ip`), network
-interface (`vm_interface`), static IP (`vm_static_ip`), gateway router
-(`vm_gateway`), and trusted LAN subnet (`lan_trusted_cidr`). Inventory editing
-is done exclusively in this host file; no host-specific network values are edited
-in `inventories/group_vars/vm.yml`.
+and replace the example values with your real environment parameters:
+installer user (`vm_initial_user`), administrator account (`admin_username`),
+current reachable IP (`vm_lan_ip`), network interface (`vm_interface`), static
+IP with prefix (`vm_static_ip`, e.g. `192.168.1.50/24`), gateway router
+(`vm_gateway`) and trusted LAN subnet (`lan_trusted_cidr`, e.g.
+`192.168.1.0/24`). Inventory editing is done exclusively in this host file; no
+host-specific values are edited in `inventories/group_vars/vm.yml`.
+
+`vm_initial_user` is the account created by the Ubuntu installer; Ansible uses
+it for the first connection, before hardening. `admin_username` is the
+non-root administrator account that hardening restricts SSH to
+(`AllowUsers`). On the local VM both can be the same account, since the
+installer user already is the primary administrator with `sudo`. On EC2 the
+first connection uses the AMI user (`ubuntu`) and Step 0 creates the
+administrator account.
 
 #### SSH Key Configuration
 
@@ -566,18 +576,22 @@ ansible-playbook playbooks/ping.yml --limit multi-lab-local
 
 ### What was done
 
-Create the dedicated non-root admin user, add it to the `sudo`, `adm` and
-`admin` groups, set its password and install your Ed25519 public key. The
-playbook asks for the admin password at runtime.
+Ensure the dedicated non-root administrator account (`admin_username`) exists,
+belongs to the `sudo`, `adm` and `admin` groups, and has your Ed25519 public
+key installed. If the account does not exist, the playbook creates it and sets
+the password you type at the prompt. If it already exists — for example, when
+`admin_username` is the installer user — the playbook only adds the missing
+group memberships and the key, and leaves the current password untouched.
 
 ```bash
 ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass
+# → BECOME password: (the installer user's sudo password)
 # → Admin password: (hidden)
 ```
 
-`--ask-become-pass` asks for the **installer user's** sudo password. The same
-playbook can be run again safely: the password is only set when the user is
-created.
+The `Admin password` prompt is only applied when the account is created; for an
+existing account, enter its current password (the value is ignored). The same
+playbook can be run again safely.
 
 📄 [`roles/hardening/tasks/step_00_admin_user.yml`](ansible/roles/hardening/tasks/step_00_admin_user.yml)
 
@@ -596,7 +610,7 @@ operation even when SSH uses keys.
 ### Verification
 
 ```bash
-ssh -i ~/.ssh/id_ed25519 -p 22 <admin_username>@<vm_ip>
+ssh -i ~/.ssh/<lab_key> -o IdentitiesOnly=yes -p 22 <admin_username>@<vm_lan_ip>
 # → must authenticate without a password prompt
 
 id <admin_username>
@@ -648,6 +662,7 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step1 --ask-become-pass
 # → changed=0 on the second run
 
+# Inside the VM
 sudo unattended-upgrade --dry-run --debug
 systemctl status unattended-upgrades
 grep CRON_CHECK /etc/default/debsums
@@ -692,6 +707,8 @@ source of truth.
 ### Verification
 
 ```bash
+
+# Inside the VM
 ip a show <vm_interface>
 # → single static IP, no secondary dynamic address
 
@@ -701,6 +718,7 @@ ip route show
 resolvectl status | grep "DNS Servers"
 # → 9.9.9.9 149.112.112.112
 
+# Central host
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_2a --ask-become-pass
 # → changed=0 (gate for block 2A: second run with no changes)

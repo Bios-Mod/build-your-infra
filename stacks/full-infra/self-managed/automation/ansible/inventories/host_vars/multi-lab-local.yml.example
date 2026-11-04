@@ -9,6 +9,10 @@
 # Targets:     vm
 
 ---
+# Non-root administrator account hardening restricts SSH to (AllowUsers).
+# Can equal vm_initial_user on the local VM.
+admin_username: "<admin_user>"
+
 # Initial username created during Ubuntu Server ISO installation (used for pre-hardening bootstrap)
 vm_initial_user: "<user_created_at_os_install>"
 
