@@ -551,6 +551,9 @@ once per terminal session using `ssh-add ~/.ssh/<lab_key>`.
 `ansible-core`, `ansible-lint` and the two collections, so every run — on the
 control node, on a delegated agent and in CI — uses the same toolchain. The
 virtual environment keeps those versions isolated from the system Python.
+The `passlib` package is included because the `password_hash` filter used in
+`bootstrap.yml` runs locally on the control node, and modern Python releases on
+macOS (Python >= 3.13) remove the standard library `crypt` module.
 `hosts.yml` and `host_vars/*.yml` contain real addresses and usernames, so
 they are gitignored; only the `.example` pairs are versioned. Ansible runs over
 SSH and cannot type a password, so key authentication on the installer user is

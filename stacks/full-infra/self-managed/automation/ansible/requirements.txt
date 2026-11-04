@@ -11,3 +11,6 @@ ansible-core==2.21.6
 
 # Source: PyPI / Homebrew stable release. Requires Python >= 3.10
 ansible-lint==26.10.1
+
+# Source: PyPI stable release. Required by Ansible password_hash filter on control node (macOS / Python >= 3.13 without crypt)
+passlib==1.7.4
