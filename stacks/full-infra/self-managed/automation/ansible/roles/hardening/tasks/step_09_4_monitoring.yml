@@ -22,6 +22,7 @@
   ansible.builtin.apt:
     name: rkhunter
     state: present
+  register: hardening_rkhunter_package
 
 # Configures WEB_CMD to allow mirror updates in /etc/rkhunter.conf (Step 9.4)
 - name: Configure WEB_CMD in /etc/rkhunter.conf
@@ -31,6 +32,7 @@
     line: 'WEB_CMD=""'
     state: present
     mode: "0644"
+  register: hardening_rkhunter_conf_web
   ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables mirror updates in /etc/rkhunter.conf (Step 9.4)
@@ -41,6 +43,7 @@
     line: 'UPDATE_MIRRORS=1'
     state: present
     mode: "0644"
+  register: hardening_rkhunter_conf_mirrors
   ignore_errors: "{{ ansible_check_mode }}"
 
 # Sets mirrors mode to any available mirror in /etc/rkhunter.conf (Step 9.4)
@@ -51,6 +54,7 @@
     line: 'MIRRORS_MODE=0'
     state: present
     mode: "0644"
+  register: hardening_rkhunter_conf_mode
   ignore_errors: "{{ ansible_check_mode }}"
 
 # Whitelists /etc/.updated hidden file in /etc/rkhunter.conf (Step 9.4)
@@ -62,6 +66,7 @@
     insertafter: '^#?ALLOWHIDDENFILE='
     state: present
     mode: "0644"
+  register: hardening_rkhunter_conf_hidden
   ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables daily automated rkhunter scans in /etc/default/rkhunter (Step 9.4)
@@ -72,6 +77,7 @@
     line: 'CRON_DAILY_RUN="true"'
     state: present
     mode: "0644"
+  register: hardening_rkhunter_default_daily
   ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables automated daily database updates in /etc/default/rkhunter (Step 9.4)
@@ -82,6 +88,7 @@
     line: 'CRON_DB_UPDATE="true"'
     state: present
     mode: "0644"
+  register: hardening_rkhunter_default_db
   ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables automatic properties update on apt transactions in /etc/default/rkhunter (Step 9.4)
@@ -92,6 +99,7 @@
     line: 'APT_AUTOGEN="yes"'
     state: present
     mode: "0644"
+  register: hardening_rkhunter_default_apt
   ignore_errors: "{{ ansible_check_mode }}"
 
 # Updates rkhunter database signatures from configured mirrors (Step 9.4)
@@ -103,13 +111,24 @@
   failed_when: hardening_rkhunter_update.rc not in [0, 1]
   when: not ansible_check_mode
 
-# Initializes rkhunter file properties database baseline snapshot (Step 9.4)
-- name: Initialize rkhunter file properties database
+# Updates rkhunter file properties database baseline snapshot when packages or configuration change (Step 9.4)
+- name: Update rkhunter file properties database
   ansible.builtin.command:
     cmd: rkhunter --propupd
-    creates: /var/lib/rkhunter/db/rkhunter.dat
   register: hardening_rkhunter_propupd
-  when: not ansible_check_mode
+  changed_when: true
+  failed_when: hardening_rkhunter_propupd.rc not in [0, 2]
+  when:
+    - not ansible_check_mode
+    - >-
+      (hardening_rkhunter_package.changed | default(false)) or
+      (hardening_rkhunter_conf_web.changed | default(false)) or
+      (hardening_rkhunter_conf_mirrors.changed | default(false)) or
+      (hardening_rkhunter_conf_mode.changed | default(false)) or
+      (hardening_rkhunter_conf_hidden.changed | default(false)) or
+      (hardening_rkhunter_default_daily.changed | default(false)) or
+      (hardening_rkhunter_default_db.changed | default(false)) or
+      (hardening_rkhunter_default_apt.changed | default(false))
 
 # Installs GNU accounting utilities for forensic process execution tracking (Step 9.4)
 - name: Install acct package
