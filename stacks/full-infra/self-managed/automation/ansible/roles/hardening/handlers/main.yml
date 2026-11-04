@@ -5,7 +5,7 @@
 #
 # Service handlers for the hardening role.
 # Why:         Ensures affected daemons absorb configuration changes idempotently at play boundaries.
-# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 1, 2, 3, 4, 5, 6, 7, 9, 10, 11
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 1, 2, 3, 4, 5, 6, 7, 9, 11
 # Targets:     both
 
 ---
@@ -76,10 +76,4 @@
 - name: Restart rsyslog
   ansible.builtin.systemd_service:
     name: rsyslog
-    state: restarted
-
-# Restarts auditd daemon to reset and reapply syscall audit rules from Step 10
-- name: Restart auditd
-  ansible.builtin.systemd_service:
-    name: auditd
     state: restarted
