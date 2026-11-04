@@ -24,6 +24,10 @@ admin_username: "CHANGE_ME_admin_user"
 # Path to the public key installed on target host for dedicated administrator (Step 0)
 admin_public_key_file: "~/.ssh/CHANGE_ME_lab_key.pub"
 
+# Connection phase selector:
+# 'pre'      -> Initial bootstrap: port 22, initial user (installer on VM, ubuntu on EC2). Default state.
+# 'hardened' -> Hardened SSH: port 22222, dedicated admin user over LAN/Elastic IP. Switch in host_vars after Step 3.
+# 'wg'       -> WireGuard perimeter: port 22222, dedicated admin user over WireGuard tunnel (172.16.0.1 on EC2). Switch in host_vars after Step 5 and tunnel verified.
 connection_mode: "pre"
 
 # Private key file used by Ansible control node to connect via SSH

@@ -37,11 +37,22 @@ lan_trusted_cidr: "192.168.1.0/24"
 # Path to the public key installed on target host for dedicated administrator (Step 0)
 admin_public_key_file: "~/.ssh/CHANGE_ME_lab_key.pub"
 
+# Connection phase selector:
+# 'pre'      -> Initial bootstrap: port 22, initial user (installer on VM, ubuntu on EC2). Default state.
+# 'hardened' -> Hardened SSH: port 22222, dedicated admin user over LAN/Elastic IP. Switch in host_vars after Step 3.
+# 'wg'       -> WireGuard perimeter: port 22222, dedicated admin user over WireGuard tunnel (172.16.0.3 on VM). Switch in host_vars after Step 5 and tunnel verified.
+connection_mode: "pre"
+
 # Private key file used by Ansible control node to connect via SSH
 ansible_ssh_private_key_file: "~/.ssh/CHANGE_ME_lab_key"
 
 # WireGuard peer public keys mapped for the local VM
-wireguard_peer_public_keys: []
+# Note: real keys must never be committed; configure in multi-lab-local.yml (gitignored)
+wireguard_peer_public_keys:
+  # Management Mac workstation peer public key
+  mac: "CHANGE_ME_MAC_WIREGUARD_PUBLIC_KEY"
+  # Local VM peer public key
+  local_vm: "CHANGE_ME_LOCAL_VM_WIREGUARD_PUBLIC_KEY"
 
 # WireGuard hub (EC2) public key required for client tunnel configuration (Step 5)
 wireguard_hub_public_key: "CHANGE_ME_HUB_WIREGUARD_PUBLIC_KEY"

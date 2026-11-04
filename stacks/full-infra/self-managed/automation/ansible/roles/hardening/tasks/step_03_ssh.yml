@@ -26,7 +26,7 @@
 - name: Validate administrator SSH access prerequisite
   ansible.builtin.assert:
     that:
-      - hardening_admin_username in getent_passwd
+      - hardening_admin_username in ansible_facts.getent_passwd
       - hardening_admin_auth_keys_stat.stat.exists
       - hardening_admin_auth_keys_stat.stat.size > 0
     fail_msg: >-
@@ -93,10 +93,12 @@
 - name: Switch connection mode to hardened port
   ansible.builtin.set_fact:
     connection_mode: "hardened" # noqa: var-naming[no-role-prefix]
+  when: connection_mode == 'pre'
 
 # Resets current SSH control master connection to force renegotiation on port 22222 (Step 3)
 - name: Reset SSH connection to rebind to hardened port
   ansible.builtin.meta: reset_connection
+  when: connection_mode == 'pre'
 
 # Waits for SSH reachability on hardened port 22222 to confirm successful transition (Step 3)
 - name: Wait for SSH reachability on hardened port 22222
@@ -104,3 +106,4 @@
     delay: 3
     timeout: 60
   become: false
+  when: connection_mode == 'pre'

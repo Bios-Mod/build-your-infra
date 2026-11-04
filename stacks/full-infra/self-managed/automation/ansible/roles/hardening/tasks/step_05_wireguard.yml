@@ -27,25 +27,18 @@
 # Generates host WireGuard private key idempotently if not already generated on disk (Step 5)
 - name: Generate WireGuard private key
   ansible.builtin.shell:
-    cmd: set -o pipefail && wg genkey | tee /etc/wireguard/server_private.key
+    cmd: "set -o pipefail && umask 077; wg genkey | tee /etc/wireguard/server_private.key"
     creates: /etc/wireguard/server_private.key
     executable: /bin/bash
   no_log: true
 
-# Sets restrictive permissions on WireGuard private key (Step 5)
-- name: Set permissions on WireGuard private key
-  ansible.builtin.file:
-    path: /etc/wireguard/server_private.key
-    owner: root
-    group: root
-    mode: "0600"
-
 # Generates host WireGuard public key from private key (Step 5)
 - name: Generate WireGuard public key
   ansible.builtin.shell:
-    cmd: set -o pipefail && wg pubkey < /etc/wireguard/server_private.key > /etc/wireguard/server_public.key
+    cmd: "set -o pipefail && wg pubkey < /etc/wireguard/server_private.key > /etc/wireguard/server_public.key"
     creates: /etc/wireguard/server_public.key
     executable: /bin/bash
+  when: not ansible_check_mode
 
 # Sets permissions on WireGuard public key (Step 5)
 - name: Set permissions on WireGuard public key
@@ -54,17 +47,23 @@
     owner: root
     group: root
     mode: "0644"
+  when: not ansible_check_mode
 
 # Reads host WireGuard public key to present to operator without exposing private material (Step 5)
 - name: Read WireGuard public key
   ansible.builtin.slurp:
     src: /etc/wireguard/server_public.key
   register: hardening_wg_public_key_b64
+  when: not ansible_check_mode
 
 # Displays WireGuard public key for inventory and client template population (Step 5)
 - name: Display host WireGuard public key
   ansible.builtin.debug:
     msg: "WireGuard Public Key for {{ inventory_hostname }}: {{ hardening_wg_public_key_b64.content | b64decode | trim }}"
+  when:
+    - not ansible_check_mode
+    - hardening_wg_public_key_b64 is defined
+    - hardening_wg_public_key_b64.content is defined
 
 # Slurps local private key for template insertion without logging (Step 5)
 - name: Slurp local WireGuard private key
@@ -72,15 +71,36 @@
     src: /etc/wireguard/server_private.key
   register: hardening_wg_private_key_b64
   no_log: true
+  when: not ansible_check_mode
+
+# Validates that Mac peer public key is valid base64 and not a placeholder before hub deployment (Step 5)
+- name: Assert WireGuard Mac peer public key format
+  ansible.builtin.assert:
+    that:
+      - hardening_wireguard_peer_public_keys is defined
+      - hardening_wireguard_peer_public_keys.mac is defined
+      - "'CHANGE_ME' not in hardening_wireguard_peer_public_keys.mac"
+      - "'<' not in hardening_wireguard_peer_public_keys.mac"
+      - "'>' not in hardening_wireguard_peer_public_keys.mac"
+      - hardening_wireguard_peer_public_keys.mac | length == 44
+      - hardening_wireguard_peer_public_keys.mac is match('^[A-Za-z0-9+/]{43}=$')
+    fail_msg: >-
+      WireGuard hub deployment aborted: 'wireguard_peer_public_keys.mac' is missing, contains placeholder
+      text ('CHANGE_ME', '<', '>'), or is not a valid 44-character base64 WireGuard public key.
+      Configure your Mac workstation's public key in 'host_vars/multi-lab-vps.yml' before deploying Step 5.
+  when: hardening_wireguard_role == 'hub' # EC2 only
 
 # Deploys WireGuard server hub configuration (EC2 only) (Step 5)
 - name: Deploy WireGuard hub configuration (EC2)
   vars:
-    hardening_wg_priv: "{{ hardening_wg_private_key_b64.content | b64decode | trim }}"
-    hardening_wg_mac_peer: "{{ hardening_wireguard_peer_public_keys.mac | default('CHANGE_ME_MAC_WIREGUARD_PUBLIC_KEY') }}"
+    hardening_wg_priv: "{{ (hardening_wg_private_key_b64.content | default('')) | b64decode | trim }}"
+    hardening_wg_mac_peer: "{{ hardening_wireguard_peer_public_keys.mac | default('') }}"
     hardening_wg_vm_peer_block: >-
       {{- "\n# Local VM\n[Peer]\nPublicKey  = " ~ hardening_wireguard_peer_public_keys.local_vm ~ "\nAllowedIPs = 172.16.0.3/32"
-          if (hardening_wireguard_peer_public_keys.local_vm is defined and hardening_wireguard_peer_public_keys.local_vm != '')
+          if (hardening_wireguard_peer_public_keys.local_vm is defined
+              and hardening_wireguard_peer_public_keys.local_vm != ''
+              and '<' not in hardening_wireguard_peer_public_keys.local_vm
+              and 'CHANGE_ME' not in hardening_wireguard_peer_public_keys.local_vm)
           else "" -}}
   ansible.builtin.copy:
     content: >-
@@ -95,12 +115,14 @@
   no_log: true
   notify:
     - Restart wireguard
-  when: hardening_wireguard_role == 'hub' # EC2 only
+  when:
+    - hardening_wireguard_role == 'hub' # EC2 only
+    - not ansible_check_mode
 
 # Deploys WireGuard client configuration (Local VM only) (Step 5)
 - name: Deploy WireGuard client configuration (VM)
   vars:
-    hardening_wg_priv: "{{ hardening_wg_private_key_b64.content | b64decode | trim }}"
+    hardening_wg_priv: "{{ (hardening_wg_private_key_b64.content | default('')) | b64decode | trim }}"
   ansible.builtin.copy:
     content: >-
       {{ lookup('file', hardening_configs_dir ~ '/wireguard/client-template.conf')
@@ -115,7 +137,9 @@
   no_log: true
   notify:
     - Restart wireguard
-  when: hardening_wireguard_role == 'client' # VM only
+  when:
+    - hardening_wireguard_role == 'client' # VM only
+    - not ansible_check_mode
 
 # Deploys sysctl configuration to enable IPv4 packet forwarding for WireGuard routing (Step 5)
 - name: Deploy WireGuard sysctl ip_forward configuration

@@ -26,4 +26,4 @@
         name: hardening
         tasks_from: step_00_admin_user.yml
       vars:
-        hardening_admin_password_hash: "{{ hardening_admin_password | password_hash('sha512') }}"
+        hardening_admin_password_hash: "{{ hardening_admin_password | password_hash('sha512', rounds=65536) }}"
