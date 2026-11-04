@@ -718,10 +718,10 @@ sudo debsums -s
 Deploy the hardened Netplan configuration and the systemd-networkd drop-in that
 fixes the Netplan DHCP bug, then apply them. The role skips this step on EC2.
 
-> **Lockout risk.** `vm_static_ip`, `vm_gateway` and `vm_interface` must match
-> your VM. Check the interface name with `ip link` on the VM first. A wrong
-> value drops the network and the SSH session with it. Keep the hypervisor
-> console open and take a snapshot before applying.
+> **Operational warnings & lockout prevention:**
+> - **DHCP pool exclusion:** Choose `vm_static_ip` strictly outside your router's DHCP pool to prevent IP collisions and subtle connection drops.
+> - **IP consistency & recovery:** `vm_static_ip` must be consistent with the host IP reached in Step 0. If a network misconfiguration occurs, SSH connectivity is lost immediately; recovery requires logging in directly through the hypervisor console (VMware / VirtualBox window). Keep the console open and take a hypervisor snapshot before applying.
+> - **Netplan file precedence & cloud-init override:** Netplan processes files in `/etc/netplan/` in alphabetical order where lexicographically later files override earlier ones (e.g. `50-cloud-init.yaml` overrides `00-installer-config.yaml` and re-enables dynamic DHCP). The role automatically quarantines any extra `*.yaml` files to `/root/netplan-backup/` and disables cloud-init network configuration (`/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg`) to ensure the static configuration persists across reboots.
 
 **Run on the control node (Mac):**
 

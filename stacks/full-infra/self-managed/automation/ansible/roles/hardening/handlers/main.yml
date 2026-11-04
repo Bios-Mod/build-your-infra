@@ -9,6 +9,15 @@
 # Targets:     both
 
 ---
+# Applies Netplan network configuration asynchronously to prevent SSH disconnection during re-addressing (Step 2)
+- name: Apply netplan
+  ansible.builtin.command:
+    cmd: netplan apply
+  async: 30
+  poll: 0
+  changed_when: true
+  when: not is_cloud
+
 # Reloads systemd daemon to recognize dropped-in network unit files from Step 2
 - name: Reload systemd daemon
   ansible.builtin.systemd_service:
@@ -20,13 +29,6 @@
   ansible.builtin.systemd_service:
     name: systemd-networkd
     state: restarted
-  when: not is_cloud
-
-# Applies Netplan network configuration to runtime interfaces from Step 2
-- name: Apply netplan
-  ansible.builtin.command:
-    cmd: netplan apply
-  changed_when: true
   when: not is_cloud
 
 # Restarts the OpenSSH server to apply hardened configuration from Step 3

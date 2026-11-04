@@ -10,6 +10,111 @@
 
 ---
 # WARNING: Lockout risk. Incorrect interface name, static IP, or gateway drops network connectivity and locks out Ansible.
+# Pre-flight assertion: validates interface existence, absence of placeholder values, and runtime IP parity before touching network (Step 2)
+- name: Validate network parameters and runtime IP parity
+  ansible.builtin.assert:
+    that:
+      - hardening_vm_interface in ansible_facts.interfaces
+      - "'<' not in hardening_vm_interface and '>' not in hardening_vm_interface"
+      - "'<' not in hardening_vm_static_ip and '>' not in hardening_vm_static_ip"
+      - "'<' not in hardening_vm_gateway and '>' not in hardening_vm_gateway"
+      - "'CHANGE_ME' not in hardening_vm_interface"
+      - "'CHANGE_ME' not in hardening_vm_static_ip"
+      - "'CHANGE_ME' not in hardening_vm_gateway"
+      - ansible_facts.default_ipv4 is defined
+      - ansible_facts.default_ipv4.address is defined
+      - ansible_facts.default_ipv4.address == (hardening_vm_static_ip.split('/')[0])
+    fail_msg: >-
+      Network validation failed: current active IPv4 ({{ ansible_facts.default_ipv4.address | default('undefined') }})
+      does not match target static IP ({{ hardening_vm_static_ip.split('/')[0] }}), interface {{ hardening_vm_interface }}
+      does not exist, or configuration variables contain unreplaced placeholders ('<', '>', 'CHANGE_ME'). The VM must
+      already have this IP assigned or changes must be made directly from the hypervisor console.
+  when: not is_cloud # VM only
+
+# Ensures Netplan backup directory exists with restrictive permissions to quarantine conflicting configurations (Step 2)
+- name: Ensure Netplan backup directory exists
+  ansible.builtin.file:
+    path: /root/netplan-backup
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+  when: not is_cloud # VM only
+
+# Searches for conflicting Netplan YAML configuration files in /etc/netplan to avoid precedence overrides (Step 2)
+- name: Find conflicting Netplan configuration files
+  ansible.builtin.find:
+    paths: /etc/netplan
+    patterns:
+      - "*.yaml"
+      - "*.yml"
+    excludes:
+      - "00-installer-config.yaml"
+    file_type: file
+  register: hardening_conflicting_netplan_files
+  when: not is_cloud # VM only
+
+# Moves conflicting Netplan configuration files to quarantine backup directory to ensure single source of truth (Step 2)
+- name: Move conflicting Netplan configuration files to backup directory
+  ansible.builtin.command:
+    cmd: "mv {{ item.path }} /root/netplan-backup/"
+  loop: "{{ hardening_conflicting_netplan_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  changed_when: true
+  notify:
+    - Apply netplan
+  when:
+    - not is_cloud # VM only
+    - hardening_conflicting_netplan_files.matched | default(0) > 0
+
+# Sets restrictive permissions on quarantined Netplan files in backup directory (Step 2)
+- name: Set permissions on quarantined Netplan configuration files
+  ansible.builtin.file:
+    path: "/root/netplan-backup/{{ item.path | basename }}"
+    owner: root
+    group: root
+    mode: "0600"
+  loop: "{{ hardening_conflicting_netplan_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path | basename }}"
+  when:
+    - not is_cloud # VM only
+    - hardening_conflicting_netplan_files.matched | default(0) > 0
+
+# Checks if cloud-init configuration directory exists on the system (Step 2)
+- name: Check if cloud-init directory exists
+  ansible.builtin.stat:
+    path: /etc/cloud
+  register: hardening_cloud_dir_stat
+  when: not is_cloud # VM only
+
+# Ensures cloud-init drop-in directory exists if cloud-init is installed (Step 2)
+- name: Ensure cloud-init drop-in directory exists
+  ansible.builtin.file:
+    path: /etc/cloud/cloud.cfg.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when:
+    - not is_cloud # VM only
+    - hardening_cloud_dir_stat.stat.exists | default(false)
+
+# Disables cloud-init network configuration to prevent regenerating dynamic Netplan configs on reboot (Step 2)
+- name: Disable cloud-init network configuration
+  ansible.builtin.copy:
+    content: "network: {config: disabled}\n"
+    dest: /etc/cloud/cloud.cfg.d/99-disable-network-config.cfg
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Apply netplan
+  when:
+    - not is_cloud # VM only
+    - hardening_cloud_dir_stat.stat.exists | default(false)
+
 # Deploys static Netplan configuration with replaced placeholders and Quad9 DNS resolvers (Step 2)
 - name: Deploy static Netplan network configuration
   ansible.builtin.copy:
@@ -23,9 +128,9 @@
     group: root
     mode: "0600"
   notify:
+    - Apply netplan
     - Reload systemd daemon
     - Restart systemd-networkd
-    - Apply netplan
   when: not is_cloud # VM only
 
 # Creates drop-in directory to override systemd-networkd DHCP assignment (Step 2)
@@ -47,9 +152,9 @@
     group: root
     mode: "0644"
   notify:
+    - Apply netplan
     - Reload systemd daemon
     - Restart systemd-networkd
-    - Apply netplan
   when: not is_cloud # VM only
 
 # Validates Netplan configuration syntax before applying to prevent network disruption (Step 2)
