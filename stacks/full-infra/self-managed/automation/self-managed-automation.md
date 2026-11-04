@@ -1019,6 +1019,15 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step3 --ask-become-pass
 ```
 
+#### Local VM (multi-lab-local)
+
+On the local VM, the initial user is the OS installer account (`vm_initial_user`, typically `sysadmin`) rather than `ubuntu`. Access migrates identically to the dedicated administrator (`admin_username`). Deploy with:
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step3 --ask-become-pass
+```
+
 Update `connection_mode: "hardened"` in your real host variables file (`inventories/host_vars/multi-lab-vps.yml` or `inventories/host_vars/multi-lab-local.yml`).
 
 📄 [`configs/ssh/sshd_config`](../../../../modules/hardening/self-managed/configs/ssh/sshd_config)
@@ -1084,6 +1093,15 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step4 --check --diff --ask-become-pass
 
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step4 --ask-become-pass
+```
+
+#### Local VM (multi-lab-local)
+
+On the local VM, UFW activates with SSH on port 22222 without an outer AWS Security Group. There is no risk of cloud SG cut-off, but testing secondary SSH access before closing the active session is mandatory:
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step4 --ask-become-pass
 ```
 
@@ -1208,6 +1226,15 @@ Execute the exact validated sequence below to transition from public SSH to the 
 6. **Switch Connection Mode in Inventory:**
    Update `connection_mode: "wg"` in your real host variables file `inventories/host_vars/multi-lab-vps.yml`. From this point forward, Ansible connects exclusively via `172.16.0.1:22222`.
 
+#### Local VM (multi-lab-local)
+
+The local VM acts as a VPN client (`172.16.0.3/32`), not a hub. It requires the EC2 hub to be deployed first, with `wireguard_hub_public_key` and `wireguard_endpoint` configured in `inventories/host_vars/multi-lab-local.yml`. Port `51820/udp` is not opened in UFW on the VM:
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step5 --ask-become-pass
+```
+
 📄 [`configs/wireguard/wg0.conf`](../../../../modules/hardening/self-managed/configs/wireguard/wg0.conf)
 📄 [`configs/wireguard/client-template.conf`](../../../../modules/hardening/self-managed/configs/wireguard/client-template.conf)
 📄 [`configs/sysctl/99-wireguard.conf`](../../../../modules/hardening/self-managed/configs/sysctl/99-wireguard.conf)
@@ -1278,6 +1305,15 @@ Verify full Block 2B execution and complete idempotence:
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_2b --ask-become-pass
 # → changed=0 (gate for block 2B)
+```
+
+#### Local VM (multi-lab-local)
+
+Deployment is identical to EC2 but operates on local LAN and VPN traffic:
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step6 --ask-become-pass
 ```
 
 📄 [`configs/fail2ban/jail.local`](../../../../modules/hardening/self-managed/configs/fail2ban/jail.local)
