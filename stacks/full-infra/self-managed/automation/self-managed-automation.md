@@ -463,6 +463,8 @@ deploy the files in `modules/<module>/self-managed/configs/` — the single
 source of truth — and reproduce, step by step, what the manual module docs
 describe. All commands run on the control node (the Mac) from:
 
+**Run on the control node (Mac):**
+
 ```bash
 cd ~/build-your-infra/stacks/full-infra/self-managed/automation/ansible
 ```
@@ -491,6 +493,8 @@ password.
 > 3.14 on the control node; Python 3.15 is incompatible and fails at startup.
 > If Python 3.14 is not installed, use an explicit `python3.12` or `python3.13`
 > binary.
+
+**Run on the control node (Mac):**
 
 ```bash
 python3.14 -m venv .venv
@@ -561,6 +565,8 @@ required before the first connection.
 
 ### Verification
 
+**Run on the control node (Mac):**
+
 ```bash
 ansible --version
 # → ansible [core 2.21.6]
@@ -585,6 +591,8 @@ key installed. If the account does not exist, the playbook creates it and sets
 the password you type at the prompt. If it already exists — for example, when
 `admin_username` is the installer user — the playbook only adds the missing
 group memberships and the key, and leaves the current password untouched.
+
+**Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass
@@ -612,17 +620,33 @@ operation even when SSH uses keys.
 
 ### Verification
 
+Test passwordless SSH authentication with the newly provisioned administrator account from a new terminal window:
+
+**Run on the control node (Mac):**
+
 ```bash
 ssh -i ~/.ssh/<lab_key> -o IdentitiesOnly=yes -p 22 <admin_username>@<vm_lan_ip>
 # → must authenticate without a password prompt
+```
 
+Verify account identity, group memberships, and directory permissions inside the SSH session on the VM:
+
+**Run on the VM (inside the SSH session):**
+
+```bash
 id <admin_username>
 # → uid=... groups=...,27(sudo),4(adm),...
 
 ls -la /home/<admin_username>/.ssh/
 # → drwx------ .ssh            <admin_username>:<admin_username>
 # → -rw------- authorized_keys <admin_username>:<admin_username>
+```
 
+Exit the SSH session. Back on the control node, execute the bootstrap playbook again to verify that repeated runs report zero changes:
+
+**Run on the control node (Mac):**
+
+```bash
 ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass
 # → changed=0 on the second run
 ```
@@ -637,6 +661,8 @@ Update the package index, apply a full upgrade, install the package audit tools
 and unattended-upgrades, enable the weekly `debsums` check and deploy the two
 unattended-upgrades configuration files. Review the change set first with
 `--check --diff`, then apply.
+
+**Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
@@ -660,12 +686,21 @@ the role is idempotent.
 
 ### Verification
 
+Verify idempotence by executing the step again:
+
+**Run on the control node (Mac):**
+
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step1 --ask-become-pass
 # → changed=0 on the second run
+```
 
-# Inside the VM
+Verify service status, upgrade dry run, and package integrity on the target machine:
+
+**Run on the VM (hypervisor console or SSH):**
+
+```bash
 sudo unattended-upgrade --dry-run --debug
 systemctl status unattended-upgrades
 grep CRON_CHECK /etc/default/debsums
@@ -688,6 +723,8 @@ fixes the Netplan DHCP bug, then apply them. The role skips this step on EC2.
 > value drops the network and the SSH session with it. Keep the hypervisor
 > console open and take a snapshot before applying.
 
+**Run on the control node (Mac):**
+
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step2 --check --diff --ask-become-pass
@@ -709,9 +746,11 @@ source of truth.
 
 ### Verification
 
-```bash
+Verify interface addressing, default routing, and DNS configuration on the VM:
 
-# Inside the VM
+**Run on the VM (hypervisor console or SSH):**
+
+```bash
 ip a show <vm_interface>
 # → single static IP, no secondary dynamic address
 
@@ -720,8 +759,13 @@ ip route show
 
 resolvectl status | grep "DNS Servers"
 # → 9.9.9.9 149.112.112.112
+```
 
-# Central host
+Execute the entire Block 2A baseline from the control node to verify complete idempotence:
+
+**Run on the control node (Mac):**
+
+```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_2a --ask-become-pass
 # → changed=0 (gate for block 2A: second run with no changes)

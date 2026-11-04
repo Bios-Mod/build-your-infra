@@ -286,6 +286,7 @@ Reglas de escritura. El alcance, la estructura y las decisiones están en `decis
   sección por módulo que sigue What was done / Why / Verification, incluyendo
   `--check --diff` y una segunda ejecución con 0 `changed`. Cada rol tiene además un
   `README.md` corto (entradas, tags, destinos y ficheros compartidos).
+- Cada bloque de comandos de los docs de automatización indica dónde se ejecuta (nodo de control, VM o EC2).
 
 ---
 
