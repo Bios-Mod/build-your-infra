@@ -108,7 +108,8 @@
     cmd: rkhunter --update
   register: hardening_rkhunter_update
   changed_when: false
-  failed_when: hardening_rkhunter_update.rc not in [0, 1]
+  failed_when:
+    - (hardening_rkhunter_update.rc not in [0, 1, 2]) or ('Update failed' in (hardening_rkhunter_update.stdout | default('')))
   when: not ansible_check_mode
 
 # Updates rkhunter file properties database baseline snapshot when packages or configuration change (Step 9.4)
