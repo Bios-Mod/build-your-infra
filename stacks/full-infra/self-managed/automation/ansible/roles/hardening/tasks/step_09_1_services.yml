@@ -105,6 +105,63 @@
     - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
 
 # EC2 only
+# Stops snap-managed amazon-ssm-agent service before removing snap state (Step 9.1)
+- name: Stop snap amazon-ssm-agent service when blocked by snap
+  ansible.builtin.systemd_service:
+    name: snap.amazon-ssm-agent.amazon-ssm-agent.service
+    state: stopped
+  register: hardening_snap_ssm_stop_result
+  failed_when:
+    - hardening_snap_ssm_stop_result is failed
+    - "'Could not find the requested service' not in (hardening_snap_ssm_stop_result.msg | default(''))"
+  when:
+    - is_cloud # EC2 only
+    - not ansible_check_mode
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
+    - (hardening_ssm_install_result.rc | default(0)) != 0
+    - >-
+      ('installed by snap' in (hardening_ssm_install_result.stderr | default(''))) or
+      ('installed by snap' in (hardening_ssm_install_result.stdout | default('')))
+
+# EC2 only
+# Stops snapd service before removing snap state (Step 9.1)
+- name: Stop snapd service when blocked by snap
+  ansible.builtin.systemd_service:
+    name: snapd.service
+    state: stopped
+  register: hardening_snapd_service_stop_result
+  failed_when:
+    - hardening_snapd_service_stop_result is failed
+    - "'Could not find the requested service' not in (hardening_snapd_service_stop_result.msg | default(''))"
+  when:
+    - is_cloud # EC2 only
+    - not ansible_check_mode
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
+    - (hardening_ssm_install_result.rc | default(0)) != 0
+    - >-
+      ('installed by snap' in (hardening_ssm_install_result.stderr | default(''))) or
+      ('installed by snap' in (hardening_ssm_install_result.stdout | default('')))
+
+# EC2 only
+# Stops snapd socket before removing snap state (Step 9.1)
+- name: Stop snapd socket when blocked by snap
+  ansible.builtin.systemd_service:
+    name: snapd.socket
+    state: stopped
+  register: hardening_snapd_socket_stop_result
+  failed_when:
+    - hardening_snapd_socket_stop_result is failed
+    - "'Could not find the requested service' not in (hardening_snapd_socket_stop_result.msg | default(''))"
+  when:
+    - is_cloud # EC2 only
+    - not ansible_check_mode
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
+    - (hardening_ssm_install_result.rc | default(0)) != 0
+    - >-
+      ('installed by snap' in (hardening_ssm_install_result.stderr | default(''))) or
+      ('installed by snap' in (hardening_ssm_install_result.stdout | default('')))
+
+# EC2 only
 # Removes residual snapd metadata if dpkg is blocked by snap state (Step 9.1)
 - name: Remove residual snapd metadata when blocked by snap
   ansible.builtin.file:
