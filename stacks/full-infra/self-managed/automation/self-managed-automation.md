@@ -885,3 +885,356 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_2a --ask-become-pass
 # → changed=0 (gate for block 2A: second run with no changes)
 ```
+
+---
+
+## Step 12 — EC2 bootstrap (Hardening Steps 0–1)
+
+### What was done
+
+Configure the inventory for `multi-lab-vps`, accept the EC2 host key fingerprint into the control node's `known_hosts`, provision the dedicated administrator account on the instance via `bootstrap.yml` (Step 0), and execute system updates and automated security patching (Step 1). Step 2 (static Netplan IP) is automatically skipped on EC2 because network addressing is managed by AWS VPC DHCP and the Elastic IP.
+
+Create `inventories/host_vars/multi-lab-vps.yml` from its `.example` template:
+
+**Run on the control node (Mac):**
+
+```bash
+cd ~/build-your-infra/stacks/full-infra/self-managed/automation/ansible
+cp inventories/host_vars/multi-lab-vps.yml.example inventories/host_vars/multi-lab-vps.yml
+```
+
+Edit `inventories/host_vars/multi-lab-vps.yml` and configure your instance parameters:
+- `ec2_eip`: Elastic IP address from `terraform output instance_public_ip`.
+- `admin_username`: dedicated administrator account name.
+- `admin_public_key_file`: path to your dedicated Ed25519 public key (`~/.ssh/id_ed25519_multi-lab.pub`).
+- `ansible_ssh_private_key_file`: path to your private key (`~/.ssh/id_ed25519_multi-lab`).
+
+Establish initial SSH connectivity as `ubuntu` to accept the host key into `~/.ssh/known_hosts`:
+
+**Run on the control node (Mac):**
+
+```bash
+ssh -i ~/.ssh/id_ed25519_multi-lab ubuntu@<ec2_eip>
+# → Type 'yes' to accept host key fingerprint; then exit the session
+exit
+```
+
+Execute the bootstrap playbook to create the administrative user and replicate authorized keys:
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/bootstrap.yml --limit multi-lab-vps
+```
+
+Apply baseline system updates and configure automated unattended security upgrades:
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step1 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step1 --ask-become-pass
+```
+
+📄 [`inventories/host_vars/multi-lab-vps.yml.example`](ansible/inventories/host_vars/multi-lab-vps.yml.example)
+📄 [`playbooks/bootstrap.yml`](ansible/playbooks/bootstrap.yml)
+📄 [`roles/hardening/tasks/step_00_admin_user.yml`](ansible/roles/hardening/tasks/step_00_admin_user.yml)
+📄 [`roles/hardening/tasks/step_01_updates.yml`](ansible/roles/hardening/tasks/step_01_updates.yml)
+
+### Why
+
+The default AMI user `ubuntu` is a predictable identity. Creating a named administrative user provides auditable log attribution for privileged operations. Replicating the launch key from `/home/ubuntu/.ssh/authorized_keys` ensures immediate passwordless key authentication for the administrator while keeping `ubuntu` intact for cloud-init compatibility. Applying Step 1 ensures known CVE vulnerabilities are patched before configuring perimeter security.
+
+### Verification
+
+Verify administrator account provisioning and key authentication from the control node:
+
+**Run on the control node (Mac):**
+
+```bash
+ssh -i ~/.ssh/id_ed25519_multi-lab <admin_username>@<ec2_eip>
+# → authenticates without password prompt
+```
+
+Verify account groups and unattended-upgrades service state inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+id <admin_username>
+# → uid=1001(<admin_username>) groups=...,27(sudo),4(adm)...
+
+systemctl status unattended-upgrades
+# → Active: active (running)
+```
+
+Exit the session and verify idempotence on the control node:
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step1 --ask-become-pass
+# → changed=0
+```
+
+---
+
+## Step 13 — SSH hardening (Hardening Step 3)
+
+### What was done
+
+Deploy the hardened `sshd_config` replacing the `AllowUsers` placeholder with the administrator username, install pre-authentication legal warning banners to `/etc/issue.net` and `/etc/issue`, remove unused legacy RSA and ECDSA host keys from disk, and restart the OpenSSH service.
+
+> **Lockout Prevention Pre-checks:** The playbook validates that the administrator user exists and `/home/<admin_username>/.ssh/authorized_keys` is non-empty before touching configuration files.
+>
+> **EC2 Security Group Prerequisite:** Ensure port `22222` is allowed in Security Group `multi-lab-sg` for your workstation IP (`ssh_hardened_cidr`) before running this step. Keep an active SSH session or SSM Session Manager open in a separate window during deployment.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step3 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step3 --ask-become-pass
+```
+
+Update `connection_mode` in `inventories/host_vars/multi-lab-vps.yml` from `"pre"` to `"hardened"`.
+
+📄 [`configs/ssh/sshd_config`](../../../../modules/hardening/self-managed/configs/ssh/sshd_config)
+📄 [`configs/ssh/issue.net.template`](../../../../modules/hardening/self-managed/configs/ssh/issue.net.template)
+
+### Why
+
+Disabling password authentication and restricting access exclusively to Ed25519 keys eliminates brute-force dictionary attacks. Whitelisting `AllowUsers` prevents lateral movement using unauthorized accounts. Moving to port 22222 drastically reduces internet scanner noise in `auth.log`. Removing RSA and ECDSA keys enforces single-algorithm host identity.
+
+### Verification
+
+Test passwordless SSH authentication on the new hardened port from a new terminal window:
+
+**Run on the control node (Mac):**
+
+```bash
+ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@<ec2_eip>
+# → authenticates successfully on port 22222
+```
+
+Confirm that password authentication is rejected:
+
+**Run on the control node (Mac):**
+
+```bash
+ssh -p 22222 -o PubkeyAuthentication=no -o PreferredAuthentications=password <admin_username>@<ec2_eip>
+# → Permission denied (publickey)
+```
+
+Verify effective daemon configuration inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+sudo sshd -T | grep -E "port|permitrootlogin|passwordauthentication|allowusers"
+# → port 22222
+# → permitrootlogin no
+# → passwordauthentication no
+# → allowusers <admin_username>
+
+ls /etc/ssh/ssh_host_*
+# → /etc/ssh/ssh_host_ed25519_key
+# → /etc/ssh/ssh_host_ed25519_key.pub
+```
+
+---
+
+## Step 14 — UFW firewall (Hardening Step 4)
+
+### What was done
+
+Configure UFW default policies to deny inbound and allow outbound traffic, apply rate limiting on port 22222/tcp, configure logging level to `medium`, deploy `/etc/ufw/sysctl.conf` to persist `log_martians=1`, and enable the UFW firewall service.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step4 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step4 --ask-become-pass
+```
+
+📄 [`configs/ufw/sysctl.conf`](../../../../modules/hardening/self-managed/configs/ufw/sysctl.conf)
+
+### Why
+
+Default-deny packet filtering ensures no services are exposed to the network unless explicitly permitted. Rate limiting on port 22222 caps connection attempts at the network layer before reaching the SSH daemon. Medium logging captures dropped packets against the default policy for auditing.
+
+### Verification
+
+Verify UFW status and active firewall rules inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+sudo ufw status verbose
+# → Status: active
+# → Logging: on (medium)
+# → Default: deny (incoming), allow (outgoing), disabled (routed)
+
+sudo ufw status numbered
+# → 22222/tcp                   LIMIT IN    Anywhere
+```
+
+---
+
+## Step 15 — WireGuard VPN (Hardening Step 5)
+
+### What was done
+
+Install WireGuard, generate the server key pair idempotently with restrictive permissions (`0600`), deploy `wg0.conf` for the VPN hub (EC2) or client peer (VM), enable kernel packet forwarding in `/etc/sysctl.d/99-wireguard.conf`, enable and start `wg-quick@wg0`, and configure UFW rules for the VPN tunnel (`51820/udp`, SSH on `wg0` only, routed forwarding on the hub).
+
+### Safe Sequence & Lockout Prevention
+
+> **Safe Progression Protocol:**
+> 1. **Deploy Step 5 on EC2:** Apply the WireGuard role with `hardening_wg_close_public_ssh: false`. Ansible displays the generated WireGuard public key for EC2.
+> 2. **Configure Mac Client:** Generate client keypair on Mac (`wg genkey | tee mac_private.key | wg pubkey > mac_public.key`). Create `/etc/wireguard/wg0.conf` on Mac using `client-template.conf` with `Address = 172.16.0.2/32`, `Endpoint = <ec2_eip>:51820`, and EC2 public key.
+> 3. **Register Mac Peer:** Set `wireguard_peer_public_keys.mac` in `host_vars/multi-lab-vps.yml` and re-run Step 5.
+> 4. **Activate Tunnel & Verify:** Start tunnel on Mac (`sudo wg-quick up wg0`) and verify VPN connectivity (`ping 172.16.0.1` and `ssh -p 22222 <admin_username>@172.16.0.1`).
+> 5. **Close Public SSH:** Set `hardening_wg_close_public_ssh: true` in `host_vars/multi-lab-vps.yml` and re-apply Step 5 to delete the public port 22222 UFW rule. Run `terraform apply` with empty CIDR variables to remove SSH rules from `multi-lab-sg`.
+> 6. **Switch Connection Mode:** Update `connection_mode: "wg"` in `host_vars/multi-lab-vps.yml`.
+> 7. **Recovery:** If connectivity is interrupted on EC2, start an AWS Systems Manager session (`aws ssm start-session --target <instance_id> --profile multi-lab-admin`). On the VM, use the hypervisor console.
+
+Apply Step 5 on the EC2 hub:
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step5 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step5 --ask-become-pass
+# → Notice the displayed WireGuard Public Key
+```
+
+Configure and start the WireGuard tunnel on the Mac workstation:
+
+**Run on the control node (Mac):**
+
+```bash
+sudo wg-quick up wg0
+ping -c 3 172.16.0.1
+ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@172.16.0.1
+# → must authenticate successfully over the VPN tunnel
+```
+
+Once tunnel access is verified, enforce perimeter lockdown by setting `hardening_wg_close_public_ssh: true` in `host_vars/multi-lab-vps.yml`, re-running Step 5, and updating the connection mode:
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step5 --ask-become-pass
+```
+
+Close ports 22 and 22222 in AWS Security Group `multi-lab-sg`:
+
+**Run on the control node (Mac):**
+
+```bash
+cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
+terraform apply -var "ssh_bootstrap_cidr=" -var "ssh_hardened_cidr="
+```
+
+Update `connection_mode: "wg"` in `inventories/host_vars/multi-lab-vps.yml`.
+
+📄 [`configs/wireguard/wg0.conf`](../../../../modules/hardening/self-managed/configs/wireguard/wg0.conf)
+📄 [`configs/wireguard/client-template.conf`](../../../../modules/hardening/self-managed/configs/wireguard/client-template.conf)
+📄 [`configs/sysctl/99-wireguard.conf`](../../../../modules/hardening/self-managed/configs/sysctl/99-wireguard.conf)
+
+### Why
+
+WireGuard provides cryptographic authentication at the network transport layer before application protocols engage. Restricting SSH exclusively to `wg0` makes port 22222 invisible to internet scanners. Kernel packet forwarding (`ip_forward = 1`) and UFW route forwarding enable the EC2 hub to relay traffic between connected client peers (Mac and local VM).
+
+### Verification
+
+Verify WireGuard tunnel status and peer handshakes on the EC2 hub:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+sudo wg show
+# → interface: wg0, listening port: 51820
+# → peer: <mac_public_key>, latest handshake: X seconds ago, transfer: ...
+
+sudo ufw status numbered
+# → 51820/udp                  ALLOW IN    Anywhere
+# → 22222/tcp on wg0           ALLOW IN    Anywhere
+# → Anywhere on wg0            ALLOW FWD   Anywhere on wg0
+```
+
+Confirm that public SSH is blocked from outside the tunnel:
+
+**Run on the control node (Mac):**
+
+```bash
+ssh -p 22222 -o ConnectTimeout=5 <admin_username>@<ec2_eip>
+# → Connection timed out
+```
+
+---
+
+## Step 16 — Fail2Ban (Hardening Step 6)
+
+### What was done
+
+Install Fail2Ban, deploy the `allowipv6.conf` override to suppress CLI warnings, and deploy `jail.local` configuring ban escalation policies across `sshd` and `recidive` jails using the UFW ban backend. Whitelist loopback, the WireGuard subnet (`172.16.0.0/24`), and `lan_trusted_cidr` (VM only).
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step6 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step6 --ask-become-pass
+```
+
+Verify full Block 2B execution and complete idempotence:
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_2b --ask-become-pass
+# → changed=0 (gate for block 2B)
+```
+
+📄 [`configs/fail2ban/jail.local`](../../../../modules/hardening/self-managed/configs/fail2ban/jail.local)
+📄 [`configs/fail2ban/fail2ban.d/allowipv6.conf`](../../../../modules/hardening/self-managed/configs/fail2ban/fail2ban.d/allowipv6.conf)
+
+### Why
+
+Fail2Ban provides defense-in-depth at the application layer for any traffic reaching the host through the network perimeter. The `sshd` jail imposes a 48-hour ban upon 3 failed attempts, while `recidive` imposes a 30-day deterrent ban for repeat offenders.
+
+### Verification
+
+Verify active jails and aggressive filter mode inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+sudo fail2ban-client status
+# → Number of jail: 2
+# → Jail list: recidive, sshd
+
+sudo fail2ban-client status sshd
+# → Currently banned: 0
+
+sudo fail2ban-client get sshd failregex | wc -l
+# → 33 (or greater)
+```
+
