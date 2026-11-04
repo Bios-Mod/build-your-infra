@@ -17,4 +17,3 @@
       - apparmor-profiles
       - apparmor-profiles-extra
     state: present
-

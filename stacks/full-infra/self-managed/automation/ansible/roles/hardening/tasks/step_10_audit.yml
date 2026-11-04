@@ -23,6 +23,7 @@
     name: auditd
     enabled: true
     state: started
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Deploys auditd syscall rules with conditional immutable mode (-e 2) (Step 10)
 - name: Deploy auditd hardening rules
@@ -119,3 +120,4 @@
     line: 'CRON_DAILY_RUN=yes'
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"

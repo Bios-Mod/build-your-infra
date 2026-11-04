@@ -15,18 +15,32 @@
     name: ModemManager
     enabled: false
     state: stopped
-  failed_when: false
+  register: hardening_modemmanager_result
+  failed_when:
+    - hardening_modemmanager_result is failed
+    - "'Could not find the requested service' not in (hardening_modemmanager_result.msg | default(''))"
 
-# Masks packagekit and udisks2 to prevent D-Bus socket or manual activation (Step 9.1)
-- name: Mask packagekit and udisks2 services
+# Masks packagekit to prevent D-Bus socket or manual activation (Step 9.1)
+- name: Mask packagekit service
   ansible.builtin.systemd_service:
-    name: "{{ item }}"
+    name: packagekit
     masked: true
     state: stopped
-  loop:
-    - packagekit
-    - udisks2
-  failed_when: false
+  register: hardening_packagekit_result
+  failed_when:
+    - hardening_packagekit_result is failed
+    - "'Could not find the requested service' not in (hardening_packagekit_result.msg | default(''))"
+
+# Masks udisks2 to prevent D-Bus socket or manual activation (Step 9.1)
+- name: Mask udisks2 service
+  ansible.builtin.systemd_service:
+    name: udisks2
+    masked: true
+    state: stopped
+  register: hardening_udisks2_result
+  failed_when:
+    - hardening_udisks2_result is failed
+    - "'Could not find the requested service' not in (hardening_udisks2_result.msg | default(''))"
 
 # Purges apport crash reporting daemon to prevent fs.suid_dumpable overrides (Step 9.1)
 - name: Purge apport crash reporting packages
@@ -64,7 +78,7 @@
     state: absent
   when:
     - is_cloud # EC2 only
-    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
 
 # EC2 only
 # Downloads amazon-ssm-agent deb package for host architecture (Step 9.1)
@@ -75,7 +89,7 @@
     mode: "0644"
   when:
     - is_cloud # EC2 only
-    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
 
 # EC2 only
 # Installs amazon-ssm-agent deb package to replace snap-managed instance (Step 9.1)
@@ -84,10 +98,11 @@
     cmd: dpkg -i /tmp/amazon-ssm-agent.deb
   register: hardening_ssm_install_result
   failed_when: false
-  changed_when: hardening_ssm_install_result.rc == 0
+  changed_when: (hardening_ssm_install_result.rc | default(1)) == 0
   when:
     - is_cloud # EC2 only
-    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+    - not ansible_check_mode
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
 
 # EC2 only
 # Removes residual snapd metadata if dpkg is blocked by snap state (Step 9.1)
@@ -97,8 +112,9 @@
     state: absent
   when:
     - is_cloud # EC2 only
-    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
-    - hardening_ssm_install_result.rc != 0
+    - not ansible_check_mode
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
+    - (hardening_ssm_install_result.rc | default(0)) != 0
     - >-
       ('installed by snap' in (hardening_ssm_install_result.stderr | default(''))) or
       ('installed by snap' in (hardening_ssm_install_result.stdout | default('')))
@@ -109,11 +125,12 @@
   ansible.builtin.command:
     cmd: dpkg -i /tmp/amazon-ssm-agent.deb
   register: hardening_ssm_retry_result
-  changed_when: hardening_ssm_retry_result.rc == 0
+  changed_when: (hardening_ssm_retry_result.rc | default(1)) == 0
   when:
     - is_cloud # EC2 only
-    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
-    - hardening_ssm_install_result.rc != 0
+    - not ansible_check_mode
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
+    - (hardening_ssm_install_result.rc | default(0)) != 0
 
 # EC2 only
 # Removes temporary amazon-ssm-agent deb installer file (Step 9.1)
@@ -123,7 +140,8 @@
     state: absent
   when:
     - is_cloud # EC2 only
-    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+    - not ansible_check_mode
+    - "'install ok installed' not in (hardening_ssm_deb_status.stdout | default(''))"
 
 # EC2 only
 # Ensures amazon-ssm-agent service is enabled and started on EC2 (Step 9.1)
@@ -133,6 +151,7 @@
     enabled: true
     state: started
   register: hardening_ssm_service_status
+  ignore_errors: "{{ ansible_check_mode }}"
   when: is_cloud # EC2 only
 
 # EC2 only
@@ -140,7 +159,7 @@
 - name: Verify amazon-ssm-agent service is active
   ansible.builtin.assert:
     that:
-      - hardening_ssm_service_status.status.ActiveState == 'active'
+      - (hardening_ssm_service_status.status.ActiveState | default('')) == 'active'
     fail_msg: "amazon-ssm-agent service is not active on EC2"
   when:
     - is_cloud # EC2 only

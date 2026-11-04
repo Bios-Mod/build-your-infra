@@ -144,4 +144,3 @@
     password_expire_max: "{{ hardening_password_max_days }}"
     password_expire_min: "{{ hardening_password_min_days }}"
     password_expire_warn: "{{ hardening_password_warn_age }}"
-

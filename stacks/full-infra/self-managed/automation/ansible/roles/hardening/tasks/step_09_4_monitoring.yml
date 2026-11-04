@@ -31,6 +31,7 @@
     line: 'WEB_CMD=""'
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables mirror updates in /etc/rkhunter.conf (Step 9.4)
 - name: Configure UPDATE_MIRRORS in /etc/rkhunter.conf
@@ -40,6 +41,7 @@
     line: 'UPDATE_MIRRORS=1'
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Sets mirrors mode to any available mirror in /etc/rkhunter.conf (Step 9.4)
 - name: Configure MIRRORS_MODE in /etc/rkhunter.conf
@@ -49,6 +51,7 @@
     line: 'MIRRORS_MODE=0'
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Whitelists /etc/.updated hidden file in /etc/rkhunter.conf (Step 9.4)
 - name: Configure ALLOWHIDDENFILE in /etc/rkhunter.conf
@@ -59,6 +62,7 @@
     insertafter: '^#?ALLOWHIDDENFILE='
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables daily automated rkhunter scans in /etc/default/rkhunter (Step 9.4)
 - name: Configure CRON_DAILY_RUN in /etc/default/rkhunter
@@ -68,6 +72,7 @@
     line: 'CRON_DAILY_RUN="true"'
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables automated daily database updates in /etc/default/rkhunter (Step 9.4)
 - name: Configure CRON_DB_UPDATE in /etc/default/rkhunter
@@ -77,6 +82,7 @@
     line: 'CRON_DB_UPDATE="true"'
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables automatic properties update on apt transactions in /etc/default/rkhunter (Step 9.4)
 - name: Configure APT_AUTOGEN in /etc/default/rkhunter
@@ -86,6 +92,7 @@
     line: 'APT_AUTOGEN="yes"'
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Updates rkhunter database signatures from configured mirrors (Step 9.4)
 - name: Update rkhunter signature database
@@ -116,6 +123,7 @@
     name: acct
     enabled: true
     state: started
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Installs sysstat system performance monitoring and metrics collection utilities (Step 9.4)
 - name: Install sysstat package
@@ -131,6 +139,7 @@
     line: 'ENABLED="true"'
     state: present
     mode: "0644"
+  ignore_errors: "{{ ansible_check_mode }}"
 
 # Enables and starts sysstat service across system reboots (Step 9.4)
 - name: Ensure sysstat service is enabled and started
@@ -138,3 +147,4 @@
     name: sysstat
     enabled: true
     state: started
+  ignore_errors: "{{ ansible_check_mode }}"
