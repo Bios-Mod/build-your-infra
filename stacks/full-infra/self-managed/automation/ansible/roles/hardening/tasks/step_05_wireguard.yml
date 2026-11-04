@@ -119,17 +119,42 @@
     - hardening_wireguard_role == 'hub' # EC2 only
     - not ansible_check_mode
 
+# VM only
+# Validates WireGuard hub public key and endpoint format before deploying client configuration (Step 5)
+- name: Assert WireGuard client hub parameters format
+  ansible.builtin.assert:
+    that:
+      - hardening_wireguard_hub_public_key is defined
+      - hardening_wireguard_hub_public_key | length == 44
+      - hardening_wireguard_hub_public_key is match('^[A-Za-z0-9+/]{43}=$')
+      - "'CHANGE_ME' not in hardening_wireguard_hub_public_key"
+      - "'<' not in hardening_wireguard_hub_public_key"
+      - "'>' not in hardening_wireguard_hub_public_key"
+      - hardening_wireguard_endpoint is defined
+      - hardening_wireguard_endpoint | length > 0
+      - "'CHANGE_ME' not in hardening_wireguard_endpoint"
+      - "'<' not in hardening_wireguard_endpoint"
+      - "'>' not in hardening_wireguard_endpoint"
+    fail_msg: >-
+      WireGuard client deployment aborted: 'wireguard_hub_public_key' or 'wireguard_endpoint' is missing,
+      empty, contains placeholder text ('CHANGE_ME', '<', '>'), or public key is not valid 44-character base64.
+      Configure 'wireguard_hub_public_key' and 'wireguard_endpoint' in 'host_vars/multi-lab-local.yml' before deploying Step 5.
+  when: hardening_wireguard_role == 'client' # VM only
+
+# VM only
 # Deploys WireGuard client configuration (Local VM only) (Step 5)
 - name: Deploy WireGuard client configuration (VM)
   vars:
     hardening_wg_priv: "{{ (hardening_wg_private_key_b64.content | default('')) | b64decode | trim }}"
+    hardening_wg_vm_ip: "{{ hardening_wireguard_vm_vpn_ip if '/' in hardening_wireguard_vm_vpn_ip else (hardening_wireguard_vm_vpn_ip ~ '/32') }}"
+    hardening_wg_endpoint_fmt: "{{ hardening_wireguard_endpoint if ':' in hardening_wireguard_endpoint else (hardening_wireguard_endpoint ~ ':51820') }}"
   ansible.builtin.copy:
     content: >-
       {{ lookup('file', hardening_configs_dir ~ '/wireguard/client-template.conf')
-         | replace('172.16.0.X/32', hardening_wireguard_vm_vpn_ip)
+         | replace('172.16.0.X/32', hardening_wg_vm_ip)
          | replace('<client-private-key>', hardening_wg_priv)
          | replace('<server-public-key>', hardening_wireguard_hub_public_key)
-         | replace('<server-ip-or-domain>:51820', hardening_wireguard_endpoint) }}
+         | replace('<server-ip-or-domain>:51820', hardening_wg_endpoint_fmt) }}
     dest: /etc/wireguard/wg0.conf
     owner: root
     group: root
