@@ -1451,6 +1451,10 @@ dpkg -l | grep amazon-ssm-agent
 # → ii amazon-ssm-agent ...
 ```
 
+### Troubleshooting
+
+- **SSM deb preinst aborts with `installed by snap`:** If `dpkg -i` fails during SSM agent migration because snap metadata remains registered, note that the running `snapd` daemon retains state in memory and the deb package `preinst` script queries `snap list`. Stop `snap.amazon-ssm-agent.amazon-ssm-agent.service`, `snapd.service`, and `snapd.socket` before removing `/var/lib/snapd`.
+
 ---
 
 ## Step 20 — Attack surface reduction: filesystem and user hardening (Hardening Step 9.2)
@@ -1534,14 +1538,9 @@ sudo passwd <admin_username>
 # Enter new password meeting pwquality policy (>= 12 chars, upper, lower, digits, symbols)
 sudo grep "^<admin_username>:" /etc/shadow | cut -d: -f2 | cut -c1-3
 # → $6$ (SHA-512 verified)
-
-# Optional account expiration (with operational warning):
-# WARNING: Setting an account expiration date introduces administrative lockout risk
-# if not renewed before expiration. Apply only if hard lifecycle boundaries are required.
-sudo chage -E $(date -d "+365 days" +%Y-%m-%d) <admin_username>
-sudo chage -l <admin_username> | grep "Account expires"
-# → Account expires: <date>
 ```
+
+> **Note on Account Expiry:** Account expiry (`chage -E`) is intentionally NOT applied — see AUTH-9282 in Step 12 skips.
 
 ---
 
@@ -1624,6 +1623,10 @@ sar -u 1 2
 # → displays active CPU metrics sample
 ```
 
+### Troubleshooting
+
+- **`rkhunter --update` exit code 2:** Running `rkhunter --update` returns exit code `2` when signature files are updated (`[ Updated ]` output); this indicates successful signature refresh and is not an error.
+
 ---
 
 ## Step 23 — Audit trail: auditd and AIDE (Hardening Step 10)
@@ -1677,6 +1680,10 @@ sudo ls -lh /var/lib/aide/aide.db
 grep CRON_DAILY_RUN /etc/default/aide
 # → CRON_DAILY_RUN=yes
 ```
+
+### Troubleshooting
+
+- **`augenrules` error `Enable must be 0, 1, or 2 was 2##`:** The deployed `/etc/audit/rules.d/99-hardening.rules` file must strictly end with a trailing newline character. Without a terminating newline, `augenrules` appends section header comments (`##`) directly to the `-e 2` flag on the final line, resulting in an unparseable integer error.
 
 ---
 
