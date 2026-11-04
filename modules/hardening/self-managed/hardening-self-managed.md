@@ -1092,8 +1092,13 @@ rm amazon-ssm-agent.deb
 ```
 
 > If `dpkg` aborts with *"installed by snap, please use snap to update or
-> uninstall"*, snap metadata is still present. Remove it and retry:
+> uninstall"*, snap metadata is still registered. The running `snapd` daemon
+> retains state in memory, and the deb package `preinst` script queries `snap list`.
+> Stop the active snap services, remove residual state, and retry installation:
 > ```bash
+> sudo systemctl stop snap.amazon-ssm-agent.amazon-ssm-agent.service
+> sudo systemctl stop snapd.service
+> sudo systemctl stop snapd.socket
 > sudo rm -rf /var/lib/snapd
 > sudo dpkg -i amazon-ssm-agent.deb
 > ```
