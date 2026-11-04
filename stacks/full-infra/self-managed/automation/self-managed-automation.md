@@ -455,6 +455,109 @@ terraform show
 
 ---
 
+## Step 7b — Greenfield provisioning from a clean account
+
+### What was done
+Provision the entire self-managed EC2 infrastructure directly from a clean AWS account without running an import cycle.
+
+> **Account Isolation Warning:** Do not deploy the `aws-native` hardening module in the same AWS account as the self-managed stack. Both stacks share identical global and regional resource names (`multi-lab-vpc`, `multi-lab-sg`, `multi-lab-ec2-role`), causing collision errors during resource creation.
+
+> **Billing Alert (EBS & Elastic IP):** The 20 GiB gp3 root volume persists and accrues cost even when the instance is stopped. The allocated Elastic IP is free only while associated with a running EC2 instance; stopped instances with associated Elastic IPs or unassociated Elastic IPs accrue hourly charges (~$0.005/hr). Release resources when no longer needed.
+
+Prerequisites:
+- AWS CLI configured with profile `multi-lab-admin` in region `eu-west-1`.
+- Terraform `>= 1.15.6`.
+- Dedicated Ed25519 lab SSH key generated at `~/.ssh/id_ed25519_multi-lab`.
+
+Query the latest official Canonical Ubuntu Server 24.04 LTS ARM64 AMI ID:
+
+**Run on the control node (Mac):**
+
+```bash
+aws ec2 describe-images \
+  --owners 099720109477 \
+  --region eu-west-1 \
+  --profile multi-lab-admin \
+  --filters "Name=name,Values=ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-*" \
+  --query "sort_by(Images,&CreationDate)[-1].[ImageId,Name]"
+# → ["ami-0xxxxxxxxxxxxxxxxx", "ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-arm64-server-..."]
+```
+
+Activate the configuration files and initialize the working directory:
+
+**Run on the control node (Mac):**
+
+```bash
+cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
+cp main.tf.example main.tf
+cp outputs.tf.example outputs.tf
+cp terraform.tfvars.example terraform.tfvars
+
+terraform init
+```
+
+Set the discovered `ami_id` in `terraform.tfvars`. Generate the execution plan and apply the infrastructure, passing your current public IP to open temporary SSH bootstrap access (port 22) and hardened SSH access (port 22222) in the Security Group:
+
+**Run on the control node (Mac):**
+
+```bash
+terraform plan \
+  -var "ssh_bootstrap_cidr=$(curl -s ifconfig.me)/32" \
+  -var "ssh_hardened_cidr=$(curl -s ifconfig.me)/32"
+
+terraform apply \
+  -var "ssh_bootstrap_cidr=$(curl -s ifconfig.me)/32" \
+  -var "ssh_hardened_cidr=$(curl -s ifconfig.me)/32"
+
+terraform output
+# → instance_public_ip = "X.X.X.X"
+# → instance_id = "i-0xxxxxxxxxxxxxxxxx"
+```
+
+Verify initial SSH connection using the default `ubuntu` user and confirm AWS Systems Manager connectivity:
+
+**Run on the control node (Mac):**
+
+```bash
+ssh -i ~/.ssh/id_ed25519_multi-lab ubuntu@<EIP>
+# → authenticates successfully; exit session
+
+aws ssm describe-instance-information \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --query "InstanceInformationList[*].{ID:InstanceId,Status:PingStatus}"
+# → PingStatus: "Online"
+```
+
+📄 [`main.tf.example`](terraform/main.tf.example)
+📄 [`variables.tf`](terraform/variables.tf)
+📄 [`terraform.tfvars.example`](terraform/terraform.tfvars.example)
+📄 [`outputs.tf.example`](terraform/outputs.tf.example)
+
+### Why
+A reproducible greenfield deployment allows provisioning the self-managed EC2 target on demand in any clean AWS account without importing pre-existing resources. The self-contained stack deploys the dedicated VPC (`10.0.0.0/16`), public subnet, route table, internet gateway, Elastic IP, and EC2 instance profile (`multi-lab-ec2-role`) with `AmazonSSMManagedInstanceCore` attached.
+
+IMDSv2 is enforced at the instance layer (`http_tokens = "required"`, `http_put_response_hop_limit = 1`) to eliminate SSRF attack vectors against the metadata service. Dynamic ingress rules open ports 22 and 22222 restricted strictly to the operator's current public workstation IP (`/32`), preventing exposure to automated scanning bots before WireGuard is fully established.
+
+### Verification
+
+Confirm that the instance is reachable over SSH and registered with AWS Systems Manager Session Manager:
+
+**Run on the control node (Mac):**
+
+```bash
+ssh -i ~/.ssh/id_ed25519_multi-lab ubuntu@<EIP> uname -m
+# → aarch64
+
+aws ssm describe-instance-information \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --query "InstanceInformationList[*].{ID:InstanceId,Status:PingStatus}"
+# → [{"ID": "i-0xxxxxxxxxxxxxxxxx", "Status": "Online"}]
+```
+
+---
+
 ## Phase 3 — Ansible configuration layer
 
 Terraform provisions the EC2 host; Ansible configures the operating system of

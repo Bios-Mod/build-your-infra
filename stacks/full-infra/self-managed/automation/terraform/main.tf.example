@@ -1,10 +1,11 @@
 # Deploy to:   stacks/full-infra/self-managed/terraform/
-# Apply:       cp main.tf.example main.tf — activate after import cycle is complete
+# Apply:       Greenfield path: cp main.tf.example main.tf && terraform apply (no import needed)
+#              Import path: cp main.tf.example main.tf after import cycle is complete (see self-managed-automation.md)
 # Module:      stacks/full-infra/self-managed
-# Requires:    terraform.tfvars, state populated via import cycle (see self-managed-automation.md)
+# Requires:    terraform.tfvars
 #
 # Full infrastructure definition for the self-managed lab stack.
-# Do not rename to main.tf until import.tf has been applied and deleted.
+# Supports both greenfield provisioning from a clean AWS account and selective import.
 # Parameters modified from baseline: none
 
 terraform {
@@ -33,9 +34,9 @@ resource "aws_vpc" "main" {
 }
 
 resource "aws_subnet" "public" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.1.0/24"
-  availability_zone       = "${var.aws_region}a"
+  vpc_id            = aws_vpc.main.id
+  cidr_block        = "10.0.1.0/24"
+  availability_zone = "${var.aws_region}a"
 
   tags = {
     Name = "multi-lab-vpc-subnet-public1-eu-west-1a"
@@ -73,6 +74,28 @@ resource "aws_security_group" "main" {
   description = "Security Group for self-managed host"
   vpc_id      = aws_vpc.main.id
 
+  dynamic "ingress" {
+    for_each = var.ssh_bootstrap_cidr != "" ? [var.ssh_bootstrap_cidr] : []
+    content {
+      description = "Temporary SSH bootstrap access on port 22"
+      from_port   = 22
+      to_port     = 22
+      protocol    = "tcp"
+      cidr_blocks = [ingress.value]
+    }
+  }
+
+  dynamic "ingress" {
+    for_each = var.ssh_hardened_cidr != "" ? [var.ssh_hardened_cidr] : []
+    content {
+      description = "Hardened SSH access on port 22222 before WireGuard lockdown"
+      from_port   = 22222
+      to_port     = 22222
+      protocol    = "tcp"
+      cidr_blocks = [ingress.value]
+    }
+  }
+
   ingress {
     from_port   = 51820
     to_port     = 51820
@@ -107,6 +130,33 @@ resource "aws_security_group" "main" {
   }
 }
 
+resource "aws_iam_role" "ec2" {
+  name = "multi-lab-ec2-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect    = "Allow"
+      Principal = { Service = "ec2.amazonaws.com" }
+      Action    = "sts:AssumeRole"
+    }]
+  })
+
+  tags = {
+    Name = "multi-lab-ec2-role"
+  }
+}
+
+resource "aws_iam_instance_profile" "ec2" {
+  name = "multi-lab-ec2-role"
+  role = aws_iam_role.ec2.name
+}
+
+resource "aws_iam_role_policy_attachment" "ec2_ssm" {
+  role       = aws_iam_role.ec2.name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 resource "aws_key_pair" "main" {
   key_name   = var.key_name
   public_key = file("~/.ssh/id_ed25519_multi-lab.pub") # Your key for manage
@@ -119,6 +169,13 @@ resource "aws_instance" "main" {
   subnet_id              = aws_subnet.public.id
   vpc_security_group_ids = [aws_security_group.main.id]
   key_name               = aws_key_pair.main.key_name
+  iam_instance_profile   = aws_iam_instance_profile.ec2.name
+
+  metadata_options {
+    http_tokens                 = "required"
+    http_endpoint               = "enabled"
+    http_put_response_hop_limit = 1
+  }
 
   root_block_device {
     volume_size = 20

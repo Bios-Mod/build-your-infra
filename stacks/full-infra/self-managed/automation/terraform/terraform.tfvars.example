@@ -9,5 +9,9 @@
 # Parameters modified from baseline: none
 
 instance_type = "t4g.micro"
-ami_id        = "ami-xxxxxxxxxxxxxxxxx"   # multi-lab-aws-active-directory AMI ID
+ami_id        = "ami-xxxxxxxxxxxxxxxxx"   # Ubuntu Server 24.04 LTS ARM64 (eu-west-1)
 key_name      = "multi-lab-key"
+
+# Optional temporary SSH access (normally passed via CLI during terraform apply, e.g. -var "ssh_bootstrap_cidr=$(curl -s ifconfig.me)/32")
+# ssh_bootstrap_cidr = ""
+# ssh_hardened_cidr  = ""

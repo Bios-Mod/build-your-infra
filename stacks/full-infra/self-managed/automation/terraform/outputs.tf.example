@@ -1,5 +1,5 @@
 # Deploy to:   stacks/full-infra/self-managed/terraform/
-# Apply:       cp outputs.tf.example outputs.tf — activate after import cycle is complete
+# Apply:       cp outputs.tf.example outputs.tf (both greenfield provisioning and import paths)
 # Module:      stacks/full-infra/self-managed
 # Requires:    main.tf
 
