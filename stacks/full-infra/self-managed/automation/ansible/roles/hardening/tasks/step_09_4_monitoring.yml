@@ -1,0 +1,140 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step9_4 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 9.3 completed
+#
+# Step 9.4 — Attack surface reduction: monitoring and forensic detection tools.
+# Why:         Installs and configures rkhunter rootkit scanner, acct command auditing, and sysstat performance metrics.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 9.4
+# Targets:     both
+
+---
+# Preconfigures Postfix debconf to "No configuration" to suppress interactive MTA dialog during installation (Step 9.4)
+- name: Preconfigure Postfix debconf mailer type
+  ansible.builtin.debconf:
+    name: postfix
+    question: postfix/main_mailer_type
+    value: "No configuration"
+    vtype: select
+
+# Installs rkhunter rootkit detection tool (Step 9.4)
+- name: Install rkhunter package
+  ansible.builtin.apt:
+    name: rkhunter
+    state: present
+
+# Configures WEB_CMD to allow mirror updates in /etc/rkhunter.conf (Step 9.4)
+- name: Configure WEB_CMD in /etc/rkhunter.conf
+  ansible.builtin.lineinfile:
+    path: /etc/rkhunter.conf
+    regexp: '^#?WEB_CMD='
+    line: 'WEB_CMD=""'
+    state: present
+    mode: "0644"
+
+# Enables mirror updates in /etc/rkhunter.conf (Step 9.4)
+- name: Configure UPDATE_MIRRORS in /etc/rkhunter.conf
+  ansible.builtin.lineinfile:
+    path: /etc/rkhunter.conf
+    regexp: '^#?UPDATE_MIRRORS='
+    line: 'UPDATE_MIRRORS=1'
+    state: present
+    mode: "0644"
+
+# Sets mirrors mode to any available mirror in /etc/rkhunter.conf (Step 9.4)
+- name: Configure MIRRORS_MODE in /etc/rkhunter.conf
+  ansible.builtin.lineinfile:
+    path: /etc/rkhunter.conf
+    regexp: '^#?MIRRORS_MODE='
+    line: 'MIRRORS_MODE=0'
+    state: present
+    mode: "0644"
+
+# Whitelists /etc/.updated hidden file in /etc/rkhunter.conf (Step 9.4)
+- name: Configure ALLOWHIDDENFILE in /etc/rkhunter.conf
+  ansible.builtin.lineinfile:
+    path: /etc/rkhunter.conf
+    regexp: '^ALLOWHIDDENFILE=/etc/\.updated'
+    line: 'ALLOWHIDDENFILE=/etc/.updated'
+    insertafter: '^#?ALLOWHIDDENFILE='
+    state: present
+    mode: "0644"
+
+# Enables daily automated rkhunter scans in /etc/default/rkhunter (Step 9.4)
+- name: Configure CRON_DAILY_RUN in /etc/default/rkhunter
+  ansible.builtin.lineinfile:
+    path: /etc/default/rkhunter
+    regexp: '^#?CRON_DAILY_RUN='
+    line: 'CRON_DAILY_RUN="true"'
+    state: present
+    mode: "0644"
+
+# Enables automated daily database updates in /etc/default/rkhunter (Step 9.4)
+- name: Configure CRON_DB_UPDATE in /etc/default/rkhunter
+  ansible.builtin.lineinfile:
+    path: /etc/default/rkhunter
+    regexp: '^#?CRON_DB_UPDATE='
+    line: 'CRON_DB_UPDATE="true"'
+    state: present
+    mode: "0644"
+
+# Enables automatic properties update on apt transactions in /etc/default/rkhunter (Step 9.4)
+- name: Configure APT_AUTOGEN in /etc/default/rkhunter
+  ansible.builtin.lineinfile:
+    path: /etc/default/rkhunter
+    regexp: '^#?APT_AUTOGEN='
+    line: 'APT_AUTOGEN="yes"'
+    state: present
+    mode: "0644"
+
+# Updates rkhunter database signatures from configured mirrors (Step 9.4)
+- name: Update rkhunter signature database
+  ansible.builtin.command:
+    cmd: rkhunter --update
+  register: hardening_rkhunter_update
+  changed_when: false
+  failed_when: hardening_rkhunter_update.rc not in [0, 1]
+  when: not ansible_check_mode
+
+# Initializes rkhunter file properties database baseline snapshot (Step 9.4)
+- name: Initialize rkhunter file properties database
+  ansible.builtin.command:
+    cmd: rkhunter --propupd
+    creates: /var/lib/rkhunter/db/rkhunter.dat
+  register: hardening_rkhunter_propupd
+  when: not ansible_check_mode
+
+# Installs GNU accounting utilities for forensic process execution tracking (Step 9.4)
+- name: Install acct package
+  ansible.builtin.apt:
+    name: acct
+    state: present
+
+# Enables and starts process accounting service across system reboots (Step 9.4)
+- name: Ensure acct service is enabled and started
+  ansible.builtin.systemd_service:
+    name: acct
+    enabled: true
+    state: started
+
+# Installs sysstat system performance monitoring and metrics collection utilities (Step 9.4)
+- name: Install sysstat package
+  ansible.builtin.apt:
+    name: sysstat
+    state: present
+
+# Enables automated sysstat metrics collection in /etc/default/sysstat (Step 9.4)
+- name: Enable sysstat data collection in /etc/default/sysstat
+  ansible.builtin.lineinfile:
+    path: /etc/default/sysstat
+    regexp: '^#?ENABLED='
+    line: 'ENABLED="true"'
+    state: present
+    mode: "0644"
+
+# Enables and starts sysstat service across system reboots (Step 9.4)
+- name: Ensure sysstat service is enabled and started
+  ansible.builtin.systemd_service:
+    name: sysstat
+    enabled: true
+    state: started

@@ -1,0 +1,173 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step9_1 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 8 completed
+#
+# Step 9.1 — Attack surface reduction: disable unused services and daemons.
+# Why:         Eliminates listening sockets, mitigates core dump vulnerability (apport), migrates SSM to apt, and purges snapd.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 9.1
+# Targets:     both
+
+---
+# Disables ModemManager across reboots and stops active daemon (Step 9.1)
+- name: Disable and stop ModemManager service
+  ansible.builtin.systemd_service:
+    name: ModemManager
+    enabled: false
+    state: stopped
+  failed_when: false
+
+# Masks packagekit and udisks2 to prevent D-Bus socket or manual activation (Step 9.1)
+- name: Mask packagekit and udisks2 services
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    masked: true
+    state: stopped
+  loop:
+    - packagekit
+    - udisks2
+  failed_when: false
+
+# Purges apport crash reporting daemon to prevent fs.suid_dumpable overrides (Step 9.1)
+- name: Purge apport crash reporting packages
+  ansible.builtin.apt:
+    name:
+      - apport
+      - apport-core-dump-handler
+      - apport-symptoms
+      - python3-apport
+    state: absent
+    purge: true
+    autoremove: true
+
+# Reloads sysctl immediately after apport purge to enforce fs.suid_dumpable=0 (Step 9.1)
+- name: Reload sysctl parameters after apport purge
+  ansible.builtin.command:
+    cmd: sysctl --system
+  changed_when: false
+
+# EC2 only
+# Checks if amazon-ssm-agent is installed as native deb package (Step 9.1)
+- name: Check if amazon-ssm-agent deb package is installed
+  ansible.builtin.command:
+    cmd: dpkg-query -W -f='${Status}' amazon-ssm-agent
+  register: hardening_ssm_deb_status
+  failed_when: false
+  changed_when: false
+  when: is_cloud # EC2 only
+
+# EC2 only
+# Removes snap IPC socket leftovers to prevent address-in-use errors on startup (Step 9.1)
+- name: Remove amazon-ssm-agent IPC socket leftovers
+  ansible.builtin.file:
+    path: /var/lib/amazon/ssm/ipc
+    state: absent
+  when:
+    - is_cloud # EC2 only
+    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+
+# EC2 only
+# Downloads amazon-ssm-agent deb package for host architecture (Step 9.1)
+- name: Download amazon-ssm-agent deb package
+  ansible.builtin.get_url:
+    url: "{{ hardening_ssm_agent_deb_url }}"
+    dest: /tmp/amazon-ssm-agent.deb
+    mode: "0644"
+  when:
+    - is_cloud # EC2 only
+    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+
+# EC2 only
+# Installs amazon-ssm-agent deb package to replace snap-managed instance (Step 9.1)
+- name: Install amazon-ssm-agent deb package
+  ansible.builtin.command:
+    cmd: dpkg -i /tmp/amazon-ssm-agent.deb
+  register: hardening_ssm_install_result
+  failed_when: false
+  changed_when: hardening_ssm_install_result.rc == 0
+  when:
+    - is_cloud # EC2 only
+    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+
+# EC2 only
+# Removes residual snapd metadata if dpkg is blocked by snap state (Step 9.1)
+- name: Remove residual snapd metadata when blocked by snap
+  ansible.builtin.file:
+    path: /var/lib/snapd
+    state: absent
+  when:
+    - is_cloud # EC2 only
+    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+    - hardening_ssm_install_result.rc != 0
+    - >-
+      ('installed by snap' in (hardening_ssm_install_result.stderr | default(''))) or
+      ('installed by snap' in (hardening_ssm_install_result.stdout | default('')))
+
+# EC2 only
+# Retries installing amazon-ssm-agent deb package after cleaning snapd metadata (Step 9.1)
+- name: Retry install amazon-ssm-agent deb package after snapd metadata removal
+  ansible.builtin.command:
+    cmd: dpkg -i /tmp/amazon-ssm-agent.deb
+  register: hardening_ssm_retry_result
+  changed_when: hardening_ssm_retry_result.rc == 0
+  when:
+    - is_cloud # EC2 only
+    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+    - hardening_ssm_install_result.rc != 0
+
+# EC2 only
+# Removes temporary amazon-ssm-agent deb installer file (Step 9.1)
+- name: Remove temporary amazon-ssm-agent deb file
+  ansible.builtin.file:
+    path: /tmp/amazon-ssm-agent.deb
+    state: absent
+  when:
+    - is_cloud # EC2 only
+    - "'install ok installed' not in hardening_ssm_deb_status.stdout"
+
+# EC2 only
+# Ensures amazon-ssm-agent service is enabled and started on EC2 (Step 9.1)
+- name: Ensure amazon-ssm-agent service is enabled and started
+  ansible.builtin.systemd_service:
+    name: amazon-ssm-agent
+    enabled: true
+    state: started
+  register: hardening_ssm_service_status
+  when: is_cloud # EC2 only
+
+# EC2 only
+# Verifies that amazon-ssm-agent service is active on EC2 before purging snapd (Step 9.1)
+- name: Verify amazon-ssm-agent service is active
+  ansible.builtin.assert:
+    that:
+      - hardening_ssm_service_status.status.ActiveState == 'active'
+    fail_msg: "amazon-ssm-agent service is not active on EC2"
+  when:
+    - is_cloud # EC2 only
+    - not ansible_check_mode
+
+# Purges snapd package across both environments (Step 9.1)
+- name: Purge snapd package
+  ansible.builtin.apt:
+    name: snapd
+    state: absent
+    purge: true
+    autoremove: true
+
+# Removes snap directories from root and system paths (Step 9.1)
+- name: Remove snap artifact directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /root/snap
+    - /var/snap
+    - /var/lib/snapd
+    - "/home/{{ hardening_admin_username }}/snap"
+    - /home/ubuntu/snap
+
+# Marks snapd on hold to prevent reinstallation as dependency (Step 9.1)
+- name: Hold snapd package to prevent reinstallation
+  ansible.builtin.dpkg_selections:
+    name: snapd
+    selection: hold

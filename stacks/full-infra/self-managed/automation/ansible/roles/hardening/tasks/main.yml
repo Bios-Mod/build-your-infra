@@ -67,39 +67,68 @@
     - hardening_step6
 
 # ==============================================================================
-# Block 2C — System Hardening & Compliance — Untested until Phase 2C
+# Block 2C — System Hardening & Compliance (Steps 7 to 12)
 # ==============================================================================
-# Step 7 — Kernel Hardening (sysctl):
-#   - Deploy /etc/sysctl.d/99-z-hardening.conf (memory, network, filesystem flags)
-#   - Trigger sysctl --system reload command
-#
-# Step 8 — AppArmor:
-#   - Install apparmor-utils, apparmor-profiles, apparmor-profiles-extra
-#
-# Step 9 — Attack Surface Reduction:
-#   - 9.1: Disable ModemManager; mask packagekit and udisks2; purge apport; hold snapd
-#   - 9.2: Permissions on crontabs (0600) and cron directories (0700); sudoers.d (0750)
-#   - 9.2: Configure login.defs (umask 027, password aging 90/1/14, sha512 rounds 65536)
-#   - 9.2: Deploy PAM common-password, common-session, and limits.conf (core=0)
-#   - 9.3: Deploy /etc/modprobe.d/disable-unused-protocols.conf and update-initramfs
-#   - 9.4: Install and configure rkhunter, acct, and sysstat
-#
-# Step 10 — Audit Trail (auditd + AIDE):
-#   - Install auditd, audispd-plugins, aide, aide-common
-#   - Deploy /etc/audit/rules.d/99-hardening.rules (with immutable -e 2 flag)
-#   - Load audit rules via augenrules --load
-#   - Deploy /etc/aide/aide.conf.d/99-hardening
-#   - Initialize AIDE database idempotently (creates: /var/lib/aide/aide.db)
-#   - Enable daily cron check in /etc/default/aide
-#
-# Step 11 — Log Management (rsyslog + logrotate):
-#   - Enable UFW logging switch
-#   - Pre-create /var/log/ufw.log and /var/log/fail2ban.log (syslog:adm 0640)
-#   - Deploy /etc/rsyslog.d/20-ufw.conf and 99-hardening.conf
-#   - Deploy /etc/logrotate.d/hardening-logs
-#   - Restart rsyslog service
-#
-# Step 12 — Security Audit Baseline (Lynis):
-#   - Install lynis package (version 3.0.9)
-#   - Deploy /etc/lynis/custom.prf
-#   - Execute lynis audit system and assert minimum score (88 VM / 90 EC2)
+
+# Step 7 — Kernel Hardening (sysctl)
+- name: "Step 7 — Kernel hardening (sysctl)"
+  ansible.builtin.import_tasks: step_07_sysctl.yml
+  tags:
+    - hardening_2c
+    - hardening_step7
+
+# Step 8 — AppArmor
+- name: "Step 8 — AppArmor"
+  ansible.builtin.import_tasks: step_08_apparmor.yml
+  tags:
+    - hardening_2c
+    - hardening_step8
+
+# Step 9.1 — Attack Surface Reduction: Services & Daemons
+- name: "Step 9.1 — Attack surface reduction: services & daemons"
+  ansible.builtin.import_tasks: step_09_1_services.yml
+  tags:
+    - hardening_2c
+    - hardening_step9_1
+
+# Step 9.2 — Attack Surface Reduction: Filesystem & User Hardening
+- name: "Step 9.2 — Attack surface reduction: filesystem & user hardening"
+  ansible.builtin.import_tasks: step_09_2_users_fs.yml
+  tags:
+    - hardening_2c
+    - hardening_step9_2
+
+# Step 9.3 — Attack Surface Reduction: Kernel Modules
+- name: "Step 9.3 — Attack surface reduction: kernel modules"
+  ansible.builtin.import_tasks: step_09_3_modprobe.yml
+  tags:
+    - hardening_2c
+    - hardening_step9_3
+
+# Step 9.4 — Attack Surface Reduction: Monitoring & Forensics
+- name: "Step 9.4 — Attack surface reduction: monitoring & forensics"
+  ansible.builtin.import_tasks: step_09_4_monitoring.yml
+  tags:
+    - hardening_2c
+    - hardening_step9_4
+
+# Step 10 — Audit Trail (auditd + AIDE)
+- name: "Step 10 — Audit trail (auditd + AIDE)"
+  ansible.builtin.import_tasks: step_10_audit.yml
+  tags:
+    - hardening_2c
+    - hardening_step10
+
+# Step 11 — Log Management (rsyslog + logrotate)
+- name: "Step 11 — Log management (rsyslog + logrotate)"
+  ansible.builtin.import_tasks: step_11_logging.yml
+  tags:
+    - hardening_2c
+    - hardening_step11
+
+# Step 12 — Security Audit Baseline (Lynis)
+- name: "Step 12 — Security audit baseline (Lynis)"
+  ansible.builtin.import_tasks: step_12_lynis.yml
+  tags:
+    - hardening_2c
+    - hardening_step12

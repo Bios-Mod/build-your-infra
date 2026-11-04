@@ -122,8 +122,32 @@ hardening_fail2ban_maxretry: 3
 hardening_fail2ban_ssh_bantime: 172800
 
 # ==============================================================================
-# Compliance and Validation (Steps 10 and 12)
+# Block 2C — System Hardening & Attack Surface Reduction (Steps 7–12)
 # ==============================================================================
+
+# URL template for downloading AWS Systems Manager Agent deb package on EC2 (Step 9.1)
+hardening_ssm_agent_deb_url: >-
+  https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_{{
+  'arm64' if ansible_facts.architecture in ['aarch64', 'arm64'] else 'amd64'
+  }}/amazon-ssm-agent.deb
+
+# Default system umask configured in /etc/login.defs (Step 9.2)
+hardening_umask: "027"
+
+# Disable private user groups to ensure umask 027 enforcement in /etc/login.defs (Step 9.2)
+hardening_usergroups_enab: "no"
+
+# Maximum password validity age in days for new accounts in /etc/login.defs and admin user (Step 9.2)
+hardening_password_max_days: 90
+
+# Minimum days required between password changes in /etc/login.defs and admin user (Step 9.2)
+hardening_password_min_days: 1
+
+# Warning window in days before password expiration in /etc/login.defs and admin user (Step 9.2)
+hardening_password_warn_age: 14
+
+# Number of SHA512 hashing rounds enforced in /etc/login.defs and PAM (Step 9.2)
+hardening_sha_crypt_rounds: 65536
 
 # Auditd immutable flag (-e 2) from Step 10. Default true matches baseline; overridden to false in vm.yml during development.
 hardening_auditd_immutable_mode: true

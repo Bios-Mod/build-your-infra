@@ -1,0 +1,121 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step10 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 9.4 completed
+#
+# Step 10 — Real-time syscall auditing (auditd) and cryptographic filesystem integrity baseline (AIDE).
+# Why:         Implements immutable kernel-level event auditing and detects unauthorized filesystem modifications.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 10
+# Targets:     both
+
+---
+# Installs auditd framework and dispatcher plugins for real-time syscall logging (Step 10)
+- name: Install auditd and audispd-plugins packages
+  ansible.builtin.apt:
+    name:
+      - auditd
+      - audispd-plugins
+    state: present
+
+# Ensures auditd service is enabled and started across system reboots (Step 10)
+- name: Ensure auditd service is enabled and started
+  ansible.builtin.systemd_service:
+    name: auditd
+    enabled: true
+    state: started
+
+# Deploys auditd syscall rules with conditional immutable mode (-e 2) (Step 10)
+- name: Deploy auditd hardening rules
+  vars:
+    hardening_audit_rules_content: "{{ lookup('file', hardening_configs_dir ~ '/audit/99-hardening.rules') }}"
+  ansible.builtin.copy:
+    content: >-
+      {{ hardening_audit_rules_content if hardening_auditd_immutable_mode
+         else (hardening_audit_rules_content | replace('\n-e 2', '\n# -e 2')) }}
+    dest: /etc/audit/rules.d/99-hardening.rules
+    owner: root
+    group: root
+    mode: "0640"
+  register: hardening_audit_rules_deploy
+
+# Attempts to load generated audit rules via augenrules (Step 10)
+- name: Load audit rules via augenrules
+  ansible.builtin.command:
+    cmd: augenrules --load
+  register: hardening_augenrules_load
+  failed_when: false
+  changed_when: hardening_audit_rules_deploy.changed
+  when: not ansible_check_mode
+
+# Restarts auditd daemon to reset ruleset if immutable mode (-e 2) blocked rule reload (Step 10)
+- name: Restart auditd when immutable mode prevents rule reload
+  ansible.builtin.systemd_service:
+    name: auditd
+    state: restarted
+  when:
+    - not ansible_check_mode
+    - >-
+      (hardening_augenrules_load.rc != 0) or
+      ('Operation not permitted' in (hardening_augenrules_load.stderr | default('')))
+
+# Retries loading audit rules following auditd service restart (Step 10)
+- name: Retry loading audit rules after auditd restart
+  ansible.builtin.command:
+    cmd: augenrules --load
+  when:
+    - not ansible_check_mode
+    - >-
+      (hardening_augenrules_load.rc != 0) or
+      ('Operation not permitted' in (hardening_augenrules_load.stderr | default('')))
+  changed_when: hardening_audit_rules_deploy.changed
+
+# Installs AIDE file integrity monitoring packages (Step 10)
+- name: Install AIDE packages
+  ansible.builtin.apt:
+    name:
+      - aide
+      - aide-common
+    state: present
+
+# Deploys custom AIDE integrity monitoring rules defining critical monitored paths (Step 10)
+- name: Deploy AIDE integrity monitoring rules
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/aide/99-hardening"
+    dest: /etc/aide/aide.conf.d/99-hardening
+    owner: root
+    group: root
+    mode: "0644"
+
+# Initializes AIDE integrity baseline snapshot database (code 17 is expected for root-only files) (Step 10)
+- name: Initialize AIDE integrity database
+  ansible.builtin.command:
+    cmd: aide --init --config /etc/aide/aide.conf
+    creates: /var/lib/aide/aide.db
+  register: hardening_aide_init
+  failed_when: hardening_aide_init.rc not in [0, 17]
+  when: not ansible_check_mode
+
+# Checks if newly generated AIDE database snapshot file exists (Step 10)
+- name: Check if new AIDE database exists
+  ansible.builtin.stat:
+    path: /var/lib/aide/aide.db.new
+  register: hardening_aide_db_new_stat
+  when: not ansible_check_mode
+
+# Activates newly generated AIDE database as production baseline snapshot (Step 10)
+- name: Activate AIDE database
+  ansible.builtin.command:
+    cmd: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - hardening_aide_db_new_stat.stat.exists | default(false)
+
+# Enables automated daily AIDE integrity checks in /etc/default/aide (Step 10)
+- name: Enable daily AIDE cron check
+  ansible.builtin.lineinfile:
+    path: /etc/default/aide
+    regexp: '^#?CRON_DAILY_RUN='
+    line: 'CRON_DAILY_RUN=yes'
+    state: present
+    mode: "0644"

@@ -1,0 +1,21 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step9_3 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 9.2 completed
+#
+# Step 9.3 — Attack surface reduction: disable unused kernel protocol modules.
+# Why:         Blacklists dccp, sctp, rds, and tipc to eliminate kernel-level attack vectors, and rebuilds initramfs.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 9.3
+# Targets:     both
+
+---
+# Deploys modprobe configuration blacklisting unused network protocols (NETW-3200) (Step 9.3)
+- name: Deploy modprobe configuration to disable unused protocols
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/modprobe/disable-unused-protocols.conf"
+    dest: /etc/modprobe.d/disable-unused-protocols.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Update-initramfs

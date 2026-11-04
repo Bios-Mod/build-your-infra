@@ -1,0 +1,21 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step7 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 6 completed
+#
+# Step 7 — Kernel hardening parameters via sysctl configuration.
+# Why:         Applies network, memory, and filesystem kernel security parameters with 99-z- load order guarantee.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 7
+# Targets:     both
+
+---
+# Deploys kernel hardening configuration with 99-z- prefix to guarantee last load precedence (Step 7)
+- name: Deploy kernel hardening sysctl configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/sysctl/99-z-hardening.conf"
+    dest: /etc/sysctl.d/99-z-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload sysctl

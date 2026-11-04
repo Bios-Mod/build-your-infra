@@ -1,0 +1,19 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step8 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 7 completed
+#
+# Step 8 — AppArmor Mandatory Access Control utilities and extra profile libraries.
+# Why:         Expands AppArmor profile coverage and CLI management tools to confine services to minimum privileges.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 8
+# Targets:     both
+
+---
+# Installs AppArmor utilities and comprehensive daemon profile libraries (Step 8)
+- name: Install AppArmor utilities and profile packages
+  ansible.builtin.apt:
+    name:
+      - apparmor-utils
+      - apparmor-profiles
+      - apparmor-profiles-extra
+    state: present

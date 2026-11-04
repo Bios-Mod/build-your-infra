@@ -1,0 +1,146 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step9_2 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 9.1 completed
+#
+# Step 9.2 — Attack surface reduction: filesystem permissions, PAM policies, login.defs, and core dumps.
+# Why:         Restricts cron and sudoers directory permissions, enforces strict umask (027), password aging, and isolates session tempdirs.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 9.2
+# Targets:     both
+
+---
+# Enforces restrictive permissions on system crontab file (FILE-7524) (Step 9.2)
+- name: Set permissions on /etc/crontab
+  ansible.builtin.file:
+    path: /etc/crontab
+    owner: root
+    group: root
+    mode: "0600"
+
+# Enforces restrictive directory permissions across cron directories (FILE-7524) (Step 9.2)
+- name: Set permissions on cron directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    owner: root
+    group: root
+    mode: "0700"
+  loop:
+    - /etc/cron.d
+    - /etc/cron.daily
+    - /etc/cron.hourly
+    - /etc/cron.weekly
+    - /etc/cron.monthly
+
+# Enforces restrictive permissions on sudoers.d directory (Step 9.2)
+- name: Set permissions on /etc/sudoers.d
+  ansible.builtin.file:
+    path: /etc/sudoers.d
+    owner: root
+    group: root
+    mode: "0750"
+
+# Configures default UMASK to 027 in /etc/login.defs (AUTH-9328) (Step 9.2)
+- name: Configure UMASK in /etc/login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^#?UMASK\s+'
+    line: "UMASK\t\t{{ hardening_umask }}"
+    state: present
+    mode: "0644"
+
+# Disables USERGROUPS_ENAB to ensure strict umask application without private group masking (Step 9.2)
+- name: Configure USERGROUPS_ENAB in /etc/login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^#?USERGROUPS_ENAB\s+'
+    line: "USERGROUPS_ENAB\t{{ hardening_usergroups_enab }}"
+    state: present
+    mode: "0644"
+
+# Enforces maximum password age of 90 days for new accounts in /etc/login.defs (Step 9.2)
+- name: Configure PASS_MAX_DAYS in /etc/login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^#?PASS_MAX_DAYS\s+'
+    line: "PASS_MAX_DAYS\t{{ hardening_password_max_days }}"
+    state: present
+    mode: "0644"
+
+# Enforces minimum password age of 1 day for new accounts in /etc/login.defs (Step 9.2)
+- name: Configure PASS_MIN_DAYS in /etc/login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^#?PASS_MIN_DAYS\s+'
+    line: "PASS_MIN_DAYS\t{{ hardening_password_min_days }}"
+    state: present
+    mode: "0644"
+
+# Enforces password expiration warning period of 14 days in /etc/login.defs (Step 9.2)
+- name: Configure PASS_WARN_AGE in /etc/login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^#?PASS_WARN_AGE\s+'
+    line: "PASS_WARN_AGE\t{{ hardening_password_warn_age }}"
+    state: present
+    mode: "0644"
+
+# Configures minimum SHA512 hashing rounds to 65536 in /etc/login.defs (AUTH-9229) (Step 9.2)
+- name: Configure SHA_CRYPT_MIN_ROUNDS in /etc/login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^#?SHA_CRYPT_MIN_ROUNDS\s+'
+    line: "SHA_CRYPT_MIN_ROUNDS {{ hardening_sha_crypt_rounds }}"
+    state: present
+    mode: "0644"
+
+# Configures maximum SHA512 hashing rounds to 65536 in /etc/login.defs (AUTH-9230) (Step 9.2)
+- name: Configure SHA_CRYPT_MAX_ROUNDS in /etc/login.defs
+  ansible.builtin.lineinfile:
+    path: /etc/login.defs
+    regexp: '^#?SHA_CRYPT_MAX_ROUNDS\s+'
+    line: "SHA_CRYPT_MAX_ROUNDS {{ hardening_sha_crypt_rounds }}"
+    state: present
+    mode: "0644"
+
+# Installs PAM quality checking and per-user temporary directory isolation modules (Step 9.2)
+- name: Install PAM security modules
+  ansible.builtin.apt:
+    name:
+      - libpam-pwquality
+      - libpam-tmpdir
+    state: present
+
+# Deploys hardened PAM password policy configuration (Step 9.2)
+- name: Deploy PAM common-password configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/pam/common-password"
+    dest: /etc/pam.d/common-password
+    owner: root
+    group: root
+    mode: "0644"
+
+# Deploys hardened PAM session configuration with pam_tmpdir isolation (Step 9.2)
+- name: Deploy PAM common-session configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/pam/common-session"
+    dest: /etc/pam.d/common-session
+    owner: root
+    group: root
+    mode: "0644"
+
+# Deploys security limits configuration disabling core dumps at PAM/shell layer (Step 9.2)
+- name: Deploy security limits configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/limits/limits.conf"
+    dest: /etc/security/limits.conf
+    owner: root
+    group: root
+    mode: "0644"
+
+# Enforces password aging policy for administrator account (Step 9.2)
+- name: Configure password aging for administrator account
+  ansible.builtin.user:
+    name: "{{ hardening_admin_username }}"
+    password_expire_max: "{{ hardening_password_max_days }}"
+    password_expire_min: "{{ hardening_password_min_days }}"
+    password_expire_warn: "{{ hardening_password_warn_age }}"
