@@ -1450,6 +1450,8 @@ dpkg -l | grep amazon-ssm-agent
 
 Restrict file permissions on crontabs (`0600`), cron directories (`0700`), and `sudoers.d` (`0750`). Configure `/etc/login.defs` with strict parameters: `UMASK 027`, `USERGROUPS_ENAB no`, password aging (`PASS_MAX_DAYS 90`, `PASS_MIN_DAYS 1`, `PASS_WARN_AGE 14`), and `SHA_CRYPT_MIN/MAX_ROUNDS 65536`. Install `libpam-pwquality` and `libpam-tmpdir`, deploy hardened `common-password`, `common-session`, and `limits.conf` (disabling core dumps at shell level), and enforce password aging policy on the administrator account.
 
+> **Operational Warning (Lockout Risk):** Deploying `common-password` and `common-session` alters system-wide PAM authentication and session setup. Always maintain an independent secondary active SSH session open before executing this step to prevent accidental administrative lockout in the event of syntax or module errors.
+
 **Run on the control node (Mac):**
 
 ```bash
@@ -1576,7 +1578,7 @@ sudo modprobe dccp 2>&1
 
 ### What was done
 
-Preconfigure Postfix debconf to "No configuration" to eliminate interactive prompts, install `rkhunter`, configure mirror updates and whitelists in `/etc/rkhunter.conf` and `/etc/default/rkhunter`, perform signature updates (`rkhunter --update`), initialize the file properties database baseline snapshot (`rkhunter --propupd`), install and enable process accounting (`acct`), and configure automated performance data collection (`sysstat`).
+Preconfigure Postfix debconf to "No configuration" to eliminate interactive prompts, install `rkhunter`, configure mirror updates and whitelists in `/etc/rkhunter.conf` and `/etc/default/rkhunter`, perform signature updates (`rkhunter --update`), refresh the file properties database baseline snapshot (`rkhunter --propupd`) when packages or configuration change, install and enable process accounting (`acct`), and configure automated performance data collection (`sysstat`). Tasks on package-generated configuration files and service units are protected under check mode (`ignore_errors: "{{ ansible_check_mode }}"`) to ensure `--check --diff` passes cleanly on fresh unconfigured hosts.
 
 **Run on the control node (Mac):**
 
@@ -1590,7 +1592,7 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
 
 ### Why
 
-Detection tools provide situational awareness and forensic capability post-incident. `rkhunter` checks system binaries against rootkit signatures and verifies checksums. GNU `acct` records every command executed by every user independent of shell history. `sysstat` gathers CPU, memory, and disk I/O metrics every 10 minutes to detect abnormal resource exhaustion or crypto-mining activity.
+Detection tools provide situational awareness and forensic capability post-incident. `rkhunter` checks system binaries against rootkit signatures and verifies checksums; executing `rkhunter --propupd` strictly when package or configuration tasks report changes ensures the baseline reflects post-deploy file state while achieving zero changes on subsequent idempotent executions. GNU `acct` records every command executed by every user independent of shell history. `sysstat` gathers CPU, memory, and disk I/O metrics every 10 minutes to detect abnormal resource exhaustion or crypto-mining activity.
 
 ### Verification
 
@@ -1619,7 +1621,7 @@ sar -u 1 2
 
 ### What was done
 
-Install `auditd` and `audispd-plugins`, deploy `/etc/audit/rules.d/99-hardening.rules` with conditional immutable mode (`-e 2`), load audit rules via `augenrules --load` (with automated recovery if immutable mode is active), install `aide` and `aide-common`, deploy `/etc/aide/aide.conf.d/99-hardening`, initialize the cryptographic database baseline snapshot (`aide --init`), activate the database snapshot, and enable automated daily integrity checks in `/etc/default/aide`.
+Install `auditd` and `audispd-plugins`, deploy `/etc/audit/rules.d/99-hardening.rules` with conditional immutable mode (`-e 2`), reload audit rules via `augenrules --load` (executed conditionally when rules change, with automated restart recovery if active immutable mode returns "Operation not permitted"), verify runtime audit state with `auditctl -s`, install `aide` and `aide-common`, deploy `/etc/aide/aide.conf.d/99-hardening`, initialize the cryptographic database baseline snapshot (`aide --init`), activate the database snapshot (`aide.db.new` moved to `aide.db` strictly when the baseline was initialized), and enable automated daily integrity checks in `/etc/default/aide`.
 
 **Run on the control node (Mac):**
 
@@ -1636,7 +1638,9 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
 
 ### Why
 
-auditd and AIDE cover complementary security dimensions: auditd logs events in real-time at the kernel syscall level (identity modifications, pam authentication, privilege escalation via sudo, file deletion), while AIDE detects persistent filesystem state tampering against a cryptographically hashed baseline snapshot. The `-e 2` immutable flag ensures that even an attacker obtaining root privileges cannot modify or disable audit rules without rebooting the system.
+auditd and AIDE cover complementary security dimensions: auditd logs events in real-time at the kernel syscall level (identity modifications, pam authentication, privilege escalation via sudo, file deletion), while AIDE detects persistent filesystem state tampering against a cryptographically hashed baseline snapshot.
+
+`augenrules --load` and auditd restarts execute only when rules change (`hardening_audit_rules_deploy.changed`). If an existing session has `-e 2` active, auditd returns `Operation not permitted`; the role catches this specific error condition, restarts `auditd` to clear the loaded ruleset, and re-applies rules. A post-load runtime verification queries `auditctl -s` to confirm `enabled 2` (or `enabled 1` when `hardening_auditd_immutable_mode` is false); on ARM64, this verification catches any silent abort caused by deprecated syscall names (such as `unlink`/`rename` outside `*at` variants). For AIDE, moving `aide.db.new` to `aide.db` is gated strictly on `hardening_aide_init.changed`, guaranteeing an existing baseline is never overwritten.
 
 ### Verification
 
@@ -1718,7 +1722,7 @@ sudo logrotate --debug /etc/logrotate.d/hardening-logs 2>&1 | grep -E "consideri
 
 ### What was done
 
-Install Lynis (verifying version 3.0.9), deploy `lynis/custom.prf`, execute full system security audit, parse `hardening_index` from `/var/log/lynis-report.dat`, display score summary, and emit a warning if the Hardening Index falls below the target threshold.
+Install Lynis (verifying version 3.0.9), deploy `lynis/custom.prf`, execute full system security audit, parse `hardening_index` from `/var/log/lynis-report.dat`, display score summary, and emit a warning if the Hardening Index falls below the target threshold. In accordance with the decision log, Lynis records the score and emits a warning without failing execution (no enforce option).
 
 > **Target Hardening Index Baseline:**
 > - **Lynis ≥ 90 on AWS EC2** (`multi-lab-vps`)
