@@ -1125,19 +1125,25 @@ Execute the exact validated sequence below to transition from public SSH to the 
    Retrieve the public key of your Mac control node.
    - If using the WireGuard macOS App: open the tunnel, click **Edit**, and copy the **Public key**.
    - If using CLI (`wireguard-tools`):
+
      ```bash
      awk '/PrivateKey/ {print $3}' /etc/wireguard/wg0.conf | wg pubkey
      ```
+
    - If no key pair exists yet on the Mac, generate one:
+
      ```bash
      wg genkey | tee mac_private.key | wg pubkey > mac_public.key
      ```
+
    Configure the 44-character public key in your real host variables file `inventories/host_vars/multi-lab-vps.yml`:
+
    ```yaml
    wireguard_peer_public_keys:
      mac: "<mac-public-key>"
      local_vm: "CHANGE_ME_LOCAL_VM_WIREGUARD_PUBLIC_KEY"
    ```
+
    Ansible enforces an assertion verifying that `mac` exists, contains no placeholder text (`CHANGE_ME`, `<`), and is valid 44-character base64 before deploying the hub.
 
 2. **Deploy Step 5 on EC2 Hub (without `--check`):**
@@ -1155,6 +1161,7 @@ Execute the exact validated sequence below to transition from public SSH to the 
 
 3. **Configure Mac WireGuard Tunnel:**
    In your Mac WireGuard configuration (`/etc/wireguard/wg0.conf` or macOS App), retain the existing `[Interface]` section (or populate from `configs/wireguard/client-template.conf` with `Address = 172.16.0.2/32`). Update ONLY the `[Peer]` section with the hub parameters:
+
    ```ini
    [Peer]
    PublicKey           = <hub-public-key>
@@ -1162,6 +1169,7 @@ Execute the exact validated sequence below to transition from public SSH to the 
    AllowedIPs          = 172.16.0.0/24
    PersistentKeepalive = 25
    ```
+
    > ⚠️ **Security Rule:** Never copy or paste a PrivateKey. Each host generates and stores its private key locally; only public keys are shared.
 
 4. **Activate Tunnel and Verify Connectivity:**
@@ -1242,6 +1250,7 @@ ssh -p 22222 -o ConnectTimeout=5 <admin_username>@<ec2_eip>
   - Check for crossed keys: the client `[Peer] PublicKey` must equal the hub public key, and the hub `[Peer] PublicKey` must equal the client public key.
   - Check service logs: run `sudo journalctl -xeu wg-quick@wg0` on the hub to identify syntax or interface errors.
 - **SSM Session Manager as Emergency Recovery Path:** If SSH connectivity is interrupted on EC2, start an AWS Systems Manager session to inspect and recover network access without open inbound ports:
+
   ```bash
   aws ssm start-session --target <instance_id> --profile multi-lab-admin
   ```
@@ -1725,6 +1734,7 @@ sudo logrotate --debug /etc/logrotate.d/hardening-logs 2>&1 | grep -E "consideri
 Install Lynis (verifying version 3.0.9), deploy `lynis/custom.prf`, execute full system security audit, parse `hardening_index` from `/var/log/lynis-report.dat`, display score summary, and emit a warning if the Hardening Index falls below the target threshold. In accordance with the decision log, Lynis records the score and emits a warning without failing execution (no enforce option).
 
 > **Target Hardening Index Baseline:**
+>
 > - **Lynis ≥ 90 on AWS EC2** (`multi-lab-vps`)
 > - **Lynis ≥ 88 on Local VM** (`multi-lab-local`)
 >
@@ -1753,7 +1763,7 @@ Verify Hardening Index score from the generated report data:
 **Run on the VM / EC2 (inside the SSH session):**
 
 ```bash
-grep hardening_index /var/log/lynis-report.dat
+sudo grep hardening_index /var/log/lynis-report.dat
 # → hardening_index=90 (EC2) or hardening_index=88 (VM)
 ```
 

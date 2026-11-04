@@ -29,10 +29,12 @@
 - name: Deploy auditd hardening rules
   vars:
     hardening_audit_rules_content: "{{ lookup('file', hardening_configs_dir ~ '/audit/99-hardening.rules') }}"
+    hardening_audit_eol: "\n"
   ansible.builtin.copy:
     content: >-
-      {{ hardening_audit_rules_content if hardening_auditd_immutable_mode
-         else (hardening_audit_rules_content | regex_replace('(?m)^-e 2\s*$', '# -e 2')) }}
+      {{ (hardening_audit_rules_content if hardening_auditd_immutable_mode
+         else (hardening_audit_rules_content | regex_replace('(?m)^-e 2[ \t]*$', '# -e 2')))
+         ~ hardening_audit_eol }}
     dest: /etc/audit/rules.d/99-hardening.rules
     owner: root
     group: root
@@ -139,8 +141,8 @@
 - name: Enable daily AIDE cron check
   ansible.builtin.lineinfile:
     path: /etc/default/aide
-    regexp: '^#?CRON_DAILY_RUN='
-    line: 'CRON_DAILY_RUN=yes'
+    regexp: "^#?CRON_DAILY_RUN="
+    line: "CRON_DAILY_RUN=yes"
     state: present
     mode: "0644"
   ignore_errors: "{{ ansible_check_mode }}"
