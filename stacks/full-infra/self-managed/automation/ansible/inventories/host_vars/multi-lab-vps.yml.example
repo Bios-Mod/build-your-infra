@@ -43,3 +43,6 @@ wireguard_peer_public_keys:
   mac: "CHANGE_ME_MAC_WIREGUARD_PUBLIC_KEY"
   # Local VM peer public key
   local_vm: "CHANGE_ME_LOCAL_VM_WIREGUARD_PUBLIC_KEY"
+
+# Target minimum Lynis Hardening Index threshold for AWS EC2 instance (Step 12)
+hardening_lynis_min_score: 90

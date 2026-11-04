@@ -149,7 +149,7 @@ hardening_password_warn_age: 14
 # Number of SHA512 hashing rounds enforced in /etc/login.defs and PAM (Step 9.2)
 hardening_sha_crypt_rounds: 65536
 
-# Auditd immutable flag (-e 2) from Step 10. Default true matches baseline; overridden to false in vm.yml during development.
+# Auditd immutable flag (-e 2) from Step 10. Default true matches baseline; overridden to false in host_vars/multi-lab-local.yml during development.
 hardening_auditd_immutable_mode: true
 
 # Lynis minimum Hardening Index threshold expected for VM target host (Step 12 baseline; EC2 overrides to 90)

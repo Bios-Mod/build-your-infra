@@ -110,6 +110,9 @@
       - libpam-tmpdir
     state: present
 
+# WARNING: Lockout risk. Deploying common-password modifies system-wide PAM password validation.
+# A syntax or module error will prevent sudo elevation and user authentication.
+# Maintain a secondary active SSH session open before applying this task.
 # Deploys hardened PAM password policy configuration (Step 9.2)
 - name: Deploy PAM common-password configuration
   ansible.builtin.copy:
@@ -119,6 +122,9 @@
     group: root
     mode: "0644"
 
+# WARNING: Lockout risk. Deploying common-session configures pam_tmpdir and session initialization.
+# Misconfiguration can block new login sessions and SSH connections.
+# Maintain a secondary active SSH session open before applying this task.
 # Deploys hardened PAM session configuration with pam_tmpdir isolation (Step 9.2)
 - name: Deploy PAM common-session configuration
   ansible.builtin.copy:
