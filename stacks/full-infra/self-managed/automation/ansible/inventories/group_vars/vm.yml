@@ -13,17 +13,18 @@
 is_cloud: false
 
 # Connection phase selector:
-# 'pre'  -> Initial connection: LAN IP, default SSH port 22, installer user.
-# 'post' -> Hardened connection: WireGuard tunnel IP, port 22222, admin user.
+# 'pre'      -> Initial connection: LAN IP (vm_lan_ip), default SSH port 22, installer user (vm_initial_user).
+# 'hardened' -> Hardened SSH: LAN IP (vm_lan_ip), hardened port 22222 (ssh_hardened_port), admin user (admin_username).
+# 'wg'       -> WireGuard perimeter: VPN tunnel IP (vm_wg0_ip = 172.16.0.3), port 22222, admin user.
 connection_mode: "pre"
 
-# Dynamic target host IP driven by connection phase (LAN IP during bootstrap, WireGuard VPN IP post-hardening)
-ansible_host: "{{ vm_lan_ip if connection_mode == 'pre' else vm_wg0_ip }}"
+# Dynamic target host IP driven by connection phase (LAN IP in 'pre' and 'hardened', WireGuard tunnel IP in 'wg')
+ansible_host: "{{ vm_wg0_ip if connection_mode == 'wg' else vm_lan_ip }}"
 
-# Target SSH listening port (22 during bootstrap, hardened port 22222 post-hardening)
+# Target SSH listening port (22 during bootstrap in 'pre', hardened port 22222 in 'hardened' and 'wg')
 ansible_port: "{{ 22 if connection_mode == 'pre' else ssh_hardened_port }}"
 
-# Remote user for SSH connection (installer user during bootstrap, dedicated admin post-hardening)
+# Remote user for SSH connection (installer user in 'pre', dedicated admin in 'hardened' and 'wg')
 ansible_user: "{{ vm_initial_user if connection_mode == 'pre' else admin_username }}"
 
 # TLS certificate strategy for Nginx web server (Step 6 of full infra)

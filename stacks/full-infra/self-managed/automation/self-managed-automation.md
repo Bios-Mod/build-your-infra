@@ -643,6 +643,18 @@ in `ssh-agent`, which can exhaust allowed attempts and trigger a lockout before 
 the correct key. If the private key is protected with a passphrase, load it into your agent
 once per terminal session using `ssh-add ~/.ssh/CHANGE_ME_lab_key`.
 
+#### Connection States Lifecycle (`connection_mode`)
+
+Host inventories track three progressive network connection states via `connection_mode`:
+
+| Mode | Destination Port | SSH User | Target IP | When it applies |
+|---|---|---|---|---|
+| `pre` | `22` | Initial OS user (`vm_initial_user` on VM, `ubuntu` on EC2) | LAN IP (`vm_lan_ip`) or Elastic IP (`ec2_eip`) | Default state. Used during initial provisioning (`bootstrap.yml`) and pre-hardening tasks. |
+| `hardened` | `22222` | Dedicated administrator (`admin_username`) | LAN IP (`vm_lan_ip`) or Elastic IP (`ec2_eip`) | Set in `host_vars/<host>.yml` after completing Step 3 (SSH Hardening), before WireGuard perimeter lockdown. |
+| `wg` | `22222` | Dedicated administrator (`admin_username`) | WireGuard interface IP (`172.16.0.1` on EC2 hub, `172.16.0.3` on VM peer) | Set in `host_vars/<host>.yml` after Step 5 (WireGuard) is deployed and the VPN tunnel on the Mac control node is active. |
+
+> **Transition Timing:** Never switch to `connection_mode: "hardened"` until Step 3 has successfully reconfigured and restarted `sshd` on port 22222. Never switch to `connection_mode: "wg"` until the WireGuard tunnel on your control node (Mac) is up and you have confirmed end-to-end reachability to the VPN IP (`ping 172.16.0.1` or `ssh -p 22222 <admin_user>@172.16.0.1`).
+
 > **Optional but recommended:** take a hypervisor snapshot of the VM before
 > the first run.
 

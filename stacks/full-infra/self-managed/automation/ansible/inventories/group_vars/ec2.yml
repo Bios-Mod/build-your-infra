@@ -13,17 +13,17 @@
 is_cloud: true
 
 # Connection phase selector:
-# 'pre'  -> Initial connection: AWS Elastic IP, default SSH port 22, default AMI user 'ubuntu'.
-# 'post' -> Hardened connection: WireGuard hub IP, port 22222, admin user.
+# 'pre'      -> Initial connection: AWS Elastic IP (ec2_eip), default SSH port 22, default AMI user 'ubuntu' (ec2_initial_user).
+# 'hardened' -> Hardened SSH: AWS Elastic IP (ec2_eip), hardened port 22222 (ssh_hardened_port), dedicated admin user (admin_username).
+# 'wg'       -> WireGuard perimeter: VPN hub IP (ec2_wg0_ip = wireguard_server_vpn_ip = 172.16.0.1), port 22222, admin user.
 connection_mode: "pre"
 
 # Target IP and initial credentials for pre-hardening bootstrap
 ec2_initial_user: "ubuntu"
-ec2_elastic_ip: "X.X.X.X"
 ec2_wg0_ip: "{{ wireguard_server_vpn_ip }}"
 
 # Dynamic Ansible connection settings driven by connection_mode
-ansible_host: "{{ ec2_elastic_ip if connection_mode == 'pre' else ec2_wg0_ip }}"
+ansible_host: "{{ ec2_wg0_ip if connection_mode == 'wg' else ec2_eip }}"
 ansible_port: "{{ 22 if connection_mode == 'pre' else ssh_hardened_port }}"
 ansible_user: "{{ ec2_initial_user if connection_mode == 'pre' else admin_username }}"
 
@@ -34,7 +34,7 @@ tls_mode: "letsencrypt"
 lan_trusted_cidr: ""
 
 # WireGuard hub endpoint reachable publicly via Elastic IP
-wireguard_endpoint: "{{ ec2_elastic_ip }}:{{ wireguard_port }}"
+wireguard_endpoint: "{{ ec2_eip }}:{{ wireguard_port }}"
 
 # Lynis minimum Hardening Index threshold expected for AWS EC2 Graviton host
 hardening_lynis_min_score: 90
