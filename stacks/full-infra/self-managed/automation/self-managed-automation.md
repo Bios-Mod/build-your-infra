@@ -697,6 +697,11 @@ ansible-playbook playbooks/ping.yml --limit multi-lab-local
 # → multi-lab-local : ok=2 changed=0 unreachable=0 failed=0
 ```
 
+### Troubleshooting
+
+- **Python 3.15 incompatibility:** `ansible-core 2.21` supports Python 3.12 to 3.14 on the control node. Python 3.15 is incompatible and fails at startup with module import errors. Use Python 3.14 to create `.venv`.
+- **`passlib` requirement on modern macOS:** Python >= 3.13 removes the standard library `crypt` module. The `passlib` package is pinned in `requirements.txt` to enable the `password_hash('sha512', rounds=65536)` Jinja filter on the local macOS control node without depending on deprecated system C-bindings.
+
 ---
 
 ## Step 9 — Bootstrap the admin user (Hardening Step 0)
@@ -890,6 +895,12 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
 # → changed=0 (gate for block 2A: second run with no changes)
 ```
 
+### Troubleshooting
+
+- **IP collision inside DHCP pool:** Ensure `vm_static_ip` is selected strictly outside your router's DHCP reservation pool to prevent duplicate IP conflicts.
+- **Conflicting Netplan / cloud-init files:** If DHCP continues to be acquired dynamically on reboot, inspect `/etc/netplan/`. The role automatically moves conflicting files to `/root/netplan-backup/` and disables cloud-init network configuration (`/etc/cloud/cloud.cfg.d/99-disable-network-config.cfg`), but verify no custom drop-ins in `/etc/systemd/network/` override `DHCP=no`.
+- **Pre-flight assertion errors (`< >` or `CHANGE_ME`):** The assertion fails if `vm_interface`, `vm_static_ip`, or `vm_gateway` contains placeholder strings (`<`, `>`, `CHANGE_ME`) or if the VM is not currently reachable at the target IP. Replace all values in the real `inventories/host_vars/multi-lab-local.yml` before running.
+
 ---
 
 ## Step 12 — EC2 bootstrap (Hardening Steps 0–1)
@@ -1008,7 +1019,7 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step3 --ask-become-pass
 ```
 
-Update `connection_mode` in `inventories/host_vars/multi-lab-vps.yml` from `"pre"` to `"hardened"`.
+Update `connection_mode: "hardened"` in your real host variables file (`inventories/host_vars/multi-lab-vps.yml` or `inventories/host_vars/multi-lab-local.yml`).
 
 📄 [`configs/ssh/sshd_config`](../../../../modules/hardening/self-managed/configs/ssh/sshd_config)
 📄 [`configs/ssh/issue.net.template`](../../../../modules/hardening/self-managed/configs/ssh/issue.net.template)
@@ -1052,6 +1063,11 @@ ls /etc/ssh/ssh_host_*
 # → /etc/ssh/ssh_host_ed25519_key
 # → /etc/ssh/ssh_host_ed25519_key.pub
 ```
+
+### Troubleshooting
+
+- **Sudo password prompt (`BECOME password`):** From this step forward, the `BECOME password` prompted by Ansible is the administrator account password (`admin_username`) created in Step 0, NOT the original installer or cloud-init (`ubuntu`) password.
+- **Connection mode transition:** Add or update `connection_mode: "hardened"` directly in your real host variables file (`inventories/host_vars/multi-lab-vps.yml` or `inventories/host_vars/multi-lab-local.yml`), not in example templates or group variables.
 
 ---
 
@@ -1101,61 +1117,88 @@ sudo ufw status numbered
 
 Install WireGuard, generate the server key pair idempotently with restrictive permissions (`0600`), deploy `wg0.conf` for the VPN hub (EC2) or client peer (VM), enable kernel packet forwarding in `/etc/sysctl.d/99-wireguard.conf`, enable and start `wg-quick@wg0`, and configure UFW rules for the VPN tunnel (`51820/udp`, SSH on `wg0` only, routed forwarding on the hub).
 
-### Safe Sequence & Lockout Prevention
+### Safe Sequence & Progression Protocol
 
-> **Safe Progression Protocol:**
->
-> 1. **Deploy Step 5 on EC2:** Apply the WireGuard role with `hardening_wg_close_public_ssh: false`. Ansible displays the generated WireGuard public key for EC2.
-> 2. **Configure Mac Client:** Generate client keypair on Mac (`wg genkey | tee mac_private.key | wg pubkey > mac_public.key`). Create `/etc/wireguard/wg0.conf` on Mac using `client-template.conf` with `Address = 172.16.0.2/32`, `Endpoint = <ec2_eip>:51820`, and EC2 public key.
-> 3. **Register Mac Peer:** Set `wireguard_peer_public_keys.mac` in `host_vars/multi-lab-vps.yml` and re-run Step 5.
-> 4. **Activate Tunnel & Verify:** Start tunnel on Mac (`sudo wg-quick up wg0`) and verify VPN connectivity (`ping 172.16.0.1` and `ssh -p 22222 <admin_username>@172.16.0.1`).
-> 5. **Close Public SSH:** Set `hardening_wg_close_public_ssh: true` in `host_vars/multi-lab-vps.yml` and re-apply Step 5 to delete the public port 22222 UFW rule. Run `terraform apply` with empty CIDR variables to remove SSH rules from `multi-lab-sg`.
-> 6. **Switch Connection Mode:** Update `connection_mode: "wg"` in `host_vars/multi-lab-vps.yml`.
-> 7. **Recovery:** If connectivity is interrupted on EC2, start an AWS Systems Manager session (`aws ssm start-session --target <instance_id> --profile multi-lab-admin`). On the VM, use the hypervisor console.
+Execute the exact validated sequence below to transition from public SSH to the WireGuard perimeter without lockout risk:
 
-Apply Step 5 on the EC2 hub:
+1. **Obtain Mac Public Key Before Initial Run:**
+   Retrieve the public key of your Mac control node.
+   - If using the WireGuard macOS App: open the tunnel, click **Edit**, and copy the **Public key**.
+   - If using CLI (`wireguard-tools`):
+     ```bash
+     awk '/PrivateKey/ {print $3}' /etc/wireguard/wg0.conf | wg pubkey
+     ```
+   - If no key pair exists yet on the Mac, generate one:
+     ```bash
+     wg genkey | tee mac_private.key | wg pubkey > mac_public.key
+     ```
+   Configure the 44-character public key in your real host variables file `inventories/host_vars/multi-lab-vps.yml`:
+   ```yaml
+   wireguard_peer_public_keys:
+     mac: "<mac-public-key>"
+     local_vm: "CHANGE_ME_LOCAL_VM_WIREGUARD_PUBLIC_KEY"
+   ```
+   Ansible enforces an assertion verifying that `mac` exists, contains no placeholder text (`CHANGE_ME`, `<`), and is valid 44-character base64 before deploying the hub.
 
-**Run on the control node (Mac):**
+2. **Deploy Step 5 on EC2 Hub (without `--check`):**
+   Run the playbook with `hardening_wg_close_public_ssh: false` (the default). Execute without `--check` on initial deployment so the server key pair is generated on disk:
 
-```bash
-ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
-  --tags hardening_step5 --check --diff --ask-become-pass
+   **Run on the control node (Mac):**
 
-ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
-  --tags hardening_step5 --ask-become-pass
-# → Notice the displayed WireGuard Public Key
-```
+   ```bash
+   ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+     --tags hardening_step5 --ask-become-pass
+   ```
 
-Configure and start the WireGuard tunnel on the Mac workstation:
+   Copy the displayed WireGuard Public Key from the Ansible output:
+   `# → WireGuard Public Key for multi-lab-vps: <hub-public-key>`
 
-**Run on the control node (Mac):**
+3. **Configure Mac WireGuard Tunnel:**
+   In your Mac WireGuard configuration (`/etc/wireguard/wg0.conf` or macOS App), retain the existing `[Interface]` section (or populate from `configs/wireguard/client-template.conf` with `Address = 172.16.0.2/32`). Update ONLY the `[Peer]` section with the hub parameters:
+   ```ini
+   [Peer]
+   PublicKey           = <hub-public-key>
+   Endpoint            = <ec2_eip>:51820
+   AllowedIPs          = 172.16.0.0/24
+   PersistentKeepalive = 25
+   ```
+   > ⚠️ **Security Rule:** Never copy or paste a PrivateKey. Each host generates and stores its private key locally; only public keys are shared.
 
-```bash
-sudo wg-quick up wg0
-ping -c 3 172.16.0.1
-ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@172.16.0.1
-# → must authenticate successfully over the VPN tunnel
-```
+4. **Activate Tunnel and Verify Connectivity:**
+   Start the tunnel on the Mac and verify the handshake, ICMP ping, and SSH over VPN:
 
-Once tunnel access is verified, enforce perimeter lockdown by setting `hardening_wg_close_public_ssh: true` in `host_vars/multi-lab-vps.yml`, re-running Step 5, and updating the connection mode:
+   **Run on the control node (Mac):**
 
-**Run on the control node (Mac):**
+   ```bash
+   sudo wg-quick up wg0
+   sudo wg show
+   # → latest handshake: a few seconds ago, transfer: ...
+   ping -c 3 172.16.0.1
+   ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@172.16.0.1
+   # → connects successfully over the encrypted VPN interface
+   ```
 
-```bash
-ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
-  --tags hardening_step5 --ask-become-pass
-```
+5. **Close Public SSH on UFW and AWS Security Group:**
+   With tunnel connectivity verified, set `hardening_wg_close_public_ssh: true` in your real host variables file `inventories/host_vars/multi-lab-vps.yml` and re-run Step 5 to delete the public rate-limited port 22222 rule from UFW:
 
-Close ports 22 and 22222 in AWS Security Group `multi-lab-sg`:
+   **Run on the control node (Mac):**
 
-**Run on the control node (Mac):**
+   ```bash
+   ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+     --tags hardening_step5 --ask-become-pass
+   ```
 
-```bash
-cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
-terraform apply -var "ssh_bootstrap_cidr=" -var "ssh_hardened_cidr="
-```
+   Then update the AWS Security Group `multi-lab-sg` via Terraform with empty CIDR variables to close ports 22 and 22222 publicly:
 
-Update `connection_mode: "wg"` in `inventories/host_vars/multi-lab-vps.yml`.
+   **Run on the control node (Mac):**
+
+   ```bash
+   cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
+   terraform apply -var "ssh_bootstrap_cidr=" -var "ssh_hardened_cidr="
+   ```
+
+6. **Switch Connection Mode in Inventory:**
+   Update `connection_mode: "wg"` in your real host variables file `inventories/host_vars/multi-lab-vps.yml`. From this point forward, Ansible connects exclusively via `172.16.0.1:22222`.
 
 📄 [`configs/wireguard/wg0.conf`](../../../../modules/hardening/self-managed/configs/wireguard/wg0.conf)
 📄 [`configs/wireguard/client-template.conf`](../../../../modules/hardening/self-managed/configs/wireguard/client-template.conf)
@@ -1190,6 +1233,18 @@ Confirm that public SSH is blocked from outside the tunnel:
 ssh -p 22222 -o ConnectTimeout=5 <admin_username>@<ec2_eip>
 # → Connection timed out
 ```
+
+### Troubleshooting
+
+- **`Key is not the correct length or format`:** WireGuard public keys must be exactly 32 bytes encoded in base64 (44 characters ending with `=`). This error occurs when example placeholder text (such as `CHANGE_ME_...`) is left in `host_vars` or copied into `wg0.conf`. The role pre-flight assertion prevents deployment if the key is invalid.
+- **Absence of Handshake (`latest handshake` missing in `wg show`):**
+  - Verify AWS Security Group: port `51820/udp` must be allowed from `0.0.0.0/0` in `multi-lab-sg`.
+  - Check for crossed keys: the client `[Peer] PublicKey` must equal the hub public key, and the hub `[Peer] PublicKey` must equal the client public key.
+  - Check service logs: run `sudo journalctl -xeu wg-quick@wg0` on the hub to identify syntax or interface errors.
+- **SSM Session Manager as Emergency Recovery Path:** If SSH connectivity is interrupted on EC2, start an AWS Systems Manager session to inspect and recover network access without open inbound ports:
+  ```bash
+  aws ssm start-session --target <instance_id> --profile multi-lab-admin
+  ```
 
 ---
 
@@ -1239,4 +1294,471 @@ sudo fail2ban-client status sshd
 
 sudo fail2ban-client get sshd failregex | wc -l
 # → 33 (or greater)
+```
+
+---
+
+## Step 17 — Kernel hardening (Hardening Step 7)
+
+### What was done
+
+Deploy `/etc/sysctl.d/99-z-hardening.conf` applying kernel hardening parameters across network stack, memory protections, filesystem controls, and core dump restrictions. The handler reloads runtime sysctl values across the entire system.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step7 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step7 --ask-become-pass
+```
+
+📄 [`configs/sysctl/99-z-hardening.conf`](../../../../modules/hardening/self-managed/configs/sysctl/99-z-hardening.conf)
+
+### Why
+
+The kernel exposes interfaces and capabilities by default that facilitate post-compromise exploitation. Restricting ptrace to child processes (`kernel.yama.ptrace_scope = 1`), hiding kernel pointers (`kernel.kptr_restrict = 2`), and restricting dmesg (`kernel.dmesg_restrict = 1`) prevent privilege escalation and information leakage. Network stack parameters block IP spoofing (`rp_filter = 1`), absorb SYN flood attacks with cryptographic cookies (`tcp_syncookies = 1`), and ignore ICMP redirects. The `99-z-` file prefix guarantees this configuration loads after vendor defaults in `/usr/lib/sysctl.d/` (such as `99-protect-links.conf`).
+
+### Verification
+
+Verify sysctl runtime parameters inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+# Confirm 99-z-hardening loads last among sysctl.d files
+sudo sysctl --system | grep "Applying"
+
+# Memory and privilege protections
+sysctl kernel.randomize_va_space        # → 2
+sysctl kernel.kptr_restrict             # → 2
+sysctl kernel.dmesg_restrict            # → 1
+sysctl kernel.sysrq                     # → 0
+sysctl kernel.perf_event_paranoid       # → 3
+sysctl kernel.unprivileged_bpf_disabled # → 2
+
+# Filesystem protections
+sysctl fs.suid_dumpable                 # → 0
+sysctl fs.protected_fifos               # → 2
+sysctl fs.protected_hardlinks           # → 1
+sysctl fs.protected_symlinks            # → 1
+
+# Network protections
+sysctl net.ipv4.tcp_syncookies          # → 1
+sysctl net.ipv4.tcp_rfc1337             # → 1
+sysctl net.ipv4.conf.all.rp_filter      # → 1
+sysctl net.ipv4.conf.all.accept_redirects    # → 0
+sysctl net.ipv4.ip_forward              # → 1
+```
+
+---
+
+## Step 18 — AppArmor (Hardening Step 8)
+
+### What was done
+
+Install `apparmor-utils`, `apparmor-profiles`, and `apparmor-profiles-extra` to expand Mandatory Access Control (MAC) enforcement and make available a library of pre-packaged application profiles in `/usr/share/apparmor/extra-profiles/`.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step8 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step8 --ask-become-pass
+```
+
+### Why
+
+AppArmor restricts running programs to explicitly permitted capabilities, file paths, and network operations. Even if a future service (such as Nginx or BIND9) is compromised via an unpatched vulnerability, AppArmor confines the compromised process to what its profile permits, blocking lateral movement across the host.
+
+### Verification
+
+Verify AppArmor status and loaded profiles inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+sudo aa-status
+# → shows loaded profiles and enforce mode active for base daemons
+
+sudo dmesg | grep -i apparmor
+# → no profile load errors or DENIED boot entries
+
+ls /usr/share/apparmor/extra-profiles/ | wc -l
+# → ~100 profiles available for downstream services
+```
+
+---
+
+## Step 19 — Attack surface reduction: services and daemons (Hardening Step 9.1)
+
+### What was done
+
+Disable ModemManager, mask `packagekit` and `udisks2`, purge apport crash reporting packages (+ autoremove) and reload sysctl, migrate AWS Systems Manager Agent from snap to native apt deb on EC2, purge snapd, remove snap filesystem leftovers, and place snapd on apt hold.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_1 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_1 --ask-become-pass
+```
+
+### Why
+
+Every running daemon represents potential attack surface. `packagekit` and `udisks2` use D-Bus socket activation without standard systemd install sections; masking symlinks them to `/dev/null` preventing activation. Apport sets `fs.suid_dumpable = 2` at runtime, creating readable SUID process core dumps; purging it permanently restores the hardened `fs.suid_dumpable = 0` baseline. On EC2, the AWS SSM Agent is pre-installed as a snap; migrating to the native debian package before purging snapd guarantees that out-of-band Systems Manager shell access remains fully functional without open inbound firewall ports.
+
+### Verification
+
+Verify service mask status, sysctl dumpable parameter, and package holds inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+systemctl is-enabled udisks2
+# → masked
+
+sysctl fs.suid_dumpable
+# → fs.suid_dumpable = 0
+
+dpkg -l | grep apport
+# → no output
+
+apt-mark showhold | grep snapd
+# → snapd
+
+snap list 2>&1
+# → Command 'snap' not found
+
+# EC2 only: confirm SSM agent is active via apt
+sudo systemctl is-active amazon-ssm-agent
+# → active
+dpkg -l | grep amazon-ssm-agent
+# → ii amazon-ssm-agent ...
+```
+
+---
+
+## Step 20 — Attack surface reduction: filesystem and user hardening (Hardening Step 9.2)
+
+### What was done
+
+Restrict file permissions on crontabs (`0600`), cron directories (`0700`), and `sudoers.d` (`0750`). Configure `/etc/login.defs` with strict parameters: `UMASK 027`, `USERGROUPS_ENAB no`, password aging (`PASS_MAX_DAYS 90`, `PASS_MIN_DAYS 1`, `PASS_WARN_AGE 14`), and `SHA_CRYPT_MIN/MAX_ROUNDS 65536`. Install `libpam-pwquality` and `libpam-tmpdir`, deploy hardened `common-password`, `common-session`, and `limits.conf` (disabling core dumps at shell level), and enforce password aging policy on the administrator account.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_2 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_2 --ask-become-pass
+```
+
+📄 [`configs/pam/common-password`](../../../../modules/hardening/self-managed/configs/pam/common-password)
+📄 [`configs/pam/common-session`](../../../../modules/hardening/self-managed/configs/pam/common-session)
+📄 [`configs/limits/limits.conf`](../../../../modules/hardening/self-managed/configs/limits/limits.conf)
+
+### Why
+
+Restricting cron and sudoers directory permissions prevents lateral privilege escalation from compromised low-privilege service accounts. Setting `UMASK 027` with `USERGROUPS_ENAB no` prevents group-writable default files. PAM pwquality enforces minimum 12-character complex passwords and 65536 SHA-512 rounds. `libpam-tmpdir` isolates `$TMPDIR` per session under `/tmp/user/<uid>`, eliminating symlink race attacks in world-writable `/tmp`. Disabling core dumps via `limits.conf` complements the kernel-level `fs.suid_dumpable = 0` control.
+
+### Verification
+
+Verify login definitions, directory permissions, and administrator aging inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+grep "^UMASK" /etc/login.defs
+# → UMASK          027
+grep "^USERGROUPS_ENAB" /etc/login.defs
+# → USERGROUPS_ENAB        no
+grep "SHA_CRYPT" /etc/login.defs
+# → SHA_CRYPT_MIN_ROUNDS 65536
+# → SHA_CRYPT_MAX_ROUNDS 65536
+
+stat -c "%n %a" /etc/crontab /etc/sudoers.d
+# → /etc/crontab 600
+# → /etc/sudoers.d 750
+
+sudo chage -l <admin_username>
+# → Maximum password age: 90
+# → Minimum password age: 1
+# → Number of days of warning before password expires: 14
+```
+
+#### Author Manual Steps & Verification in a New Session
+
+Session-level environment variables (umask, TMPDIR, and ulimits) take effect only upon creating a fresh login session. Open a **NEW terminal window** and connect via SSH:
+
+**Run on the control node (Mac) from a new terminal:**
+
+```bash
+ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@172.16.0.1
+```
+
+**Run inside the NEW SSH session:**
+
+```bash
+# Verify umask 027
+umask
+# → 0027
+
+# Verify private session TMPDIR isolation
+echo $TMPDIR
+# → /tmp/user/<uid>
+
+# Verify user-initiated core dump limit is zero
+ulimit -c
+# → 0
+
+# Re-encrypt existing administrator password to apply 65536 rounds to shadow hash
+sudo passwd <admin_username>
+# Enter new password meeting pwquality policy (>= 12 chars, upper, lower, digits, symbols)
+sudo grep "^<admin_username>:" /etc/shadow | cut -d: -f2 | cut -c1-3
+# → $6$ (SHA-512 verified)
+
+# Optional account expiration (with operational warning):
+# WARNING: Setting an account expiration date introduces administrative lockout risk
+# if not renewed before expiration. Apply only if hard lifecycle boundaries are required.
+sudo chage -E $(date -d "+365 days" +%Y-%m-%d) <admin_username>
+sudo chage -l <admin_username> | grep "Account expires"
+# → Account expires: <date>
+```
+
+---
+
+## Step 21 — Attack surface reduction: kernel modules (Hardening Step 9.3)
+
+### What was done
+
+Deploy `/etc/modprobe.d/disable-unused-protocols.conf` blacklisting `dccp`, `sctp`, `rds`, and `tipc` protocol modules via `/bin/false`, and rebuild the initial ramdisk via handler `update-initramfs -u`.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_3 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_3 --ask-become-pass
+```
+
+📄 [`configs/modprobe/disable-unused-protocols.conf`](../../../../modules/hardening/self-managed/configs/modprobe/disable-unused-protocols.conf)
+
+### Why
+
+Unused network protocol stacks (`dccp`, `sctp`, `rds`, `tipc`) reside directly in the kernel and have a long history of high-severity CVEs (including remote code execution and local root escalation). Blacklisting them ensures modprobe returns an error (`/bin/false`) rather than dynamically loading the module if an unprivileged process requests a socket using one of those protocol families.
+
+### Verification
+
+Verify kernel module load status inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+lsmod | grep -E "dccp|sctp|rds|tipc"
+# → no output
+
+sudo modprobe dccp 2>&1
+# → Operation not permitted (or: Invalid argument)
+```
+
+---
+
+## Step 22 — Attack surface reduction: monitoring and forensics (Hardening Step 9.4)
+
+### What was done
+
+Preconfigure Postfix debconf to "No configuration" to eliminate interactive prompts, install `rkhunter`, configure mirror updates and whitelists in `/etc/rkhunter.conf` and `/etc/default/rkhunter`, perform signature updates (`rkhunter --update`), initialize the file properties database baseline snapshot (`rkhunter --propupd`), install and enable process accounting (`acct`), and configure automated performance data collection (`sysstat`).
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_4 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_4 --ask-become-pass
+```
+
+### Why
+
+Detection tools provide situational awareness and forensic capability post-incident. `rkhunter` checks system binaries against rootkit signatures and verifies checksums. GNU `acct` records every command executed by every user independent of shell history. `sysstat` gathers CPU, memory, and disk I/O metrics every 10 minutes to detect abnormal resource exhaustion or crypto-mining activity.
+
+### Verification
+
+Verify rkhunter configuration, process accounting, and sysstat metrics inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+grep -E "CRON_DAILY|CRON_DB|APT_AUTO" /etc/default/rkhunter
+# → CRON_DAILY_RUN="true"
+# → CRON_DB_UPDATE="true"
+# → APT_AUTOGEN="yes"
+
+# Verify acct is actively logging commands
+sudo lastcomm | head -5
+# → displays recently executed commands with timestamps and user attribution
+
+# Verify sysstat performance metrics collection
+sar -u 1 2
+# → displays active CPU metrics sample
+```
+
+---
+
+## Step 23 — Audit trail: auditd and AIDE (Hardening Step 10)
+
+### What was done
+
+Install `auditd` and `audispd-plugins`, deploy `/etc/audit/rules.d/99-hardening.rules` with conditional immutable mode (`-e 2`), load audit rules via `augenrules --load` (with automated recovery if immutable mode is active), install `aide` and `aide-common`, deploy `/etc/aide/aide.conf.d/99-hardening`, initialize the cryptographic database baseline snapshot (`aide --init`), activate the database snapshot, and enable automated daily integrity checks in `/etc/default/aide`.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step10 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step10 --ask-become-pass
+```
+
+📄 [`configs/audit/99-hardening.rules`](../../../../modules/hardening/self-managed/configs/audit/99-hardening.rules)
+📄 [`configs/aide/99-hardening`](../../../../modules/hardening/self-managed/configs/aide/99-hardening)
+
+### Why
+
+auditd and AIDE cover complementary security dimensions: auditd logs events in real-time at the kernel syscall level (identity modifications, pam authentication, privilege escalation via sudo, file deletion), while AIDE detects persistent filesystem state tampering against a cryptographically hashed baseline snapshot. The `-e 2` immutable flag ensures that even an attacker obtaining root privileges cannot modify or disable audit rules without rebooting the system.
+
+### Verification
+
+Verify audit rules status, immutable mode, and AIDE database baseline inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+# Confirm active audit rule keys
+sudo auditctl -l | grep -c "\-k"
+# → rule count active
+
+# Confirm immutable mode
+sudo auditctl -s | grep enabled
+# → enabled 2
+
+# Verify identity audit rule trigger on /etc/shadow access
+sudo cat /etc/shadow > /dev/null
+sudo ausearch -k identity | tail -3
+# → type=SYSCALL ... key="identity"
+
+# Verify AIDE database exists and daily cron is configured
+sudo ls -lh /var/lib/aide/aide.db
+# → -rw------- ... /var/lib/aide/aide.db
+grep CRON_DAILY_RUN /etc/default/aide
+# → CRON_DAILY_RUN=yes
+```
+
+---
+
+## Step 24 — Log management: rsyslog and logrotate (Hardening Step 11)
+
+### What was done
+
+Enable the UFW packet logging switch, pre-create dedicated log files `/var/log/ufw.log` and `/var/log/fail2ban.log` owned by `syslog:adm` (mode `0640`) without modifying existing file timestamps, deploy `rsyslog/20-ufw.conf`, `rsyslog/99-hardening.conf`, and `logrotate/hardening-logs`, and restart the rsyslog daemon.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step11 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step11 --ask-become-pass
+```
+
+📄 [`configs/rsyslog/20-ufw.conf`](../../../../modules/hardening/self-managed/configs/rsyslog/20-ufw.conf)
+📄 [`configs/rsyslog/99-hardening.conf`](../../../../modules/hardening/self-managed/configs/rsyslog/99-hardening.conf)
+📄 [`configs/logrotate/hardening-logs`](../../../../modules/hardening/self-managed/configs/logrotate/hardening-logs)
+
+### Why
+
+Dedicated log routing separates firewall dropped packets and intrusion prevention bans from generic system logs, dramatically speeding up forensic analysis and Fail2Ban recidive parsing. Rsyslog runs under unprivileged uid `syslog`; pre-creating log files with `syslog:adm 0640` prevents silent event discard. The logrotate policy compresses logs weekly and signals rsyslog (`systemctl reload rsyslog`) so that the daemon re-binds to new file inodes upon rotation.
+
+### Verification
+
+Verify log file ownership, rsyslog configuration syntax, and logrotate dry-run inside the SSH session:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+# Verify ownership and permissions
+ls -lh /var/log/ufw.log /var/log/fail2ban.log
+# → syslog:adm 0640 on both files
+
+# Validate rsyslog configuration syntax
+sudo rsyslogd -N1
+# → End of config validation run. Bye.
+
+# Test logrotate configuration dry-run
+sudo logrotate --debug /etc/logrotate.d/hardening-logs 2>&1 | grep -E "considering|rotating"
+# → considering log /var/log/ufw.log
+# → considering log /var/log/fail2ban.log
+```
+
+---
+
+## Step 25 — Security audit baseline: Lynis (Hardening Step 12)
+
+### What was done
+
+Install Lynis (verifying version 3.0.9), deploy `lynis/custom.prf`, execute full system security audit, parse `hardening_index` from `/var/log/lynis-report.dat`, display score summary, and emit a warning if the Hardening Index falls below the target threshold.
+
+> **Target Hardening Index Baseline:**
+> - **Lynis ≥ 90 on AWS EC2** (`multi-lab-vps`)
+> - **Lynis ≥ 88 on Local VM** (`multi-lab-local`)
+>
+> **Score Delta Explanation:** AWS EC2 achieves a higher baseline score (90 vs 88) due to platform-managed controls (hypervisor isolation, physical hardware security, cloud metadata management) that Lynis recognizes automatically in cloud instances. The delta is infrastructure-level, not configuration-level: both target environments run identical OS hardening roles.
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step12 --check --diff --ask-become-pass
+
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step12 --ask-become-pass
+```
+
+📄 [`configs/lynis/custom.prf`](../../../../modules/hardening/self-managed/configs/lynis/custom.prf)
+
+### Why
+
+Running Lynis validates that all defense-in-depth controls are active at runtime and establishes a baseline to detect regressions. Intentional deviations from standard CIS benchmarks are explicitly documented and suppressed in `custom.prf`, demonstrating intentional engineering rather than unaddressed findings.
+
+### Verification
+
+Verify Hardening Index score from the generated report data:
+
+**Run on the VM / EC2 (inside the SSH session):**
+
+```bash
+grep hardening_index /var/log/lynis-report.dat
+# → hardening_index=90 (EC2) or hardening_index=88 (VM)
+```
+
+Verify full Block 2C execution and complete idempotence:
+
+**Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_2c --ask-become-pass
+# → changed=0 (gate for block 2C: second run with no changes)
 ```
