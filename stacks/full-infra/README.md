@@ -14,7 +14,7 @@ Two implementations are provided, one per environment path:
 | Implementation | Tool | Scope | Doc |
 |---|---|---|---|
 | `aws-native/` | Terraform | All AWS Native modules composed as a single deployment | [`aws-native/aws-native-automation.md`](aws-native/aws-native-automation.md) |
-| `self-managed/` | Terraform | EC2 instance launched from pre-hardened AMI snapshot — infrastructure layer only | [`self-managed/automation/self-managed-automation.md`](self-managed/automation/self-managed-automation.md) |
+| `self-managed/` | Terraform + Ansible | EC2 greenfield (Terraform) + OS hardening and service orchestration (Ansible) | [`self-managed/automation/self-managed-automation.md`](self-managed/automation/self-managed-automation.md) |
 
 ---
 
@@ -35,19 +35,10 @@ called as a Terraform `source` reference — configs stay in
 
 ## self-managed
 
-Launches the EC2 instance (`multi-lab-aws`) from the
-`multi-lab-aws-active-directory` AMI — a pre-hardened image with all
-self-managed services already configured: SFTP, BIND9, Nginx, Samba AD DC.
-Covers the infrastructure layer only: instance placement, network
-assignment, and Security Groups.
+Provisions a clean EC2 instance (`multi-lab-aws`) running Ubuntu Server 24.04 LTS ARM64 from the canonical AMI, attaching an Elastic IP, configuring Security Groups with dynamic IP ingress, and attaching an IAM instance profile with SSM Session Manager access. Covers the infrastructure layer only: instance placement, network assignment, and Security Groups.
 
-The configuration layer (OS hardening, service setup, hardening baseline)
-was applied manually and is documented in each module under
-`modules/*/self-managed/`. Ansible roles (in progress) will live in
-`self-managed/automation/ansible/` and cover this layer, enabling full
-from-scratch provisioning without relying on a snapshot.
-`self-managed-automation.md` is the single automation doc for this
-environment — it will grow to cover the Ansible layer when implemented.
+The operating system configuration layer is automated with Ansible. The `hardening` role is fully automated and verified across both EC2 and local VM targets, establishing the baseline from scratch without relying on pre-baked AMI snapshots. Downstream service modules (SFTP, BIND9, Nginx, Samba AD DC) are in progress and build on top of this foundation.
+See [`self-managed-automation.md`](self-managed/automation/self-managed-automation.md) for the end-to-end automation guide.
 
 > This stack represents the correct boundary for Terraform in self-managed
 > environments: provision the infrastructure, not the OS. Forcing Terraform

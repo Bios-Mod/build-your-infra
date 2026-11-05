@@ -173,10 +173,14 @@
       - "'CHANGE_ME' not in hardening_wireguard_endpoint"
       - "'<' not in hardening_wireguard_endpoint"
       - "'>' not in hardening_wireguard_endpoint"
+      - hardening_wireguard_endpoint is match('^[^:\s]+:[0-9]{1,5}$')
+      - (hardening_wireguard_endpoint.split(':')[0]) != (vm_lan_ip | default(''))
+      - (hardening_wireguard_endpoint.split(':')[0]) != ((vm_static_ip | default('')).split('/')[0])
     fail_msg: >-
       WireGuard client deployment aborted: 'wireguard_hub_public_key' or 'wireguard_endpoint' is missing,
-      empty, contains placeholder text ('CHANGE_ME', '<', '>'), or public key is not valid 44-character base64.
-      Configure 'wireguard_hub_public_key' and 'wireguard_endpoint' in 'host_vars/multi-lab-local.yml' before deploying Step 5.
+      empty, invalid, contains placeholder text ('CHANGE_ME', '<', '>'), does not match 'host:port' format,
+      or 'wireguard_endpoint' erroneously points to the local VM address instead of the EC2 hub public endpoint.
+      Configure 'wireguard_hub_public_key' and 'wireguard_endpoint' (<ec2_eip>:51820) in 'host_vars/multi-lab-local.yml' before deploying Step 5.
   when: hardening_wireguard_role == 'client' # VM only
 
 # VM only

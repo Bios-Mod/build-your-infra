@@ -33,8 +33,5 @@ tls_mode: "self_signed"
 # WireGuard VPN tunnel IP assigned to the local VM peer (172.16.0.3)
 vm_wg0_ip: "{{ wireguard_vm_vpn_ip }}"
 
-# WireGuard client endpoint for local VM reachable over local LAN
-wireguard_endpoint: "{{ vm_lan_ip }}:{{ wireguard_port }}"
-
 # Disable auditd immutable mode (-e 2) during development to allow rule reloading without rebooting
 hardening_auditd_immutable_mode: false

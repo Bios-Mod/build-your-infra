@@ -21,7 +21,7 @@ Host connectivity evolves across three progressive phases controlled by `connect
 
 | Mode | Port | User | Transport | Target Stage |
 |---|---|---|---|---|
-| `pre` | `22` | `initial_user` (`ubuntu` on EC2, installer user on VM) | Direct public IPv4 (Elastic IP on EC2, LAN IP on VM) | Initial bootstrap (Step 0) and baseline updates (Step 1) |
+| `pre` | `22` | `vm_initial_user` / `ec2_initial_user` (`ubuntu` on EC2, installer user on VM) | Direct public IPv4 (Elastic IP on EC2, LAN IP on VM) | Initial bootstrap (Step 0) and baseline updates (Step 1) |
 | `hardened` | `22222` | `admin_username` (`admin`) | Direct public IPv4 (Security Group port 22222 allowed on EC2) | Post-SSH hardening (Step 3) through UFW (Step 4) |
 | `wg` | `22222` | `admin_username` (`admin`) | WireGuard VPN tunnel (`172.16.0.1` for EC2, `172.16.0.3` for VM) | Post-WireGuard lockdown (Step 5) and permanent operations |
 
@@ -33,17 +33,21 @@ Host connectivity evolves across three progressive phases controlled by `connect
 
 | Variable | Description | Target |
 |---|---|---|
-| `ansible_host` | Public Elastic IP (EC2) or LAN IP (VM). | Both |
-| `initial_user` | Default AMI user (`ubuntu` on EC2) or OS install user (`localuser` on VM). | Both |
-| `admin_public_key_file` | Path on control node to administrator Ed25519 public key (default: `~/.ssh/id_ed25519.pub`). | Both |
-| `ansible_ssh_private_key_file` | Path on control node to administrator SSH private key (default: `~/.ssh/id_ed25519`). | Both |
+| `ec2_eip` | AWS Elastic IP allocated to EC2 instance. | EC2 only |
+| `ec2_initial_user` | Default AMI user (`ubuntu` on EC2, defined in `group_vars/ec2.yml` or `host_vars`). | EC2 only |
+| `vm_initial_user` | Account created during Ubuntu installer ISO setup (used in `connection_mode: "pre"`). | VM only |
+| `vm_lan_ip` | Reachable LAN IP on local network before static network configuration. | VM only |
+| `admin_username` | Dedicated non-root administrator account name created in Step 0. | Both |
+| `admin_public_key_file` | Path on control node to administrator Ed25519 public key (`~/.ssh/id_ed25519_multi-lab.pub`). | Both |
+| `ansible_ssh_private_key_file` | Path on control node to administrator SSH private key (`~/.ssh/id_ed25519_multi-lab`). | Both |
 | `connection_mode` | Active connection state (`pre`, `hardened`, or `wg`). | Both |
-| `wireguard_peer_public_keys` | Dictionary of peer public keys (`mac`, `local_vm` on EC2 hub; `mac` on VM). | Both |
-| `wireguard_endpoint` | Static WireGuard endpoint address (`<elastic-ip>:51820` on EC2; LAN IP on VM). | Both |
-| `wireguard_hub_public_key` | Public key of the EC2 hub. | VM only |
+| `wireguard_peer_public_keys` | Dictionary of authorized peer public keys (`mac` and `local_vm` on EC2 hub; VM does not define `local_vm`). | EC2 only |
+| `wireguard_endpoint` | WireGuard hub endpoint (`<ec2_eip>:51820`). Required in `host_vars/multi-lab-local.yml` for VM; EC2 hub derives it in `group_vars/ec2.yml`. Never the VM's own address. | VM (required in `host_vars`) / EC2 (`group_vars`) |
+| `wireguard_hub_public_key` | Public key of the EC2 hub (`/etc/wireguard/server_public.key` on EC2). | VM only |
 | `vm_interface` | Target network interface name (e.g. `enp2s0`). | VM only |
 | `vm_static_ip` | Static IPv4 CIDR assigned to VM interface (e.g. `192.168.1.X/24`). | VM only |
 | `vm_gateway` | Default gateway IPv4 on VM local subnet (e.g. `192.168.1.1`). | VM only |
+| `lan_trusted_cidr` | Trusted local LAN CIDR for UFW and Fail2Ban whitelist (empty on EC2). | Both |
 
 ### 2. Runtime Prompts
 
@@ -60,10 +64,11 @@ Host connectivity evolves across three progressive phases controlled by `connect
 | `hardening_wireguard_subnet` | `172.16.0.0/24` | `defaults/main.yml`, `group_vars/all.yml` | Isolated VPN subnet CIDR (`wireguard_vpn_subnet`). |
 | `hardening_wireguard_hub_vpn_ip` | `172.16.0.1` | `defaults/main.yml`, `group_vars/all.yml` | Gateway VPN IP assigned to `wg0` hub (`wireguard_server_vpn_ip`). |
 | `hardening_wireguard_vm_vpn_ip` | `172.16.0.3` | `defaults/main.yml`, `group_vars/all.yml` | Peer VPN IP assigned to local VM (`wireguard_vm_vpn_ip`). |
-| `hardening_auditd_immutable_mode` | `true` | `defaults/main.yml` (overridden to `false` in `group_vars/vm.yml` during development) | Enforces immutable kernel audit rules (`-e 2`). Enabled in final convergence. |
+| `hardening_wireguard_endpoint` | `""` | `defaults/main.yml` (EC2 hub set in `group_vars/ec2.yml`; VM client required in `host_vars/multi-lab-local.yml`) | Remote endpoint address for WireGuard tunnel (`<ec2_eip>:51820`). |
+| `hardening_auditd_immutable_mode` | `true` | `defaults/main.yml` (overridden to `false` in `group_vars/vm.yml` during dev; `true` in `host_vars/multi-lab-local.yml` for greenfield convergence) | Enforces immutable kernel audit rules (`-e 2`). Host variables take precedence over group variables. |
 | `hardening_lynis_min_score` | `88` | `defaults/main.yml` (overridden to `90` in `group_vars/ec2.yml`) | Lynis Hardening Index threshold; emits advisory warning if score drops. |
-| `hardening_wg_close_public_ssh` | `false` | `defaults/main.yml` | Set to `true` on EC2 to delete rate-limited public port 22222 after tunnel verification. |
-| `hardening_lan_trusted_cidr` | `""` | `defaults/main.yml` (`group_vars/vm.yml` sets LAN subnet, `ec2.yml` leaves empty) | Whitelisted CIDR for Fail2Ban `ignoreip`. |
+| `hardening_wg_close_public_ssh` | `false` | `defaults/main.yml` (overridden to `true` in `host_vars/multi-lab-vps.yml` after VPN verification) | Set to `true` on EC2 to delete rate-limited public port 22222 after tunnel verification. |
+| `hardening_lan_trusted_cidr` | `""` | `defaults/main.yml` (`host_vars/multi-lab-local.yml` sets LAN subnet, `group_vars/ec2.yml` sets empty string) | Whitelisted CIDR for Fail2Ban `ignoreip`. |
 
 ---
 

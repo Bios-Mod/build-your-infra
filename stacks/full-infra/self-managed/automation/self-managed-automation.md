@@ -163,7 +163,7 @@ Create an isolated Python environment, install the pinned dependencies and colle
 
 1. Navigate to the Ansible directory, create the virtualenv, and install dependencies:
 
-   **VM · multi-lab-local · Run on control node:**
+   **Control node (Mac):**
    ```bash
    cd ~/build-your-infra/stacks/full-infra/self-managed/automation/ansible
    python3.14 -m venv .venv
@@ -178,14 +178,14 @@ Create an isolated Python environment, install the pinned dependencies and colle
 
 2. Generate a dedicated Ed25519 lab SSH keypair (never use personal or GitHub keys):
 
-   **VM · multi-lab-local · Run on control node:**
+   **Control node (Mac):**
    ```bash
    test -f ~/.ssh/id_ed25519_multi-lab || ssh-keygen -t ed25519 -f ~/.ssh/id_ed25519_multi-lab -N "" -C "admin@multi-lab"
    ```
 
 3. Install the public key on the local VM installer user:
 
-   **VM · multi-lab-local · Run on control node:**
+   **Control node (Mac):**
    ```bash
    ssh-copy-id -i ~/.ssh/id_ed25519_multi-lab.pub <vm_initial_user>@<vm_lan_ip>
    ```
@@ -255,7 +255,7 @@ Host inventories track three progressive network connection states via `connecti
 
 #### Verification
 
-**VM · multi-lab-local · Run on control node:**
+**Control node (Mac):**
 ```bash
 ansible --version
 # → ansible [core 2.21.6]
@@ -297,6 +297,15 @@ Provision the dedicated non-root administrator account (`admin_username`), estab
 
 #### Execution Commands
 
+Before running `bootstrap.yml` on EC2, establish initial SSH connectivity as `ubuntu` to accept the host key into `~/.ssh/known_hosts` (`ansible.cfg` enforces `host_key_checking = True`):
+
+**Control node (Mac):**
+```bash
+ssh -i ~/.ssh/id_ed25519_multi-lab ubuntu@<ec2_eip>
+# → Type 'yes' to accept host key fingerprint; then exit the session
+exit
+```
+
 | Target | --limit | host_vars File | Command | Expected Output |
 |---|---|---|---|---|
 | EC2 | `--limit multi-lab-vps` | `inventories/host_vars/multi-lab-vps.yml` | `ansible-playbook playbooks/bootstrap.yml --limit multi-lab-vps` | First run: changed > 0; second run: changed=0 |
@@ -311,7 +320,7 @@ Creating a dedicated, unprivileged administrative account before locking down SS
 
 Test passwordless SSH authentication with the newly provisioned administrator account from a new terminal window:
 
-**VM · multi-lab-local · Run on control node:**
+**Control node (Mac):**
 ```bash
 ssh -i ~/.ssh/id_ed25519_multi-lab -o IdentitiesOnly=yes -p 22 <admin_username>@<vm_lan_ip>
 # → must authenticate without a password prompt
@@ -331,7 +340,7 @@ ls -la /home/<admin_username>/.ssh/
 
 On EC2, verify administrator account provisioning and key authentication from the control node:
 
-**EC2 · multi-lab-vps · Run on control node:**
+**Control node (Mac):**
 ```bash
 ssh -i ~/.ssh/id_ed25519_multi-lab <admin_username>@<ec2_eip>
 # → authenticates without password prompt
@@ -353,7 +362,7 @@ Lock down OpenSSH daemon configuration to port 22222, enforce default-deny firew
 #### 2.1 SSH Hardening (manual Step 3)
 - Deploys hardened `sshd_config` (port 22222, key-only authentication, root login disabled, idle timeout, max 3 authentication attempts, only `admin_username` permitted via `AllowUsers`).
 - Removes legacy RSA and ECDSA host private and public keys (`/etc/ssh/ssh_host_rsa_key*`, `/etc/ssh/ssh_host_ecdsa_key*`), retaining exclusively the Ed25519 host key.
-- **Connection Mode Transition:** Once task `step_03_ssh.yml` completes, update `connection_mode: "hardened"` in `inventories/host_vars/multi-lab-vps.yml` (or `inventories/host_vars/multi-lab-local.yml`) before invoking subsequent tasks.
+- **Connection Mode Transition:** Once task `step_03_ssh.yml` completes, update `connection_mode: "hardened"` in the target host's variables file (`inventories/host_vars/multi-lab-vps.yml` for EC2 in Phase A; `inventories/host_vars/multi-lab-local.yml` for VM in Phase B) before invoking subsequent tasks.
 
 #### 2.2 UFW Firewall (manual Step 4)
 - Configures default-deny incoming and default-allow outgoing policies.
@@ -379,6 +388,26 @@ Execute the exact validated sequences below to transition from public SSH to the
 
 ##### Phase A — EC2 Hub Deployment
 
+**Pre-WireGuard Access Chain:**
+
+1. Apply manual Step 3 (SSH Hardening) on EC2 using initial credentials (`connection_mode: "pre"` on port 22):
+
+   **EC2 · multi-lab-vps · Run on control node:**
+   ```bash
+   ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_step3 --ask-become-pass
+   ```
+
+2. Update `inventories/host_vars/multi-lab-vps.yml`: set `connection_mode: "hardened"`.
+
+3. Apply manual Step 4 (UFW Firewall) on EC2 using hardened SSH (`connection_mode: "hardened"` on port 22222):
+
+   **EC2 · multi-lab-vps · Run on control node:**
+   ```bash
+   ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_step4 --ask-become-pass
+   ```
+
+**WireGuard Hub Deployment (6 Validated Steps):**
+
 1. **Obtain Mac Public Key Before Initial Run:**
    Retrieve the public key of your Mac control node.
    - If using the WireGuard macOS App: open the tunnel, click **Edit**, and copy the **Public key**.
@@ -403,15 +432,6 @@ Execute the exact validated sequences below to transition from public SSH to the
 
    **EC2 · multi-lab-vps · Run on control node:**
    ```bash
-   # Apply manual Step 3 (SSH Hardening) on EC2 using connection_mode: "pre" (port 22)
-   ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_step3 --ask-become-pass
-
-   # Update inventories/host_vars/multi-lab-vps.yml: set connection_mode: "hardened"
-
-   # Apply manual Step 4 (UFW Firewall) on EC2 using connection_mode: "hardened" (port 22222)
-   ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_step4 --ask-become-pass
-
-   # Apply manual Step 5 (WireGuard Hub) on EC2
    ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_step5 --ask-become-pass
    ```
    Copy the displayed WireGuard Public Key from the Ansible output:
@@ -431,7 +451,7 @@ Execute the exact validated sequences below to transition from public SSH to the
 4. **Activate Tunnel and Verify Connectivity:**
    Start the tunnel on the Mac and verify the handshake, ICMP ping, and SSH over VPN:
 
-   **EC2 · multi-lab-vps · Run on control node:**
+   **Control node (Mac):**
    ```bash
    sudo wg-quick up wg0
    sudo wg show
@@ -477,27 +497,35 @@ The local VM acts as a VPN client (`172.16.0.3/32`), routing into the EC2 hub:
    # → <hub-public-key>
    ```
 
-3. **Configure VM Host Variables:** In `inventories/host_vars/multi-lab-local.yml`, configure `wireguard_hub_public_key: "<hub-public-key>"` and `wireguard_endpoint: "<ec2_eip>:51820"`.
+3. **Configure VM Host Variables:** In `inventories/host_vars/multi-lab-local.yml`, configure `wireguard_hub_public_key: "<hub-public-key>"` and `wireguard_endpoint: "<ec2_eip>:51820"`. The `wireguard_endpoint` variable is required and must explicitly specify EC2's public Elastic IP and port (`<ec2_eip>:51820`); never use the VM's own LAN IP.
 
-4. **Deploy Client Configuration on VM:**
-   Apply manual Steps 3, 4, and 5 on the VM. Run Step 5 without `--check` on initial run so the VM keypair is generated:
+4. **Apply SSH Hardening & UFW on VM:**
+   Apply manual Step 3 (SSH Hardening) on VM using initial credentials (`connection_mode: "pre"` on port 22):
 
    **VM · multi-lab-local · Run on control node:**
    ```bash
-   # Apply manual Step 3 (SSH Hardening) on VM using connection_mode: "pre" (port 22)
    ansible-playbook playbooks/hardening.yml --limit multi-lab-local --tags hardening_step3 --ask-become-pass
+   ```
 
-   # Update inventories/host_vars/multi-lab-local.yml: set connection_mode: "hardened"
+   Update `inventories/host_vars/multi-lab-local.yml`: set `connection_mode: "hardened"` (port 22222, `admin_username`).
 
-   # Apply manual Step 4 (UFW Firewall) on VM using connection_mode: "hardened" (port 22222)
+   Apply manual Step 4 (UFW Firewall) on VM using hardened SSH (`connection_mode: "hardened"` on port 22222):
+
+   **VM · multi-lab-local · Run on control node:**
+   ```bash
    ansible-playbook playbooks/hardening.yml --limit multi-lab-local --tags hardening_step4 --ask-become-pass
+   ```
 
-   # Apply manual Step 5 (WireGuard Spoke) on VM
+5. **Deploy Client Configuration on VM:**
+   Run Step 5 without `--check` on initial run so the VM keypair is generated:
+
+   **VM · multi-lab-local · Run on control node:**
+   ```bash
    ansible-playbook playbooks/hardening.yml --limit multi-lab-local --tags hardening_step5 --ask-become-pass
    # → WireGuard Public Key for multi-lab-local: <vm-public-key>
    ```
 
-5. **Register VM Peer on EC2 Hub:** Copy `<vm-public-key>` into `wireguard_peer_public_keys.local_vm` in `inventories/host_vars/multi-lab-vps.yml` and re-run Step 5 on EC2.
+6. **Register VM Peer on EC2 Hub:** Copy `<vm-public-key>` into `wireguard_peer_public_keys.local_vm` in `inventories/host_vars/multi-lab-vps.yml` and re-run Step 5 on EC2.
 
    > ⚠️ **Transient Connection Notice:** The handler restarts `wg-quick@wg0` on the hub, which may momentarily disrupt the active Ansible session going through that tunnel. If an `UNREACHABLE` error occurs at the very end of task execution, check connectivity with `ping -c 3 172.16.0.1` and use SSM Session Manager if inspection is needed.
 
@@ -506,7 +534,7 @@ The local VM acts as a VPN client (`172.16.0.3/32`), routing into the EC2 hub:
    ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_step5 --ask-become-pass
    ```
 
-6. **Verify VM Tunnel & Connectivity:**
+7. **Verify VM Tunnel & Connectivity:**
 
    **VM · multi-lab-local · Run on VM:**
    ```bash
@@ -516,13 +544,13 @@ The local VM acts as a VPN client (`172.16.0.3/32`), routing into the EC2 hub:
    # → 0% packet loss
    ```
 
-   **VM · multi-lab-local · Run on control node:**
+   **Control node (Mac):**
    ```bash
    ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@172.16.0.3
    # → connects successfully over WireGuard tunnel
    ```
 
-7. **Switch Connection Mode in Inventory & Apply Fail2Ban:**
+8. **Switch Connection Mode in Inventory & Apply Fail2Ban:**
    Set `connection_mode: "wg"` in `inventories/host_vars/multi-lab-local.yml`. Note: the VM keeps the rate-limited port 22222 rule over LAN (`hardening_wg_close_public_ssh: false`; decision 2026-11-04); there is no public closure step or Security Group update for the VM. Apply Fail2Ban (manual Step 6):
 
    **VM · multi-lab-local · Run on control node:**
@@ -558,7 +586,7 @@ Deploy remaining defense-in-depth layers across kernel, filesystem, application,
 | [Step 9.1 — Services & Daemons](../../../../modules/hardening/self-managed/hardening-self-managed.md#91--services--daemons) | `step_09_1_services.yml` | `hardening_step9_1` | Disables and stops ModemManager, masks packagekit and udisks2, and purges apport packages (reloading sysctl to re-assert `fs.suid_dumpable = 0`). On EC2 (`is_cloud: true`), cleanly stops `snap.amazon-ssm-agent.amazon-ssm-agent.service` and `snapd.service` before removing snap IPC sockets, installs the official deb package of `amazon-ssm-agent`, purges `snapd`, removes `/var/lib/snapd`, and holds `snapd` via `dpkg_selections`. |
 | [Step 9.2 — Filesystem & Users](../../../../modules/hardening/self-managed/hardening-self-managed.md#92--filesystem--user-hardening) | `step_09_2_users_fs.yml` | `hardening_step9_2` | Sets restrictive permissions on crontab (`0600`) and sudoers.d (`0750`). Deploys PAM `common-password` (SHA-512 with 65,536 rounds, pwquality minimum 12 chars), `common-session` (pam_tmpdir), and `/etc/security/limits.conf` (disables core dumps). Configures UMASK 027 in `/etc/login.defs`. Note: `chage -E` is intentionally omitted to preserve administrative access (suppressing Lynis AUTH-9282). |
 | [Step 9.3 — Kernel Modules](../../../../modules/hardening/self-managed/hardening-self-managed.md#93--kernel-modules) | `step_09_3_modprobe.yml` | `hardening_step9_3` | Deploys `disable-unused-protocols.conf` to `/etc/modprobe.d/` blacklisting obsolete network protocols (`dccp`, `sctp`, `rds`, `tipc`), and regenerates initramfs. |
-| [Step 9.4 — Monitoring & Forensics](../../../../modules/hardening/self-managed/hardening-self-managed.md#94--monitoring--forensics) | `step_09_4_monitoring.yml` | `hardening_step9_4` | Installs and enables `rkhunter`, `acct` (process accounting), and `sysstat`. Runs `rkhunter --propupd` to initialize database properties and avoid exit code 2 warnings. |
+| [Step 9.4 — Monitoring & Forensics](../../../../modules/hardening/self-managed/hardening-self-managed.md#94--monitoring--forensics) | `step_09_4_monitoring.yml` | `hardening_step9_4` | Installs and enables `rkhunter`, `acct` (process accounting), and `sysstat`. `rkhunter --update` returns exit code 2 when it updates data files; the task accepts 0, 1 and 2 and fails on 'Update failed'. `--propupd` runs only when the package or its configuration changed in that run. |
 | [Step 10 — Audit Trail (auditd + AIDE)](../../../../modules/hardening/self-managed/hardening-self-managed.md#step-10--audit-trail-auditd--aide) | `step_10_audit.yml` | `hardening_step10` | Deploys comprehensive audit rules (`99-hardening.rules`) with a guaranteed trailing newline. Adapts syscall rules for ARM64 ABI (`unlinkat`, `renameat`, `renameat2`). Initializes AIDE integrity database idempotently (`creates: /var/lib/aide/aide.db`). Enforces immutable mode (`-e 2`) on EC2 and clean convergence runs. |
 | [Step 11 — Log Management](../../../../modules/hardening/self-managed/hardening-self-managed.md#step-11--log-management-rsyslog--logrotate) | `step_11_logging.yml` | `hardening_step11` | Configures rsyslog routing for UFW (`20-ufw.conf`) and security logs (`99-hardening.conf`), enforcing `0640 syslog:adm` permissions. Configures logrotate policies (`hardening-logs`). |
 | [Step 12 — Security Audit Baseline](../../../../modules/hardening/self-managed/hardening-self-managed.md#step-12--security-audit-baseline-lynis) | `step_12_lynis.yml` | `hardening_step12` | Deploys custom Lynis profile (`custom.prf`). Executes compliance scan, registers Hardening Index score, and emits an advisory warning if score drops below threshold (`hardening_lynis_min_score`, 90 EC2, 88 VM) without halting execution. |
@@ -566,7 +594,7 @@ Deploy remaining defense-in-depth layers across kernel, filesystem, application,
 #### Operational Notes
 1. **Secondary SSH Session:** Open a separate, persistent SSH session to the target host before applying Step 3 to safeguard against PAM `common-session` or `common-password` locking errors.
 2. **Password Re-encryption:** After deploying PAM configurations, execute `passwd` manually on the target machine to re-hash the existing administrator password in `/etc/shadow` with 65,536 rounds. `chage -E` is intentionally omitted to prevent account expiration lockouts.
-3. **Auditd Immutable Mode:** `hardening_auditd_immutable_mode` defaults to `true` in `defaults/main.yml`. In `inventories/host_vars/multi-lab-local.yml`, it is set to `false` during incremental development so rules can be reloaded without rebooting, and set to `true` during the final convergence run.
+3. **Auditd Immutable Mode & Precedence:** `hardening_auditd_immutable_mode` defaults to `true` in `defaults/main.yml`. In `group_vars/vm.yml`, it is set to `false` during incremental development so rules can be reloaded without rebooting. For the from-scratch convergence rebuild, `hardening_auditd_immutable_mode: true` is configured in `inventories/host_vars/multi-lab-local.yml`, where host variables take precedence over group variables.
 
 #### Unified Execution Commands
 
@@ -586,8 +614,8 @@ Naming sysctl configuration `99-z-hardening.conf` guarantees that security param
 
 #### Verified Troubleshooting — System Hardening
 - **Snapd state in memory:** Removing `/var/lib/snapd` while `snapd.service` is active causes `dpkg` pre-installation scripts to fail. Task `step_09_1_services.yml` explicitly stops `snap.amazon-ssm-agent.amazon-ssm-agent.service` and `snapd.service` before cleaning disk state and installing the `.deb`.
-- **Rkhunter initial exit code 2:** On clean systems, rkhunter emits return code 2 if properties have not been baseline-linked. Task `step_09_4_monitoring.yml` runs `rkhunter --propupd` immediately after package installation.
-- **Auditd trailing newline:** `augenrules --load` fails silently or truncates rules if `99-hardening.rules` lacks a trailing LF character. Task `step_10_audit.yml` enforces explicit newline termination.
+- **Rkhunter update return code 2:** `rkhunter --update` returns exit code 2 when it updates data files; the task in `step_09_4_monitoring.yml` accepts 0, 1 and 2 and fails only on 'Update failed'. `--propupd` has no relation to that code — it runs only when the package or its configuration changed in that run to record file properties.
+- **Auditd trailing newline:** Without a trailing newline, `augenrules --load` fails with `Enable must be 0, 1, or 2 was 2##` because `augenrules` concatenates rule files and appends `##` on the same line. Task `step_10_audit.yml` forces an explicit single trailing newline on `99-hardening.rules`.
 - **APT lock timeout:** Unattended-upgrades holds `/var/lib/dpkg/lock-frontend` for several minutes after system startup. Playbooks declare `module_defaults` with `ansible.builtin.apt: { lock_timeout: 600 }`.
 
 ---
@@ -610,7 +638,7 @@ Execute post-deployment compliance checks, confirm target score thresholds, veri
 | **Fail2Ban Jail** | `sshd` active, banaction `ufw` | `sshd` active, banaction `ufw` | [Fail2Ban Verification](../../../../modules/hardening/self-managed/hardening-self-managed.md#step-6--fail2ban) |
 | **Kernel Sysctl** | `99-z-hardening.conf` applied | `99-z-hardening.conf` applied | [Sysctl Verification](../../../../modules/hardening/self-managed/hardening-self-managed.md#step-7--kernel-hardening-sysctl) |
 | **AppArmor Profiles** | Profiles loaded, no denied boot errors | Profiles loaded, no denied boot errors | [AppArmor Verification](../../../../modules/hardening/self-managed/hardening-self-managed.md#step-8--apparmor) |
-| **Service Attack Surface** | `snapd` purged, `apport` masked | `snapd` purged, `apport` masked | [Services Verification](../../../../modules/hardening/self-managed/hardening-self-managed.md#91--services--daemons) |
+| **Service Attack Surface** | `snapd` purged, `apport` purged | `snapd` purged, `apport` purged | [Services Verification](../../../../modules/hardening/self-managed/hardening-self-managed.md#91--services--daemons) |
 | **Filesystem & Users** | umask 027, SHA-512 rounds 65536 | umask 027, SHA-512 rounds 65536 | [Filesystem Verification](../../../../modules/hardening/self-managed/hardening-self-managed.md#92--filesystem--user-hardening) |
 | **Kernel Modprobe** | Unused protocols disabled | Unused protocols disabled | [Kernel Modules Verification](../../../../modules/hardening/self-managed/hardening-self-managed.md#93--kernel-modules) |
 | **System Monitoring** | `acct` & `sysstat` active | `acct` & `sysstat` active | [Monitoring Verification](../../../../modules/hardening/self-managed/hardening-self-managed.md#94--monitoring--forensics) |
@@ -618,18 +646,24 @@ Execute post-deployment compliance checks, confirm target score thresholds, veri
 
 #### Full Idempotency Gate (0 Changed)
 
-Execute the full hardening playbook across both hosts. The execution must complete with **changed=0**:
+Execute the full hardening playbook separately per target (administrative sudo passwords may differ between EC2 and VM). With the documented exception of `/var/log/fail2ban.log` (which may report `changed=1` if rotated by logrotate), execution must complete with **changed=0**:
 
-**EC2 · multi-lab-vps / VM · multi-lab-local · Run on control node:**
+**EC2 · multi-lab-vps · Run on control node:**
 ```bash
-ansible-playbook playbooks/hardening.yml --limit all --ask-become-pass
-# → multi-lab-vps   : changed=0
-# → multi-lab-local : changed=0
+ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --ask-become-pass
+# → multi-lab-vps : ok=... changed=0 failed=0
+```
+
+**VM · multi-lab-local · Run on control node:**
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local --ask-become-pass
+# → multi-lab-local : ok=... changed=0 failed=0
 ```
 
 #### Known Deviations & Pending Checks
 1. **`/var/log/fail2ban.log` ownership:** The file is created initially with `syslog:adm` ownership in manual Step 11 (`step_11_logging.yml`). However, the Fail2Ban daemon writes directly as `root`, and logrotate (`configs/logrotate/hardening-logs`) specifies `create 640 root adm`. If logrotate rotates the file between runs, the task in manual Step 11 reports `changed=1` to restore `syslog:adm` ownership.
-2. **VM Block 2B Gate Idempotency:** The VM Block 2B execution gate was verified iteratively; clean idempotency (`changed=0`) on Step 3 will be re-confirmed during the from-scratch convergence rebuild (hypothesis under evaluation: sshd handler notify on successive passes).
+2. **VM Block 2B Gate Idempotency:** The VM Block 2B gate was not completed (a 'Timeout waiting for privilege escalation prompt' occurred at the first UFW task; root cause not identified, not reproduced with the pinned venv). Idempotency of Step 3 will be re-confirmed during the from-scratch rebuild.
+3. **WireGuard Client Endpoint Trap:** In the local VM client configuration, `wireguard_endpoint` must explicitly point to the public Elastic IP and port of the EC2 hub (`<ec2_eip>:51820`). It must be declared in `inventories/host_vars/multi-lab-local.yml` and must never default to the VM's own LAN IP, which previously prevented handshake completion.
 
 ---
 
@@ -645,16 +679,78 @@ In the original Phase 1 architecture, resources were provisioned manually in the
 1. **Collect Resource IDs:** Query existing AWS resources (VPC, Subnet, IGW, Route Table, Security Group, EC2 instance, Elastic IP) via AWS CLI.
 2. **Configure Import Blocks:** Populate `import.tf` from `import.tf.example` with gathered resource IDs.
 3. **Generate Configuration:** Execute `terraform plan -generate-config-out=generated.tf` to generate initial resource HCL.
-4. **Reconcile Generated HCL:** Reconcile differences in `generated.tf` against project standards:
+4. **Fix `generated.tf` Before Applying (Expected Errors):**
+   The experimental config generator creates conflicting or incomplete attributes that the AWS provider rejects. Edit `generated.tf` manually before proceeding:
 
-| Resource Block | Required Adjustment | Reason |
-|---|---|---|
-| `aws_vpc` | Remove `enable_classiclink`, `enable_classiclink_dns_support` | Deprecated in AWS provider v5+ |
-| `aws_route_table` | Remove inline `route` blocks; use standalone `aws_route` | Prevents route table collision |
-| `aws_security_group` | Remove inline `ingress`/`egress` blocks; use `aws_security_group_rule` | Enables dynamic rule attachment |
-| `aws_instance` | Retain `multi-lab-ec2-role` instance profile, remove auto-generated attachments | State alignment |
+   **Lines to delete:**
 
-5. **Apply Import & Finalize:** Execute `terraform apply` to absorb resources into `terraform.tfstate`, remove `import.tf`, and activate `main.tf`.
+   | Resource | Remove this line | Why |
+   |---|---|---|
+   | `aws_subnet.public` | `availability_zone_id = ...` | Conflicts with `availability_zone` |
+   | `aws_subnet.public` | `enable_lni_at_device_index = 0` | Invalid outside AWS Outposts |
+   | `aws_subnet.public` | `map_customer_owned_ip_on_launch = ...` | Requires `outpost_arn` — not applicable |
+   | `aws_vpc.main` | `ipv6_ipam_pool_id = ...` | Requires `ipv6_netmask_length` — remove both |
+   | `aws_vpc.main` | `ipv6_netmask_length = ...` | Remove if not using IPv6 IPAM |
+   | `aws_instance.main` | `primary_network_interface { ... }` block | Conflicts with `associate_public_ip_address` |
+   | `aws_instance.main` | `ipv6_address_count = ...` | Conflicts with `ipv6_addresses` — remove both |
+   | `aws_instance.main` | `ipv6_addresses = ...` | Remove both if not using IPv6 |
+   | `aws_eip_association.main` | `network_interface_id = ...` | Conflicts with `instance_id` — keep `instance_id` |
+
+   **Line to add:**
+
+   In `aws_key_pair.main`, add `public_key = ""` (required by provider schema, not applied during import):
+   ```hcl
+   resource "aws_key_pair" "main" {
+     # ... generated attributes ...
+     public_key = "" # Required by provider schema — not applied during import
+   }
+   ```
+
+   **Add missing resource block:**
+
+   The generator fails to produce `aws_route_table_association` because the import ID is not a standard resource ID. Add manually to `generated.tf`:
+   ```hcl
+   resource "aws_route_table_association" "public" {
+     subnet_id      = "subnet-XXXXXXXXXX"   # your subnet ID
+     route_table_id = "rtb-XXXXXXXXXX"      # your route table ID
+   }
+   ```
+
+   **Fix `aws_route_table.public`:**
+
+   The generator produces `route = []`, ignoring existing routes, and generates incorrect tag values. Replace with the correct block:
+   ```hcl
+   resource "aws_route_table" "public" {
+     propagating_vgws = []
+     region           = "eu-west-1"
+     route = [{
+       cidr_block                 = "0.0.0.0/0"
+       gateway_id                 = "igw-XXXXXXXXXX"   # your IGW ID
+       carrier_gateway_id         = null
+       core_network_arn           = null
+       destination_prefix_list_id = null
+       egress_only_gateway_id     = null
+       instance_id                = null
+       ipv6_cidr_block            = null
+       local_gateway_id           = null
+       nat_gateway_id             = null
+       network_interface_id       = null
+       odb_network_arn            = null
+       transit_gateway_id         = null
+       vpc_endpoint_id            = null
+       vpc_peering_connection_id  = null
+     }]
+     tags = {
+       Name = "multi-lab-vpc-rtb-public"
+     }
+     tags_all = {
+       Name = "multi-lab-vpc-rtb-public"
+     }
+     vpc_id = "vpc-XXXXXXXXXX"   # your VPC ID
+   }
+   ```
+
+5. **Apply Import & Finalize:** Execute `terraform plan` (verify `Plan: 10 to import, 0 to add, 0 to change, 0 to destroy`) and `terraform apply` to absorb resources into `terraform.tfstate`. Delete `import.tf` and activate `main.tf`.
 
 ### Legacy AMI Redeployment
 

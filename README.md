@@ -92,7 +92,7 @@ hardened base.
 |--------|-------------------------|-----------------------|-----|
 | Hardening | OpenSSH · UFW · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · rsyslog · AIDE · Lynis | Security Groups · IMDSv2 · SSM · GuardDuty · CloudTrail | [`modules/hardening/`](modules/hardening/README.md) |
 
-12 steps covering independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
+13 steps (Steps 0–12) covering independent security layers — Lynis hardening index **88** (VM) · **90** (EC2).
 
 ### Services
 
@@ -116,12 +116,12 @@ Each layer of the lab is automated with the tool that matches its scope. Terrafo
 | Environment | Tool | Scope | Location |
 | --- | --- | --- | --- |
 | aws-native | Terraform | Per-module import + redeploy | `modules/<name>/aws-native/automation/terraform/` |
-| self-managed | Terraform | EC2 from AMI snapshot — infrastructure layer | `stacks/full-infra/self-managed/automation/terraform/` |
-| self-managed | Ansible (in progress) | OS configuration layer | `stacks/full-infra/self-managed/automation/ansible/` (roles, inventory, playbooks) |
+| self-managed | Terraform | EC2 greenfield from the canonical Ubuntu 24.04 ARM64 AMI — infrastructure layer | `stacks/full-infra/self-managed/automation/terraform/` |
+| self-managed | Ansible | Ansible — hardening complete (VM + EC2); remaining modules in progress | `stacks/full-infra/self-managed/automation/ansible/` (roles, inventory, playbooks) |
 
 The aws-native implementation order is `hardening` → `dns` → `file-transfer` → `web-server` → `directory`. Each module is independently deployable, and the full-stack composition sources them all.
 
-The self-managed Terraform stack provisions the EC2 host from the `multi-lab-aws-active-directory` AMI — infrastructure only. Ansible roles reproduce the configuration layer that the snapshot captured, so the host can be rebuilt from scratch without relying on an image. Monitoring (Prometheus, Grafana) is deployed as a self-managed module on top of the same baseline.
+The self-managed Terraform stack provisions a clean EC2 host running Ubuntu Server 24.04 LTS ARM64 from the canonical AMI — infrastructure only. Ansible roles reproduce the entire OS configuration baseline from scratch without relying on pre-baked images. Monitoring (Prometheus, Grafana) is deployed as an independent self-managed module on top of the same hardened foundation.
 
 ---
 
@@ -146,6 +146,7 @@ See [`continuous-integration.md`](continuous-integration.md) for the full workfl
 ├── AGENTS.md
 ├── banner.png
 ├── context
+│   ├── ansible-implementation.md
 │   └── decision-log.md
 ├── continuous-integration.md
 ├── CONTRIBUTING.md
