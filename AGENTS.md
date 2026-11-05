@@ -287,6 +287,7 @@ Reglas de escritura. El alcance, la estructura y las decisiones están en `decis
   `--check --diff` y una segunda ejecución con 0 `changed`. Cada rol tiene además un
   `README.md` corto (entradas, tags, destinos y ficheros compartidos).
 - Cada bloque de comandos de los docs de automatización indica dónde se ejecuta (nodo de control, VM o EC2).
+- Los bloques de comandos de los docs de automatización llevan etiqueta de destino (`**EC2 · multi-lab-vps · Run on …**` / `**VM · multi-lab-local · Run on …**`), y cada mención a `connection_mode` o `host_vars` indica el fichero concreto del destino.
 
 ---
 
@@ -318,12 +319,15 @@ Reglas al editar el CI:
 - Los documentos largos (más de unos 25.000 caracteres) se adjuntan partidos por secciones, porque las herramientas de lectura pueden truncar o resumir la salida.
 - Al empezar cada bloque, el asistente declara qué documentos ha leído completos y cuáles no. Si una herramienta devuelve texto truncado o resumido, lo indica y pide el texto original.
 - Sin los documentos necesarios, el asistente no contrasta, no afirma equivalencias y no emite prompts que dependan de ellos.
+- El asistente lee el repositorio por el conector de GitHub (`get_file_contents` para ficheros y `get_commit` con `detail: full_patch` para los diffs, incluidos los de documentos de más de ~25.000 caracteres que el conector trunca). Solo pide al autor lo que no está en el repositorio: salidas de ejecución, `host_vars` reales y ficheros ignorados por git. Sigue declarando qué leyó completo y qué no.
 
 ### Delegación al agente de código
 
 Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código (Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces, jobs de CI a partir de un patrón definido. Las decisiones de diseño, los documentos de implementación y las justificaciones (`### Why`) permanecen con el autor y el asistente.
 
-- El agente trabaja en una feature branch por módulo (hardening usa `feat/hardening-2a`; los siguientes, `feat/ansible-<módulo>`), con un commit por cambio; no crea ramas por correcciones ni por tareas pequeñas. Puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea el pull request del módulo cuando está cerrado.
+- El agente trabaja en una feature branch por módulo (hardening usa `feat/hardening-2a`; los siguientes, `feat/ansible-<módulo>`), con un commit por prompt (todo el delta del prompt en un único commit); no crea ramas por correcciones ni por tareas pequeñas. Puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea el pull request del módulo cuando está cerrado.
 - Cada tarea indica: alcance de archivos, lectura obligatoria (`AGENTS.md`, `decision-log.md` y, para tareas de Ansible, `context/ansible-implementation.md`), criterios de aceptación y lo que queda fuera de límites.
+- Cada prompt sigue el formato delta: Objetivo, Alcance (ficheros), Delta, Criterios de aceptación y Fuera de límites. Las correcciones detectadas durante la ejecución se acumulan y se envían juntas en el siguiente prompt, salvo que bloqueen al autor.
 - El agente ejecuta la estructura definida en `decision-log.md`; nunca la decide.
 - El agente escribe su informe final en `context/last-report.md` (ignorado por git y sobrescrito en cada ejecución) y responde en el chat solo con un resumen breve.
+- El informe `context/last-report.md` es breve: una línea de lectura (completo / no leído), hash y mensaje del commit, `git diff --stat`, comprobaciones con comando y resultado, desviaciones o preguntas abiertas, y lo no verificado en vivo. El informe describe; la fuente de verdad es el diff, que el asistente verifica en GitHub.
