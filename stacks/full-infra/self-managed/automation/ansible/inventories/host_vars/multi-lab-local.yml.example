@@ -57,6 +57,9 @@ wireguard_peer_public_keys:
 # WireGuard hub (EC2) public key required for client tunnel configuration (Step 5)
 wireguard_hub_public_key: "CHANGE_ME_HUB_WIREGUARD_PUBLIC_KEY"
 
+# WireGuard hub endpoint (EC2 public IP and listen port, e.g. 54.75.132.76:51820; do NOT use internal tunnel IP 172.16.0.1)
+wireguard_endpoint: "CHANGE_ME_EC2_PUBLIC_IP:51820"
+
 # Target minimum Lynis Hardening Index threshold for local VM (Step 12)
 hardening_lynis_min_score: 88
 
