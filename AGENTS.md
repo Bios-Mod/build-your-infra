@@ -145,6 +145,7 @@ Reglas:
 - Especificar CLI y Console (AWS) para cada paso.
 - Sin checklist al final — la verificación es por paso.
 - Omitir Verification solo si no hay nada que verificar.
+- En los documentos de automatización (`self-managed-automation.md`), las secciones Apply y Verify siguen What was done / Why / Verification según su rol (Apply describe el despliegue y justificación; Verify describe aserciones y comprobaciones con enlaces al doc manual).
 
 ## Cabecera de Archivos de Configuración — Estándar Obligatorio
 
@@ -282,12 +283,9 @@ Reglas de escritura. El alcance, la estructura y las decisiones están en `decis
   `template` sobre copias dentro del rol.
 - Usar `validate:` con el validador nativo del servicio cuando exista.
 - Los comentarios y el contenido van en inglés.
-- El doc de implementación de Ansible es `self-managed-automation.md` del stack, con una
-  sección por módulo que sigue What was done / Why / Verification, incluyendo
-  `--check --diff` y una segunda ejecución con 0 `changed`. Cada rol tiene además un
-  `README.md` corto (entradas, tags, destinos y ficheros compartidos).
-- Cada bloque de comandos de los docs de automatización indica dónde se ejecuta (nodo de control, VM o EC2).
-- Los bloques de comandos de los docs de automatización llevan etiqueta de destino (`**EC2 · multi-lab-vps · Run on …**` / `**VM · multi-lab-local · Run on …**`), y cada mención a `connection_mode` o `host_vars` indica el fichero concreto del destino.
+- El doc de implementación de Ansible es `self-managed-automation.md` del stack. Se organiza en secciones (Terraform, Control node, Hardening, una por módulo) con steps locales (máx. 4 por sección). Hardening tiene 4 steps (Baseline, Access chain, System hardening, Verify); cada uno de los demás módulos, 2 (Apply y Verify). Apply lleva tabla paso manual → tarea, tabla de destinos y decisiones propias; Verify, valores esperados por destino y enlaces a las Verification del doc manual (no se copian). Incluyen `--check --diff` y una segunda ejecución con 0 `changed`. Cada rol tiene además un `README.md` corto (entradas, tags, destinos y ficheros compartidos).
+- Los comandos del doc de automatización se presentan en tablas `Target | --limit | host_vars | Command | Expected`; solo se duplican bloques de código cuando el procedimiento difiere por destino. Cada bloque indica `EC2 · multi-lab-vps` o `VM · multi-lab-local` y dónde se ejecuta; cada mención a `connection_mode` o `host_vars` cita el fichero concreto.
+- Los roles de módulos nuevos incluyen `tasks/verify.yml` con aserciones bajo el tag `<module>_verify`; el tag `<module>` aplica el módulo completo.
 
 ---
 

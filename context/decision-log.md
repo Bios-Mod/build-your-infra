@@ -163,7 +163,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Doc de implementación único:** `stacks/full-infra/self-managed/automation/self-managed-automation.md`,
   con una sección por módulo (What was done / Why / Verification). Los hitos de verificación de
   cada módulo se reutilizan en el full stack para comprobar que cada módulo quedó bien aplicado.
-- **(2026-11-04) Estructura del doc de Ansible:** cada módulo (excepto hardening) tiene dos steps — Apply (tabla paso manual -> tarea de Ansible, comando y decisiones propias) y Verify. Hardening mantiene un step por paso por su riesgo de lockout.
+- **(2026-11-04) Estructura del doc de Ansible:** cada módulo (excepto hardening) tiene dos steps — Apply (tabla paso manual -> tarea de Ansible, comando y decisiones propias) y Verify. Hardening mantiene un step por paso por su riesgo de lockout. *(Sustituido el 2026-11-05 por estructura de 4 steps en hardening)*.
 - **Módulos elegibles.** La selección se hace por grupos de inventario (qué módulos se aplican a cada
   host) y por tags (`--tags <module>`) para ejecutar un módulo concreto. Hardening se aplica siempre
   primero y cada módulo comprueba al inicio que hardening está aplicado, fallando con un mensaje claro si no.
@@ -323,4 +323,14 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **(2026-11-03)** El agente escribe su informe final en `context/last-report.md` (ignorado por git y sobrescrito en cada ejecución) y responde en el chat solo con un resumen breve.
 - **(2026-11-04)** Antes de cada bloque, el asistente solicita el doc manual del módulo, lo contrasta con el código y solo entonces emite el prompt; no se emiten prompts con decisiones abiertas.
 - **(2026-11-05)** Método v2: un commit por prompt (sustituye al commit por cambio del 2026-11-03); prompts en formato delta; informe breve del agente; el asistente verifica por diff en GitHub (`get_commit` con `full_patch`) y solo pide al autor salidas de ejecución y ficheros fuera del repo; las correcciones se acumulan en el siguiente prompt salvo bloqueo; en bloques estables (p. ej. 2C) el autor ejecuta el bloque completo con `--tags` en una pasada. Motivo: reducir fricción y acelerar los módulos.
-- **(2026-11-05)** La reestructuración de `self-managed-automation.md` sigue pendiente para el cierre de hardening. Motivo añadido: los Steps 13-25 crecieron ~220 líneas por duplicar bloques EC2/VM.
+- **(2026-11-05)** Reestructuración de `self-managed-automation.md` completada en el cierre de hardening: reducción de 2053 a ≤1000 líneas unificando tablas de comandos por destino y localizando steps por sección.
+
+---
+
+## Reestructuración de Automatización y Robustez de Ansible (2026-11-05)
+
+- **Estructura del doc de automatización:** Se organiza en secciones con steps locales (máx. 4 por sección). Hardening pasa a 4 steps (Baseline, Access chain, System hardening, Verify), sustituyendo la regla de "un step por paso" del 2026-11-04; el resto de módulos mantiene 2 steps (Apply y Verify). Los comandos se presentan en tablas unificadas por destino (`Target | --limit | host_vars | Command | Expected`); las verificaciones enlazan a las secciones del doc manual en vez de duplicar comandos; y la fase de import/redeploy AMI pasa al `Appendix A (legacy)` (histórico, ≤ ~120 líneas). Motivo: el documento alcanzó 2053 líneas por duplicación de bloques EC2/VM y prosa redundante.
+- **Invariabilidad de tareas `step_NN_*.yml`:** Los ficheros de tareas individuales no cambian su granularidad. Son la unidad de implementación 1:1 con el documento manual; los tags (`hardening_step0` ... `hardening_step12`, `hardening_2a`, `hardening_2b`, `hardening_2c`) enlazan directamente la documentación con el código.
+- **Verificación en roles nuevos:** Los roles de módulos posteriores incluirán `tasks/verify.yml` con aserciones automatizadas bajo el tag `<module>_verify`, mientras que el tag `<module>` aplicará el módulo completo.
+- **Robustez del control node:** Se añade `module_defaults` con `ansible.builtin.apt: { lock_timeout: 600 }` en playbooks (tras detectarse que `unattended-upgrades` retiene el bloqueo dpkg tras arranque); `timeout = 30` en `ansible.cfg` (evitando timeout en prompt de sudo); y pre-flight assertion en playbooks (`ansible-core 2.21.6` y Python 3.12–3.14) tras un incidente de ejecución con el Ansible de Homebrew (core 2.21.5, Python 3.15).
+- **Pendientes conocidos:** (a) Puerta `hardening_2b` de la VM no verificada con 0 `changed` (la idempotencia del Step 3 queda por confirmar durante la reconstrucción desde cero; hipótesis no confirmada: notificación reiterada del handler de sshd); (b) Desviación de `/var/log/fail2ban.log` aceptada (creado como `syslog:adm` o `root:adm`, logrotate fuerza `0640 syslog:adm`, pudiendo dar 1 `changed`); (c) Causa raíz del cuelgue de apt tras arranque sin determinar a nivel de SO (mitigado operativamente con `lock_timeout: 600`).

@@ -27,14 +27,14 @@ Ciclo por módulo: **rol + sección del doc → ejecución manual en cada destin
 | Nivel | Ansible solo a nivel de stack, como el Terraform de self-managed. Los módulos self-managed no tienen carpeta `automation/`. |
 | Ubicación | Todo en `stacks/full-infra/self-managed/automation/ansible/`: `ansible.cfg`, `requirements.txt`, `inventories/`, `playbooks/`, `roles/<module>/`. |
 | Roles | Un rol por módulo, con `tasks/`, `handlers/`, `defaults/`, `templates/`, `meta/` y un `README.md` corto. Un rol sirve a ambos destinos. |
-| Doc | `self-managed-automation.md` del stack, con una sección por módulo (What was done / Why / Verification). |
+| Doc | `self-managed-automation.md` del stack, organizado en secciones con steps locales (máx. 4 por sección; hardening 4 steps, resto 2), tablas de comandos por destino y enlaces a las verificaciones del doc manual. |
 | Selección de módulos | Grupos de inventario + tags. Hardening siempre primero; cada módulo comprueba que hardening está aplicado. |
 | Fuente de configs | `configs/` de cada módulo; los roles las leen desde el nodo de control (`configs_root`) y sustituyen placeholders con variables de inventario. |
 | Nodo de control | Mac, Ansible nativo en `venv` con Python 3.12 a 3.14 (no 3.15), versiones fijadas en `requirements.txt`. |
 | Partida | Desde cero en ambos entornos, sin depender de snapshots ni AMIs. VM nueva con `local-vm-setup.md`; EC2 lanzada por Terraform desde Ubuntu 24.04 ARM64 base, pasando su AMI en la variable `ami_id` existente. El acceso SSH inicial se abre con una variable de Terraform (CIDR de bootstrap). |
 | Desarrollo | Incremental: un módulo por fase sobre el mismo host. Reconstrucción completa desde cero al cerrar hardening y en el cierre. |
 | Orden | hardening → file-transfer → dns → web-server → directory → dhcp. |
-| Pruebas | `ansible-lint` + `--syntax-check` en CI; `--check --diff` y 0 `changed` en la segunda pasada; verificaciones del módulo; Lynis ≥ 88 (VM) / ≥ 90 (EC2). Sin Molecule. |
+| Pruebas | `ansible-lint` + `--syntax-check` en CI; pre-flight de toolchain en playbooks (`ansible-core 2.21.6`, Python 3.12–3.14); `--check --diff` y 0 `changed` en la segunda pasada; verificaciones enlazadas del manual; Lynis ≥ 88 (VM) / ≥ 90 (EC2). Sin Molecule. |
 | Privilegios y secretos | `--ask-become-pass`; sin secretos en el repo; claves de WireGuard solo en su host. |
 | Fuera de Ansible | Security Groups y SSM. |
 | VM actual | Intacta y apagada hasta cerrar Ansible y pasar a monitorización. |
@@ -188,6 +188,7 @@ Hitos:
 - 2B VM: igual, como peer del hub; acceso por el túnel verificado.
 - 2C VM: Lynis >= 88; reconstrucción desde cero de la VM solo con
   `bootstrap.yml` + el rol hardening.
+- Cierre de hardening: reestructuración de `self-managed-automation.md` y docs de contexto (Prompt B/C); reconstrucción completa de la VM desde cero siguiendo el nuevo documento de automatización (lo que valida también la puerta 2B pendiente con 0 `changed`); verificación de hitos y merge del PR #7 a `main`.
 
 ### Fase 3 — Ansible en el CI
 
@@ -210,7 +211,7 @@ La instancia EC2 se mantiene entre las fases 4 y 7 (apagada entre sesiones).
 
 ### Fase 9 — Orquestación y cierre
 
-- **Entregables:** `site.yml` con tags; `self-managed-automation.md` completo; README raíz (quitar "in progress" y dejar la tabla de Automation definitiva), `continuous-integration.md` y decision-log; enlaces desde cada README de módulo; eliminar `ANALYSIS.md`.
+- **Entregables:** `site.yml` con tags; `self-managed-automation.md` completo (según el formato reestructurado de secciones con steps locales y tablas de destinos); README raíz (quitar "in progress" y dejar la tabla de Automation definitiva), `continuous-integration.md` y decision-log; enlaces desde cada README de módulo; eliminar `ANALYSIS.md`.
 - **Pasos manuales (autor):**
   1. Reconstrucción completa de la VM desde cero: `bootstrap.yml` + `site.yml` (módulos de la VM); luego `site.yml` por segunda vez.
   2. Reconstrucción completa de EC2 desde Ubuntu base con Terraform (módulos de EC2); segunda ejecución. Destruir la infraestructura al terminar.
@@ -224,7 +225,7 @@ La instancia EC2 se mantiene entre las fases 4 y 7 (apagada entre sesiones).
 2. `--check --diff`: revisar el diff.
 3. Ejecución real, con segunda sesión SSH en bloques de riesgo.
 4. Segunda ejecución: **0 `changed`**.
-5. Verificaciones del `.md` manual del módulo (comandos con `# →`).
+5. Verificaciones enlazadas del doc manual (no se copian en el doc de automatización).
 6. Fallos: se corrigen en el rol o, si el doc no refleja la realidad, en el doc (Método de Trabajo), y se registran con su causa en `self-managed-automation.md`.
 
 ---

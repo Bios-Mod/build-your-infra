@@ -1,64 +1,97 @@
 # Role: hardening
 
-This role automates the self-managed operating system hardening baseline on Ubuntu Server 24.04 LTS (ARM64 / x86_64), implementing the controls documented in [`modules/hardening/self-managed/hardening-self-managed.md`](../../../../../../modules/hardening/self-managed/hardening-self-managed.md).
+This role automates the operating system hardening baseline on Ubuntu Server 24.04 LTS (ARM64 / x86_64), implementing the security controls documented in [`modules/hardening/self-managed/hardening-self-managed.md`](../../../../../../modules/hardening/self-managed/hardening-self-managed.md).
 
 ---
 
-## Scope & Target Environments
+## Target Environments & Execution Order
 
 - **Targets:**
-  - `vm` (`multi-lab-local`): Local virtual machine (VMware Fusion, VirtualBox).
-  - `ec2` (`multi-lab-vps`): AWS EC2 self-managed instance (t4g.micro Graviton2).
-- **Hardening Index Target:**
-  - Lynis ≥ **88** on local VM.
-  - Lynis ≥ **90** on AWS EC2.
+  - `ec2` (`multi-lab-vps`): AWS EC2 self-managed instance (t4g.micro Graviton2). Deployed first as the WireGuard VPN hub (`172.16.0.1`).
+  - `vm` (`multi-lab-local`): Local virtual machine (VMware Fusion / VirtualBox). Deployed second as a WireGuard VPN peer (`172.16.0.3`).
+- **Target Lynis Hardening Index:**
+  - Lynis ≥ **90** on AWS EC2 (`group_vars/ec2.yml`).
+  - Lynis ≥ **88** on Local VM (`defaults/main.yml`).
 
 ---
 
-## Role Variables
+## Connection Modes (`connection_mode`)
 
-Variables are declared with sensible defaults in `defaults/main.yml` (prefixed with `hardening_` to adhere to Ansible namespace standards) and can be customized or overridden via inventory group variables (`group_vars/all.yml`, `group_vars/vm.yml`, `group_vars/ec2.yml`):
+Host connectivity evolves across three progressive phases controlled by `connection_mode` in each host's `host_vars` file (`inventories/host_vars/multi-lab-vps.yml` or `inventories/host_vars/multi-lab-local.yml`):
 
-| Variable | Default (Fallback) | Description |
+| Mode | Port | User | Transport | Target Stage |
+|---|---|---|---|---|
+| `pre` | `22` | `initial_user` (`ubuntu` on EC2, installer user on VM) | Direct public IPv4 (Elastic IP on EC2, LAN IP on VM) | Initial bootstrap (Step 0) and baseline updates (Step 1) |
+| `hardened` | `22222` | `admin_username` (`admin`) | Direct public IPv4 (Security Group port 22222 allowed on EC2) | Post-SSH hardening (Step 3) through UFW (Step 4) |
+| `wg` | `22222` | `admin_username` (`admin`) | WireGuard VPN tunnel (`172.16.0.1` for EC2, `172.16.0.3` for VM) | Post-WireGuard lockdown (Step 5) and permanent operations |
+
+---
+
+## Role Variables & Inputs
+
+### 1. Mandatory Inventory Variables (defined in `host_vars/<host>.yml`)
+
+| Variable | Description | Target |
 |---|---|---|
-| `hardening_admin_username` | `admin_username` (`"admin"`) | Name of the dedicated non-root administrator account. |
-| `hardening_admin_groups` | `admin_groups` (`["sudo", "adm", "admin"]`) | Supplementary groups for administrator privilege escalation. |
-| `hardening_admin_public_key_file` | `admin_public_key_file` (`"~/.ssh/id_ed25519.pub"`) | Path to administrator SSH public key on control node. |
-| `hardening_ssh_hardened_port` | `ssh_hardened_port` (`22222`) | Hardened TCP listening port for OpenSSH daemon. |
-| `hardening_wireguard_port` | `wireguard_port` (`51820`) | UDP listening port for WireGuard VPN service. |
-| `hardening_wireguard_vpn_subnet` | `wireguard_vpn_subnet` (`"10.8.0.0/24"`) | Dedicated non-conflicting VPN CIDR. |
-| `hardening_wireguard_server_vpn_ip` | `wireguard_server_vpn_ip` (`"10.8.0.1/24"`) | Gateway VPN IP assigned to `wg0`. |
-| `hardening_auditd_immutable_mode` | `true` | Enforces immutable auditd rules (`-e 2`) in Step 10 (overridden to `false` in `host_vars/multi-lab-local.yml` during development). |
-| `hardening_lynis_min_score` | `88` | Minimum Lynis Hardening Index threshold (88 for VM, 90 for EC2). Records score and warns if below threshold; never halts execution. |
-| `is_cloud` | `false` (in `vm.yml`) / `true` (in `ec2.yml`) | Distinguishes hypervisor/bare-metal from AWS cloud platform. |
-| `connection_mode` | `"pre"` | Connection phase toggle (`pre` = port 22, `hardened` = port 22222, `wg` = port 22222 on wg0). |
-| `tls_mode` | `"self_signed"` (VM) / `"letsencrypt"` (EC2) | Certificate strategy per target platform. |
+| `ansible_host` | Public Elastic IP (EC2) or LAN IP (VM). | Both |
+| `initial_user` | Default AMI user (`ubuntu` on EC2) or OS install user (`localuser` on VM). | Both |
+| `admin_public_key_file` | Path on control node to administrator Ed25519 public key (default: `~/.ssh/id_ed25519.pub`). | Both |
+| `ansible_ssh_private_key_file` | Path on control node to administrator SSH private key (default: `~/.ssh/id_ed25519`). | Both |
+| `connection_mode` | Active connection state (`pre`, `hardened`, or `wg`). | Both |
+| `wireguard_peer_public_keys` | Dictionary of peer public keys (`mac`, `local_vm` on EC2 hub; `mac` on VM). | Both |
+| `wireguard_endpoint` | Static WireGuard endpoint address (`<elastic-ip>:51820` on EC2; LAN IP on VM). | Both |
+| `wireguard_hub_public_key` | Public key of the EC2 hub. | VM only |
+| `vm_interface` | Target network interface name (e.g. `enp2s0`). | VM only |
+| `vm_static_ip` | Static IPv4 CIDR assigned to VM interface (e.g. `192.168.1.X/24`). | VM only |
+| `vm_gateway` | Default gateway IPv4 on VM local subnet (e.g. `192.168.1.1`). | VM only |
+
+### 2. Runtime Prompts
+
+- `hardening_admin_password`: Interactive secret prompt in `playbooks/bootstrap.yml`. Hashed dynamically at runtime via `password_hash('sha512', rounds=65536)`. No cleartext passwords or hashes are committed.
+
+### 3. Role Defaults (`defaults/main.yml`) & Overrides
+
+| Variable | Default Value | Defined / Overridden In | Purpose |
+|---|---|---|---|
+| `hardening_admin_username` | `admin` | `defaults/main.yml`, `group_vars/all.yml` | Dedicated non-root administrator account name. |
+| `hardening_admin_groups` | `['sudo', 'adm', 'admin']` | `defaults/main.yml` | Supplementary groups for privilege escalation. |
+| `hardening_ssh_port` | `22222` | `defaults/main.yml`, `group_vars/all.yml` | Target hardened OpenSSH listening port (`ssh_hardened_port`). |
+| `hardening_wireguard_port` | `51820` | `defaults/main.yml`, `group_vars/all.yml` | WireGuard UDP service port (`wireguard_port`). |
+| `hardening_wireguard_subnet` | `172.16.0.0/24` | `defaults/main.yml`, `group_vars/all.yml` | Isolated VPN subnet CIDR (`wireguard_vpn_subnet`). |
+| `hardening_wireguard_hub_vpn_ip` | `172.16.0.1` | `defaults/main.yml`, `group_vars/all.yml` | Gateway VPN IP assigned to `wg0` hub (`wireguard_server_vpn_ip`). |
+| `hardening_wireguard_vm_vpn_ip` | `172.16.0.3` | `defaults/main.yml`, `group_vars/all.yml` | Peer VPN IP assigned to local VM (`wireguard_vm_vpn_ip`). |
+| `hardening_auditd_immutable_mode` | `true` | `defaults/main.yml` (overridden to `false` in `group_vars/vm.yml` during development) | Enforces immutable kernel audit rules (`-e 2`). Enabled in final convergence. |
+| `hardening_lynis_min_score` | `88` | `defaults/main.yml` (overridden to `90` in `group_vars/ec2.yml`) | Lynis Hardening Index threshold; emits advisory warning if score drops. |
+| `hardening_wg_close_public_ssh` | `false` | `defaults/main.yml` | Set to `true` on EC2 to delete rate-limited public port 22222 after tunnel verification. |
+| `hardening_lan_trusted_cidr` | `""` | `defaults/main.yml` (`group_vars/vm.yml` sets LAN subnet, `ec2.yml` leaves empty) | Whitelisted CIDR for Fail2Ban `ignoreip`. |
 
 ---
 
-## Planned Execution Blocks & Tags
+## Tasks & Tags
 
-Execution is structured into three progressive gate blocks according to `context/ansible-implementation.md`:
+Execution is structured into three progressive gate blocks. Each task file maps 1:1 to the manual hardening specification:
 
-- **Block 2A — Preparation (Tag: `hardening_2a`):**
-  - Admin user provisioning and sudo authorization (Step 0).
-  - APT updates and automated security upgrades (Step 1).
-  - Static Netplan configuration (Step 2, VM only).
-- **Block 2B — Access Chain (Tag: `hardening_2b`):**
-  - OpenSSH lockdown to port 22222, key-only auth, host keys cleanup (Step 3).
-  - UFW default-deny policy and rate-limited access (Step 4).
-  - WireGuard cryptographic perimeter and interface routing (Step 5).
-  - Fail2Ban intrusion prevention and ignoreip whitelist (Step 6).
-- **Block 2C — System Hardening (Tag: `hardening_2c`):**
-  - Kernel sysctl parameters with `99-z-` load order guarantee (Step 7).
-  - AppArmor profile expansion (Step 8).
-  - Attack surface reduction: service masking, umask, PAM, modprobe (Step 9).
-  - Auditd syscall rules with immutable mode and AIDE baseline (Step 10).
-  - Rsyslog dedicated logging and logrotate policies (Step 11).
-  - Lynis security audit verification (Step 12).
+| Manual Step | Task File (`tasks/`) | Block Tag | Step Tag | Targets | Description |
+|---|---|---|---|---|---|
+| Step 0 | `step_00_admin_user.yml` | `hardening_2a` | `hardening_step0` | Both | Provision admin account, authorized_keys, sudoers |
+| Step 1 | `step_01_updates.yml` | `hardening_2a` | `hardening_step1` | Both | APT system updates, unattended-upgrades, debsums |
+| Step 2 | `step_02_static_ip.yml` | `hardening_2a` | `hardening_step2` | VM only | Static IP via Netplan + systemd-networkd drop-in |
+| Step 3 | `step_03_ssh.yml` | `hardening_2b` | `hardening_step3` | Both | SSH hardening (port 22222, key-only, host keys) |
+| Step 4 | `step_04_ufw.yml` | `hardening_2b` | `hardening_step4` | Both | UFW firewall baseline (default deny, rate-limit 22222) |
+| Step 5 | `step_05_wireguard.yml` | `hardening_2b` | `hardening_step5` | Both | WireGuard VPN (EC2 hub, VM peer, UFW tunnel rules) |
+| Step 6 | `step_06_fail2ban.yml` | `hardening_2b` | `hardening_step6` | Both | Fail2Ban intrusion prevention, UFW banaction |
+| Step 7 | `step_07_sysctl.yml` | `hardening_2c` | `hardening_step7` | Both | Kernel sysctl hardening (`99-z-hardening.conf`) |
+| Step 8 | `step_08_apparmor.yml` | `hardening_2c` | `hardening_step8` | Both | AppArmor utilities and enforce mode profiles |
+| Step 9.1 | `step_09_1_services.yml` | `hardening_2c` | `hardening_step9_1` | Both | Attack surface: services masking, snapd purge, SSM |
+| Step 9.2 | `step_09_2_users_fs.yml` | `hardening_2c` | `hardening_step9_2` | Both | Filesystem permissions, umask 027, PAM pwquality |
+| Step 9.3 | `step_09_3_modprobe.yml` | `hardening_2c` | `hardening_step9_3` | Both | Unused network protocols blacklist in modprobe.d |
+| Step 9.4 | `step_09_4_monitoring.yml` | `hardening_2c` | `hardening_step9_4` | Both | Security monitoring: rkhunter, acct, sysstat |
+| Step 10 | `step_10_audit.yml` | `hardening_2c` | `hardening_step10` | Both | Audit trail: auditd syscall rules and AIDE baseline |
+| Step 11 | `step_11_logging.yml` | `hardening_2c` | `hardening_step11` | Both | Log management: rsyslog isolation and logrotate |
+| Step 12 | `step_12_lynis.yml` | `hardening_2c` | `hardening_step12` | Both | Lynis security compliance audit |
 
 ---
 
 ## Shared Files Notice
 
-- `/etc/ssh/sshd_config`: Owned by this role. The downstream `file-transfer` (SFTP) module must append its `Match Group` subsystem blocks without altering the baseline SSH security directives established here.
+- `/etc/ssh/sshd_config`: Owned exclusively by this role. Downstream modules (`file-transfer` / SFTP) must append `Match Group` configuration blocks without modifying the global OpenSSH directives established by `step_03_ssh.yml`.
