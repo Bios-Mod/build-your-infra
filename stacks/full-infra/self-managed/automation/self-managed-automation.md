@@ -977,7 +977,7 @@ ssh -i ~/.ssh/id_ed25519_multi-lab <admin_username>@<ec2_eip>
 
 Verify account groups and unattended-upgrades service state inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 · Run on the instance (SSH session):**
 
 ```bash
 id <admin_username>
@@ -1469,17 +1469,29 @@ sudo fail2ban-client get sshd failregex | wc -l
 
 ## Step 17 — Kernel hardening (Hardening Step 7)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+>
+> **Development Note (Local VM):** During local development, keep `hardening_auditd_immutable_mode: false` in `inventories/host_vars/multi-lab-local.yml` to allow audit rule reloads without system reboots until final greenfield reconstruction. Lynis baseline target thresholds are 88 on Local VM and 90 on AWS EC2.
+
 ### What was done
 
 Deploy `/etc/sysctl.d/99-z-hardening.conf` applying kernel hardening parameters across network stack, memory protections, filesystem controls, and core dump restrictions. The handler reloads runtime sysctl values across the entire system.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step7 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step7 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step7 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step7 --ask-become-pass
 ```
 
@@ -1493,7 +1505,7 @@ The kernel exposes interfaces and capabilities by default that facilitate post-c
 
 Verify sysctl runtime parameters inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 # Confirm 99-z-hardening loads last among sysctl.d files
@@ -1525,17 +1537,27 @@ sysctl net.ipv4.ip_forward              # → 1
 
 ## Step 18 — AppArmor (Hardening Step 8)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Install `apparmor-utils`, `apparmor-profiles`, and `apparmor-profiles-extra` to expand Mandatory Access Control (MAC) enforcement and make available a library of pre-packaged application profiles in `/usr/share/apparmor/extra-profiles/`.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step8 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step8 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step8 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step8 --ask-become-pass
 ```
 
@@ -1547,7 +1569,7 @@ AppArmor restricts running programs to explicitly permitted capabilities, file p
 
 Verify AppArmor status and loaded profiles inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 sudo aa-status
@@ -1564,17 +1586,27 @@ ls /usr/share/apparmor/extra-profiles/ | wc -l
 
 ## Step 19 — Attack surface reduction: services and daemons (Hardening Step 9.1)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Disable ModemManager, mask `packagekit` and `udisks2`, purge apport crash reporting packages (+ autoremove) and reload sysctl, migrate AWS Systems Manager Agent from snap to native apt deb on EC2, purge snapd, remove snap filesystem leftovers, and place snapd on apt hold.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step9_1 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_1 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step9_1 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step9_1 --ask-become-pass
 ```
 
@@ -1586,7 +1618,7 @@ Every running daemon represents potential attack surface. `packagekit` and `udis
 
 Verify service mask status, sysctl dumpable parameter, and package holds inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 systemctl is-enabled udisks2
@@ -1619,19 +1651,29 @@ dpkg -l | grep amazon-ssm-agent
 
 ## Step 20 — Attack surface reduction: filesystem and user hardening (Hardening Step 9.2)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Restrict file permissions on crontabs (`0600`), cron directories (`0700`), and `sudoers.d` (`0750`). Configure `/etc/login.defs` with strict parameters: `UMASK 027`, `USERGROUPS_ENAB no`, password aging (`PASS_MAX_DAYS 90`, `PASS_MIN_DAYS 1`, `PASS_WARN_AGE 14`), and `SHA_CRYPT_MIN/MAX_ROUNDS 65536`. Install `libpam-pwquality` and `libpam-tmpdir`, deploy hardened `common-password`, `common-session`, and `limits.conf` (disabling core dumps at shell level), and enforce password aging policy on the administrator account.
 
 > **Operational Warning (Lockout Risk):** Deploying `common-password` and `common-session` alters system-wide PAM authentication and session setup. Always maintain an independent secondary active SSH session open before executing this step to prevent accidental administrative lockout in the event of syntax or module errors.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step9_2 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_2 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step9_2 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step9_2 --ask-become-pass
 ```
 
@@ -1647,7 +1689,7 @@ Restricting cron and sudoers directory permissions prevents lateral privilege es
 
 Verify login definitions, directory permissions, and administrator aging inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 grep "^UMASK" /etc/login.defs
@@ -1672,13 +1714,19 @@ sudo chage -l <admin_username>
 
 Session-level environment variables (umask, TMPDIR, and ulimits) take effect only upon creating a fresh login session. Open a **NEW terminal window** and connect via SSH:
 
-**Run on the control node (Mac) from a new terminal:**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@172.16.0.1
 ```
 
-**Run inside the NEW SSH session:**
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@172.16.0.3
+```
+
+**EC2 & VM · Run inside the NEW SSH session:**
 
 ```bash
 # Verify umask 027
@@ -1706,17 +1754,27 @@ sudo grep "^<admin_username>:" /etc/shadow | cut -d: -f2 | cut -c1-3
 
 ## Step 21 — Attack surface reduction: kernel modules (Hardening Step 9.3)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Deploy `/etc/modprobe.d/disable-unused-protocols.conf` blacklisting `dccp`, `sctp`, `rds`, and `tipc` protocol modules via `/bin/false`, and rebuild the initial ramdisk via handler `update-initramfs -u`.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step9_3 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_3 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step9_3 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step9_3 --ask-become-pass
 ```
 
@@ -1730,7 +1788,7 @@ Unused network protocol stacks (`dccp`, `sctp`, `rds`, `tipc`) reside directly i
 
 Verify kernel module load status inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 lsmod | grep -E "dccp|sctp|rds|tipc"
@@ -1744,17 +1802,27 @@ sudo modprobe dccp 2>&1
 
 ## Step 22 — Attack surface reduction: monitoring and forensics (Hardening Step 9.4)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Preconfigure Postfix debconf to "No configuration" to eliminate interactive prompts, install `rkhunter`, configure mirror updates and whitelists in `/etc/rkhunter.conf` and `/etc/default/rkhunter`, perform signature updates (`rkhunter --update`), refresh the file properties database baseline snapshot (`rkhunter --propupd`) when packages or configuration change, install and enable process accounting (`acct`), and configure automated performance data collection (`sysstat`). Tasks on package-generated configuration files and service units are protected under check mode (`ignore_errors: "{{ ansible_check_mode }}"`) to ensure `--check --diff` passes cleanly on fresh unconfigured hosts.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step9_4 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step9_4 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step9_4 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step9_4 --ask-become-pass
 ```
 
@@ -1766,7 +1834,7 @@ Detection tools provide situational awareness and forensic capability post-incid
 
 Verify rkhunter configuration, process accounting, and sysstat metrics inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 grep -E "CRON_DAILY|CRON_DB|APT_AUTO" /etc/default/rkhunter
@@ -1791,17 +1859,27 @@ sar -u 1 2
 
 ## Step 23 — Audit trail: auditd and AIDE (Hardening Step 10)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Install `auditd` and `audispd-plugins`, deploy `/etc/audit/rules.d/99-hardening.rules` with conditional immutable mode (`-e 2`), reload audit rules via `augenrules --load` (executed conditionally when rules change, with automated restart recovery if active immutable mode returns "Operation not permitted"), verify runtime audit state with `auditctl -s`, install `aide` and `aide-common`, deploy `/etc/aide/aide.conf.d/99-hardening`, initialize the cryptographic database baseline snapshot (`aide --init`), activate the database snapshot (`aide.db.new` moved to `aide.db` strictly when the baseline was initialized), and enable automated daily integrity checks in `/etc/default/aide`.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step10 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step10 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step10 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step10 --ask-become-pass
 ```
 
@@ -1818,7 +1896,7 @@ auditd and AIDE cover complementary security dimensions: auditd logs events in r
 
 Verify audit rules status, immutable mode, and AIDE database baseline inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 # Confirm active audit rule keys
@@ -1849,17 +1927,27 @@ grep CRON_DAILY_RUN /etc/default/aide
 
 ## Step 24 — Log management: rsyslog and logrotate (Hardening Step 11)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Enable the UFW packet logging switch, pre-create dedicated log files `/var/log/ufw.log` and `/var/log/fail2ban.log` owned by `syslog:adm` (mode `0640`) without modifying existing file timestamps, deploy `rsyslog/20-ufw.conf`, `rsyslog/99-hardening.conf`, and `logrotate/hardening-logs`, and restart the rsyslog daemon.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step11 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step11 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step11 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step11 --ask-become-pass
 ```
 
@@ -1875,7 +1963,7 @@ Dedicated log routing separates firewall dropped packets and intrusion preventio
 
 Verify log file ownership, rsyslog configuration syntax, and logrotate dry-run inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 # Verify ownership and permissions
@@ -1896,6 +1984,8 @@ sudo logrotate --debug /etc/logrotate.d/hardening-logs 2>&1 | grep -E "consideri
 
 ## Step 25 — Security audit baseline: Lynis (Hardening Step 12)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Install Lynis (verifying version 3.0.9), deploy `lynis/custom.prf`, execute full system security audit, parse `hardening_index` from `/var/log/lynis-report.dat`, display score summary, and emit a warning if the Hardening Index falls below the target threshold. In accordance with the decision log, Lynis records the score and emits a warning without failing execution (no enforce option).
@@ -1907,13 +1997,21 @@ Install Lynis (verifying version 3.0.9), deploy `lynis/custom.prf`, execute full
 >
 > **Score Delta Explanation:** AWS EC2 achieves a higher baseline score (90 vs 88) due to platform-managed controls (hypervisor isolation, physical hardware security, cloud metadata management) that Lynis recognizes automatically in cloud instances. The delta is infrastructure-level, not configuration-level: both target environments run identical OS hardening roles.
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step12 --check --diff --ask-become-pass
-
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_step12 --ask-become-pass
+```
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step12 --check --diff --ask-become-pass
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step12 --ask-become-pass
 ```
 
@@ -1927,19 +2025,29 @@ Running Lynis validates that all defense-in-depth controls are active at runtime
 
 Verify Hardening Index score from the generated report data:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 sudo grep hardening_index /var/log/lynis-report.dat
 # → hardening_index=90 (EC2) or hardening_index=88 (VM)
 ```
 
-Verify full Block 2C execution and complete idempotence:
+Verify full Block 2C execution and complete idempotence on EC2:
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+  --tags hardening_2c --ask-become-pass
+# → changed=0 (gate for block 2C: second run with no changes)
+```
+
+Verify full Block 2C execution and complete idempotence on VM:
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_2c --ask-become-pass
 # → changed=0 (gate for block 2C: second run with no changes)
 ```
