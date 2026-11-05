@@ -1271,14 +1271,59 @@ Execute the exact validated sequence below to transition from public SSH to the 
 
 #### Local VM (multi-lab-local)
 
-The local VM acts as a VPN client (`172.16.0.3/32`), not a hub. It requires the EC2 hub to be deployed first, with `wireguard_hub_public_key` and `wireguard_endpoint` configured in `inventories/host_vars/multi-lab-local.yml`. Port `51820/udp` is not opened in UFW on the VM:
+The local VM acts as a VPN client (`172.16.0.3/32`), routing into the EC2 hub:
 
-**VM · multi-lab-local · Run on the control node (Mac):**
+1. **Prerequisite:** The EC2 hub is fully deployed and the Mac WireGuard tunnel is active.
+2. **Retrieve Hub Public Key:** Read `/etc/wireguard/server_public.key` on EC2 (public keys only; never transfer private keys):
 
-```bash
-ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
-  --tags hardening_step5 --ask-become-pass
-```
+   **EC2 · Run on the instance (SSH session):**
+
+   ```bash
+   sudo cat /etc/wireguard/server_public.key
+   # → <hub-public-key>
+   ```
+
+3. **Configure VM Host Variables:** In `inventories/host_vars/multi-lab-local.yml`, configure `wireguard_hub_public_key: "<hub-public-key>"` and `wireguard_endpoint: "<ec2_eip>:51820"`.
+4. **Deploy Client Configuration on VM:** Run Step 5 without `--check` on initial run to generate the VM keypair:
+
+   **VM · multi-lab-local · Run on the control node (Mac):**
+
+   ```bash
+   ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+     --tags hardening_step5 --ask-become-pass
+   # → WireGuard Public Key for multi-lab-local: <vm-public-key>
+   ```
+
+5. **Register VM Peer on EC2 Hub:** Copy `<vm-public-key>` into `wireguard_peer_public_keys.local_vm` in `inventories/host_vars/multi-lab-vps.yml` and re-run Step 5 on EC2.
+
+   > ⚠️ **Transient Connection Notice:** The handler restarts `wg-quick@wg0` on the hub, which may momentarily disrupt the active Ansible session going through that tunnel. If an `UNREACHABLE` error occurs at the very end of task execution, check connectivity with `ping -c 3 172.16.0.1` and use SSM Session Manager if inspection is needed.
+
+   **EC2 · multi-lab-vps · Run on the control node (Mac):**
+
+   ```bash
+   ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
+     --tags hardening_step5 --ask-become-pass
+   ```
+
+6. **Verify VM Tunnel & Connectivity:**
+
+   **VM · Run on the VM (SSH session):**
+
+   ```bash
+   sudo wg show
+   # → peer: <hub-public-key>, latest handshake: X seconds ago, transfer: ...
+   ping -c 3 172.16.0.1
+   # → 0% packet loss
+   ```
+
+   **Mac · Run on the control node (Mac):**
+
+   ```bash
+   ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@172.16.0.3
+   # → connects successfully over WireGuard tunnel
+   ```
+
+7. **Switch Connection Mode in Inventory:** Set `connection_mode: "wg"` in `inventories/host_vars/multi-lab-local.yml`. Note: the VM keeps the rate-limited port 22222 rule over LAN (`hardening_wg_close_public_ssh: false`; decision 2026-11-04); there is no public closure step or Security Group update for the VM. Port `51820/udp` is not opened in UFW on the VM.
 
 📄 [`configs/wireguard/wg0.conf`](../../../../modules/hardening/self-managed/configs/wireguard/wg0.conf)
 📄 [`configs/wireguard/client-template.conf`](../../../../modules/hardening/self-managed/configs/wireguard/client-template.conf)
@@ -1290,6 +1335,8 @@ WireGuard provides cryptographic authentication at the network transport layer b
 
 ### Verification
 
+#### EC2 Hub (multi-lab-vps)
+
 Verify WireGuard tunnel status and peer handshakes on the EC2 hub:
 
 **EC2 · Run on the instance (SSH session):**
@@ -1298,6 +1345,7 @@ Verify WireGuard tunnel status and peer handshakes on the EC2 hub:
 sudo wg show
 # → interface: wg0, listening port: 51820
 # → peer: <mac_public_key>, latest handshake: X seconds ago, transfer: ...
+# → peer: <vm_public_key>, latest handshake: X seconds ago, transfer: ...
 
 sudo ufw status numbered
 # → 51820/udp                  ALLOW IN    Anywhere
@@ -1312,6 +1360,21 @@ Confirm that public SSH is blocked from outside the tunnel:
 ```bash
 ssh -p 22222 -o ConnectTimeout=5 <admin_username>@<ec2_eip>
 # → Connection timed out
+```
+
+#### Local VM Client (multi-lab-local)
+
+Verify WireGuard client tunnel status and hub reachability:
+
+**VM · Run on the VM (SSH session):**
+
+```bash
+sudo wg show
+# → interface: wg0
+# → peer: <hub_public_key>, endpoint: <ec2_eip>:51820, latest handshake: X seconds ago
+
+ping -c 3 172.16.0.1
+# → 3 packets transmitted, 3 received, 0% packet loss
 ```
 
 ### Troubleshooting
