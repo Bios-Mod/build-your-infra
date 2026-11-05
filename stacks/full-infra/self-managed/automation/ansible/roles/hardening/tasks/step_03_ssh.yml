@@ -89,21 +89,15 @@
   ansible.builtin.meta: flush_handlers
 
 # WARNING: EC2 requirement. Security Group 'multi-lab-sg' MUST allow port 22222 (via ssh_hardened_cidr) before switching connection_mode to 'hardened'.
-# Updates connection mode dynamically to test connectivity on hardened SSH port 22222 (Step 3)
-- name: Switch connection mode to hardened port
-  ansible.builtin.set_fact:
-    connection_mode: "hardened" # noqa: var-naming[no-role-prefix]
-  when: connection_mode == 'pre'
-
-# Resets current SSH control master connection to force renegotiation on port 22222 (Step 3)
-- name: Reset SSH connection to rebind to hardened port
-  ansible.builtin.meta: reset_connection
-  when: connection_mode == 'pre'
-
-# Waits for SSH reachability on hardened port 22222 to confirm successful transition (Step 3)
-- name: Wait for SSH reachability on hardened port 22222
-  ansible.builtin.wait_for_connection:
-    delay: 3
-    timeout: 60
-  become: false
+# Transitions SSH connection to hardened port 22222 via include_tasks to prevent meta reset_connection from running unconditionally (Step 3)
+- name: Transition SSH connection to hardened port
+  ansible.builtin.include_tasks:
+    file: step_03_ssh_transition.yml
+    apply:
+      tags:
+        - hardening_2b
+        - hardening_step3
+  tags:
+    - hardening_2b
+    - hardening_step3
   when: connection_mode == 'pre'

@@ -32,7 +32,7 @@ Ciclo por módulo: **rol + sección del doc → ejecución manual en cada destin
 | Fuente de configs | `configs/` de cada módulo; los roles las leen desde el nodo de control (`configs_root`) y sustituyen placeholders con variables de inventario. |
 | Nodo de control | Mac, Ansible nativo en `venv` con Python 3.12 a 3.14 (no 3.15), versiones fijadas en `requirements.txt`. |
 | Partida | Desde cero en ambos entornos, sin depender de snapshots ni AMIs. VM nueva con `local-vm-setup.md`; EC2 lanzada por Terraform desde Ubuntu 24.04 ARM64 base, pasando su AMI en la variable `ami_id` existente. El acceso SSH inicial se abre con una variable de Terraform (CIDR de bootstrap). |
-| Desarrollo | Incremental: un módulo por fase sobre el mismo host. Reconstrucción completa desde cero al cerrar hardening y en el cierre. |
+| Desarrollo | Incremental: un módulo por fase sobre el mismo host. Reconstrucción completa desde cero en el cierre del plan (Fase 9). |
 | Orden | hardening → file-transfer → dns → web-server → directory → dhcp. |
 | Pruebas | `ansible-lint` + `--syntax-check` en CI; pre-flight de toolchain en playbooks (`ansible-core 2.21.6`, Python 3.12–3.14); `--check --diff` y 0 `changed` en la segunda pasada; verificaciones enlazadas del manual; Lynis ≥ 88 (VM) / ≥ 90 (EC2). Sin Molecule. |
 | Privilegios y secretos | `--ask-become-pass`; sin secretos en el repo; claves de WireGuard solo en su host. |
@@ -186,9 +186,8 @@ Hitos:
   Security Group; 0 `changed`.
 - 2C EC2: Steps 7-12; Lynis >= 90; 0 `changed`.
 - 2B VM: igual, como peer del hub; acceso por el túnel verificado.
-- 2C VM: Lynis >= 88; reconstrucción desde cero de la VM solo con
-  `bootstrap.yml` + el rol hardening.
-- Cierre de hardening: reestructuración del doc de automatización y de los README; reconstrucción completa de la VM desde cero siguiendo el nuevo documento de automatización (lo que valida también la puerta 2B pendiente con 0 `changed`); verificación de hitos y merge del PR #7 a `main`.
+- 2C VM: Lynis >= 88; 0 `changed`.
+- Cierre de hardening: reestructuración del doc de automatización y de los README; puertas de idempotencia (0 `changed`) sobre los hosts existentes más verificación del modo inmutable (`-e 2`) en la VM (la reconstrucción completa desde cero de la VM se aplaza a la Fase 9 para evitar duplicar el proceso; riesgo asumido: las secuencias de arranque en limpio no se re-ejecutan hasta la Fase 9); verificación de hitos y merge del PR #7 a `main`.
 
 ### Fase 3 — Ansible en el CI
 

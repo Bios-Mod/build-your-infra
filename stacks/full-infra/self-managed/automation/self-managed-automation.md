@@ -271,6 +271,7 @@ ansible-playbook playbooks/ping.yml --limit multi-lab-local
 #### Troubleshooting
 - **Python 3.15 incompatibility:** `ansible-core 2.21` supports Python 3.12 to 3.14 on the control node. Python 3.15 is incompatible and fails at startup with module import errors. Use Python 3.14 to create `.venv`.
 - **`passlib` requirement on modern macOS:** Python >= 3.13 removes the standard library `crypt` module. The `passlib` package is pinned in `requirements.txt` to enable the `password_hash('sha512', rounds=65536)` Jinja filter on the local macOS control node without depending on deprecated system C-bindings.
+- **Host key changed after rebuilding a host:** remove the stale entry with `ssh-keygen -R <ip>` before reconnecting (`host_key_checking` is enforced).
 
 ---
 
@@ -366,7 +367,7 @@ Lock down OpenSSH daemon configuration to port 22222, enforce default-deny firew
 
 #### 2.2 UFW Firewall (manual Step 4)
 - Configures default-deny incoming and default-allow outgoing policies.
-- Temporarily opens rate-limited port 22222 on all interfaces (`limit 22222/tcp`) so management access is preserved while configuring WireGuard.
+- Temporarily opens rate-limited port 22222 on all interfaces (`limit 22222/tcp`) so management access is preserved while configuring WireGuard (skipped when `hardening_wg_close_public_ssh: true` on EC2 to avoid rule flapping with Step 5).
 - Enables medium firewall logging.
 
 #### 2.3 WireGuard VPN (manual Step 5)
@@ -562,6 +563,7 @@ The local VM acts as a VPN client (`172.16.0.3/32`), routing into the EC2 hub:
 Restricting OpenSSH to port 22222 over an encrypted WireGuard tunnel shields administrative access from port scanning and brute-force bots on the public Internet. Using `banaction = ufw` ensures malicious IPs are dropped at the packet filter level before hitting daemon sockets.
 
 #### Troubleshooting — WireGuard & Perimeter
+- **`meta: reset_connection` ignores `when` in ansible-core 2.21:** the role runs it only through `include_tasks` guarded by `connection_mode == 'pre'`. Before this fix, every pass reset the SSH connection and the next task using `become` failed with 'Timeout waiting for privilege escalation prompt'.
 - **`Key is not the correct length or format`:** WireGuard public keys must be exactly 32 bytes encoded in base64 (44 characters ending with `=`). This error occurs when example placeholder text (such as `CHANGE_ME_...`) is left in `host_vars` or copied into `wg0.conf`. The role pre-flight assertion prevents deployment if the key is invalid.
 - **Absence of Handshake (`latest handshake` missing in `wg show`):**
   - Verify AWS Security Group: port `51820/udp` must be allowed from `0.0.0.0/0` in `multi-lab-sg`.
@@ -661,9 +663,10 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-local --ask-become-pa
 ```
 
 #### Known Deviations & Pending Checks
-1. **`/var/log/fail2ban.log` ownership:** The file is created initially with `syslog:adm` ownership in manual Step 11 (`step_11_logging.yml`). However, the Fail2Ban daemon writes directly as `root`, and logrotate (`configs/logrotate/hardening-logs`) specifies `create 640 root adm`. If logrotate rotates the file between runs, the task in manual Step 11 reports `changed=1` to restore `syslog:adm` ownership.
-2. **VM Block 2B Gate Idempotency:** The VM Block 2B gate was not completed (a 'Timeout waiting for privilege escalation prompt' occurred at the first UFW task; root cause not identified, not reproduced with the pinned venv). Idempotency of Step 3 will be re-confirmed during the from-scratch rebuild.
+1. **`/var/log/fail2ban.log` ownership:** The file is created initially with `syslog:adm` ownership in Step 11 (`step_11_logging.yml`). However, the Fail2Ban daemon writes directly as `root`, and logrotate (`configs/logrotate/hardening-logs`) specifies `create 640 root adm`. If logrotate rotates the file between runs, the task in Step 11 reports `changed=1` to restore `syslog:adm` ownership.
+2. **VM Block 2B Gate Idempotency:** The 'Timeout waiting for privilege escalation prompt' encountered during Block 2B was caused by `meta: reset_connection` executing unconditionally on every pass in ansible-core 2.21, resetting the SSH connection right before UFW privilege escalation. This was resolved by isolating the transition in `step_03_ssh_transition.yml` via conditional `include_tasks`. Live idempotency verification (full Block 2B gate with `changed=0` across both targets) will be confirmed following this fix, while the from-scratch rebuild is deferred to Phase 9.
 3. **WireGuard Client Endpoint Trap:** In the local VM client configuration, `wireguard_endpoint` must explicitly point to the public Elastic IP and port of the EC2 hub (`<ec2_eip>:51820`). It must be declared in `inventories/host_vars/multi-lab-local.yml` and must never default to the VM's own LAN IP, which previously prevented handshake completion.
+4. **UFW Port 22222 Flapping Prevention:** In `step_04_ufw.yml`, the task that allows rate-limited incoming connections on port 22222 is guarded by `when: not hardening_wg_close_public_ssh`. This prevents the rule from being recreated on Step 4 and deleted on Step 5 on every run in EC2 when public SSH closure is active.
 
 ---
 

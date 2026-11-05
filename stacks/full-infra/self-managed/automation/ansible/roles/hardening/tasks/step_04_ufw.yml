@@ -22,13 +22,15 @@
     direction: outgoing
     default: "{{ hardening_ufw_default_outgoing_policy }}"
 
-# Configures rate limiting on SSH port 22222 to prevent brute-force attacks (Step 4)
+# Configures rate limiting on SSH port 22222 before WireGuard perimeter is locked down (Step 4)
+# Skipped when hardening_wg_close_public_ssh is true to avoid rule flapping with Step 5
 - name: Allow rate-limited incoming connections on hardened SSH port
   community.general.ufw:
     rule: limit
     port: "{{ hardening_ssh_port | string }}"
     proto: tcp
     comment: "SSH rate limited"
+  when: not hardening_wg_close_public_ssh
 
 # Sets UFW logging level to medium to capture dropped packets from default policy (Step 4)
 - name: Set UFW logging level to medium
