@@ -1036,7 +1036,7 @@ Update `connection_mode: "hardened"` in your real host variables file `inventori
 
 #### Local VM (multi-lab-local)
 
-On the local VM, the initial user is the OS installer account (`vm_initial_user`, typically `sysadmin`) rather than `ubuntu`. Access migrates identically to the dedicated administrator (`admin_username`).
+On the local VM, the initial user is the account created by the Ubuntu installer (`vm_initial_user`) rather than `ubuntu`. Access migrates identically to the dedicated administrator (`admin_username`).
 
 **VM · multi-lab-local · Run on the control node (Mac):**
 
@@ -1323,7 +1323,7 @@ The local VM acts as a VPN client (`172.16.0.3/32`), routing into the EC2 hub:
    # → connects successfully over WireGuard tunnel
    ```
 
-7. **Switch Connection Mode in Inventory:** Set `connection_mode: "wg"` in `inventories/host_vars/multi-lab-local.yml`. Note: the VM keeps the rate-limited port 22222 rule over LAN (`hardening_wg_close_public_ssh: false`; decision 2026-11-04); there is no public closure step or Security Group update for the VM. Port `51820/udp` is not opened in UFW on the VM.
+7. **Switch Connection Mode in Inventory:** Set `connection_mode: "wg"` in `inventories/host_vars/multi-lab-local.yml`. Note: the VM keeps the rate-limited port 22222 rule over LAN (`hardening_wg_close_public_ssh: false`; decision 2026-11-04); there is no public closure step or Security Group update for the VM. The role configures port 51820/udp in UFW for both roles; while unnecessary on a VPN client, it is harmless because default incoming policy denies all other unsolicited traffic.
 
 📄 [`configs/wireguard/wg0.conf`](../../../../modules/hardening/self-managed/configs/wireguard/wg0.conf)
 📄 [`configs/wireguard/client-template.conf`](../../../../modules/hardening/self-managed/configs/wireguard/client-template.conf)
