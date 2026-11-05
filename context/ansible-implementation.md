@@ -188,7 +188,7 @@ Hitos:
 - 2B VM: igual, como peer del hub; acceso por el túnel verificado.
 - 2C VM: Lynis >= 88; reconstrucción desde cero de la VM solo con
   `bootstrap.yml` + el rol hardening.
-- Cierre de hardening: reestructuración de `self-managed-automation.md` y docs de contexto (Prompt B/C); reconstrucción completa de la VM desde cero siguiendo el nuevo documento de automatización (lo que valida también la puerta 2B pendiente con 0 `changed`); verificación de hitos y merge del PR #7 a `main`.
+- Cierre de hardening: reestructuración del doc de automatización y de los README; reconstrucción completa de la VM desde cero siguiendo el nuevo documento de automatización (lo que valida también la puerta 2B pendiente con 0 `changed`); verificación de hitos y merge del PR #7 a `main`.
 
 ### Fase 3 — Ansible en el CI
 
