@@ -145,6 +145,7 @@ Reglas:
 - Especificar CLI y Console (AWS) para cada paso.
 - Sin checklist al final — la verificación es por paso.
 - Omitir Verification solo si no hay nada que verificar.
+- En los documentos de automatización (`self-managed-automation.md`), las secciones Apply y Verify siguen What was done / Why / Verification según su rol (Apply describe el despliegue y justificación; Verify describe aserciones y comprobaciones con enlaces al doc manual).
 
 ## Cabecera de Archivos de Configuración — Estándar Obligatorio
 
@@ -282,10 +283,9 @@ Reglas de escritura. El alcance, la estructura y las decisiones están en `decis
   `template` sobre copias dentro del rol.
 - Usar `validate:` con el validador nativo del servicio cuando exista.
 - Los comentarios y el contenido van en inglés.
-- El doc de implementación de Ansible es `self-managed-automation.md` del stack, con una
-  sección por módulo que sigue What was done / Why / Verification, incluyendo
-  `--check --diff` y una segunda ejecución con 0 `changed`. Cada rol tiene además un
-  `README.md` corto (entradas, tags, destinos y ficheros compartidos).
+- El doc de implementación de Ansible es `self-managed-automation.md` del stack. Se organiza en secciones (Terraform, Control node, Hardening, una por módulo) con steps locales (máx. 4 por sección). Hardening tiene 4 steps (Baseline, Access chain, System hardening, Verify); cada uno de los demás módulos, 2 (Apply y Verify). Apply lleva tabla paso manual → tarea, tabla de destinos y decisiones propias; Verify, valores esperados por destino y enlaces a las Verification del doc manual (no se copian). Incluyen `--check --diff` y una segunda ejecución con 0 `changed`. Cada rol tiene además un `README.md` corto (entradas, tags, destinos y ficheros compartidos).
+- Los comandos del doc de automatización se presentan en tablas `Target | --limit | host_vars | Command | Expected`; solo se duplican bloques de código cuando el procedimiento difiere por destino. Cada bloque indica `EC2 · multi-lab-vps` o `VM · multi-lab-local` y dónde se ejecuta; cada mención a `connection_mode` o `host_vars` cita el fichero concreto.
+- Los roles de módulos nuevos incluyen `tasks/verify.yml` con aserciones bajo el tag `<module>_verify`; el tag `<module>` aplica el módulo completo.
 
 ---
 
@@ -311,10 +311,21 @@ Reglas al editar el CI:
    aprendiendo mientras lo aplica y reportando cada error encontrado.
 4. Los errores se corrigen en el documento, de modo que termine reflejando lo que realmente se verificó.
 
+### Lectura de documentos por el asistente
+
+- El asistente no da por leído ningún documento que no haya recibido completo. Antes de cada bloque pide al autor los documentos que necesita (doc manual del módulo, configs relevantes, docs de entorno); no los busca ni los infiere por su cuenta.
+- Los documentos largos (más de unos 25.000 caracteres) se adjuntan partidos por secciones, porque las herramientas de lectura pueden truncar o resumir la salida.
+- Al empezar cada bloque, el asistente declara qué documentos ha leído completos y cuáles no. Si una herramienta devuelve texto truncado o resumido, lo indica y pide el texto original.
+- Sin los documentos necesarios, el asistente no contrasta, no afirma equivalencias y no emite prompts que dependan de ellos.
+- El asistente lee el repositorio por el conector de GitHub (`get_file_contents` para ficheros y `get_commit` con `detail: full_patch` para los diffs, incluidos los de documentos de más de ~25.000 caracteres que el conector trunca). Solo pide al autor lo que no está en el repositorio: salidas de ejecución, `host_vars` reales y ficheros ignorados por git. Sigue declarando qué leyó completo y qué no.
+
 ### Delegación al agente de código
 
 Las tareas mecánicas con mínimas decisiones pueden delegarse al agente de código (Antigravity): scaffolding de carpetas, migración de configs, actualización de enlaces, jobs de CI a partir de un patrón definido. Las decisiones de diseño, los documentos de implementación y las justificaciones (`### Why`) permanecen con el autor y el asistente.
 
-- El agente trabaja en feature branches, puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea cada pull request.
+- El agente trabaja en una feature branch por módulo (hardening usa `feat/hardening-2a`; los siguientes, `feat/ansible-<módulo>`), con un commit por prompt (todo el delta del prompt en un único commit); no crea ramas por correcciones ni por tareas pequeñas. Puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea el pull request del módulo cuando está cerrado.
 - Cada tarea indica: alcance de archivos, lectura obligatoria (`AGENTS.md`, `decision-log.md` y, para tareas de Ansible, `context/ansible-implementation.md`), criterios de aceptación y lo que queda fuera de límites.
+- Cada prompt sigue el formato delta: Objetivo, Alcance (ficheros), Delta, Criterios de aceptación y Fuera de límites. Las correcciones detectadas durante la ejecución se acumulan y se envían juntas en el siguiente prompt, salvo que bloqueen al autor.
 - El agente ejecuta la estructura definida en `decision-log.md`; nunca la decide.
+- El agente escribe su informe final en `context/last-report.md` (ignorado por git y sobrescrito en cada ejecución) y responde en el chat solo con un resumen breve.
+- El informe `context/last-report.md` es breve: una línea de lectura (completo / no leído), hash y mensaje del commit, `git diff --stat`, comprobaciones con comando y resultado, desviaciones o preguntas abiertas, y lo no verificado en vivo. El informe describe; la fuente de verdad es el diff, que el asistente verifica en GitHub.

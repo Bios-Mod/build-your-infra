@@ -1092,8 +1092,13 @@ rm amazon-ssm-agent.deb
 ```
 
 > If `dpkg` aborts with *"installed by snap, please use snap to update or
-> uninstall"*, snap metadata is still present. Remove it and retry:
+> uninstall"*, snap metadata is still registered. The running `snapd` daemon
+> retains state in memory, and the deb package `preinst` script queries `snap list`.
+> Stop the active snap services, remove residual state, and retry installation:
 > ```bash
+> sudo systemctl stop snap.amazon-ssm-agent.amazon-ssm-agent.service
+> sudo systemctl stop snapd.service
+> sudo systemctl stop snapd.socket
 > sudo rm -rf /var/lib/snapd
 > sudo dpkg -i amazon-ssm-agent.deb
 > ```
@@ -1741,6 +1746,7 @@ passing test whose reason is unknown.
 | `NETW-3200` | False positive | Modules blacklisted via `modprobe.d` — Lynis checks availability, not blacklist status |
 | `FIRE-4513` | False positive | UFW manages iptables via its own chain — Lynis reads raw iptables without UFW context |
 | `HRDN-7222` | False positive | No compilers installed — control does not apply |
+| `AUTH-9282` | Conscious deviation | Account expiry not set on the admin account — setting a hard account expiry on the sole administrator of a continuously used lab server introduces lockout risk without meaningful security gain |
 | `KRNL-6000` — `kernel.unprivileged_bpf_disabled` | Conscious deviation | Value `2` — intentionally stricter than CIS L1 minimum (`1`); see Step 7 |
 | `KRNL-6000` — `kernel.modules_disabled` | Conscious deviation | Value `0` — WireGuard loads as a kernel module; see Step 7 |
 | `KRNL-6000` — `net.ipv4.conf.all.forwarding` | Conscious deviation | Value `1` — required for WireGuard VPN routing; see Step 5 |
@@ -1752,7 +1758,6 @@ passing test whose reason is unknown.
 | `TOOL-5002` | Temporary | No automation tool active — each module will ship an automation script *(→ automation phase)* |
 | `USB-1000` | False positive | `usb_storage` blacklisted via `modprobe.d` — Lynis checks availability, not blacklist status. No physical USB on EC2. *(EC2 only)* |
 | `AUTH-9284` | False positive | Ubuntu default service accounts with `!` in `/etc/shadow` — system-managed, not orphaned. *(EC2 only)* |
-| `NAME-4404` | False positive | Private IP and hostname added to `/etc/hosts` — required for FQDN resolution in cloud environments without a local DNS. *(EC2 only)* |
 
 ### Verification
 ```bash

@@ -1,5 +1,5 @@
 # Deploy to:   vm:ec2
-# Apply:       ansible-playbook playbooks/site.yml --tags hardening [--check --diff]
+# Apply:       ansible-playbook playbooks/hardening.yml [--tags <tag>] [--check --diff] --ask-become-pass
 # Module:      hardening
 # Requires:    none
 #
@@ -10,99 +10,125 @@
 
 ---
 # ==============================================================================
-# Hardening Role — Task Execution Skeleton
-# Real tasks will be implemented in Phase 2 according to context/ansible-implementation.md
+# Block 2A — Preparation Tasks (Steps 0, 1, 2)
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
-# Block 2A — Preparation (Low Risk)
-# ------------------------------------------------------------------------------
-# Step 0 — Admin User Setup:
-#   - Create dedicated non-root admin account (ansible.builtin.user)
-#   - Assign sudo and adm groups for privilege escalation
-#   - Install Ed25519 public key in authorized_keys (ansible.builtin.authorized_key)
-#
-# Step 1 — System Updates & Automated Security Upgrades:
-#   - Update apt cache and run full-upgrade (ansible.builtin.apt)
-#   - Install unattended-upgrades, debsums, apt-show-versions, apt-listchanges
-#   - Configure /etc/default/debsums with CRON_CHECK=weekly
-#   - Deploy 50unattended-upgrades and 20auto-upgrades configurations
-#
-# Step 2 — Static IP Configuration (VM only):
-#   - Deploy /etc/netplan/00-installer-config.yaml with static IP and Quad9 DNS
-#   - Deploy /etc/systemd/network/10-netplan-*.network.d/no-dhcp.conf drop-in
-#   - Apply Netplan configuration via command (when: not is_cloud)
-
-# ------------------------------------------------------------------------------
-# Block 2B — Access Chain (High Lockout Risk)
-# ------------------------------------------------------------------------------
-# Step 3 — SSH Hardening:
-#   - Deploy /etc/ssh/sshd_config (AllowUsers, port 22222, key-only auth)
-#   - Deploy /etc/issue.net and /etc/issue legal warning banners
-#   - Remove unused RSA and ECDSA host key pairs from disk (ansible.builtin.file)
-#   - Validate syntax with sshd -t before restarting the daemon
-#
-# Step 4 — UFW Firewall:
-#   - Set default policies: incoming deny, outgoing allow (community.general.ufw)
-#   - Add initial rate-limited rule: limit 22222/tcp
-#   - Deploy /etc/ufw/sysctl.conf (log_martians=1 persistence)
-#   - Enable UFW and set logging to medium
-#
-# Step 5 — WireGuard VPN:
-#   - Install wireguard package
-#   - Generate server private and public keypair idempotently (creates: check)
-#   - Deploy /etc/wireguard/wg0.conf with authorized peer public keys
-#   - Deploy /etc/sysctl.d/99-wireguard.conf (net.ipv4.ip_forward = 1)
-#   - Enable and start wg-quick@wg0
-#   - UFW perimeter transition: allow 51820/udp, allow 22222 on wg0, delete limit 22222
-#
-# Step 6 — Fail2Ban:
-#   - Install fail2ban package
-#   - Deploy /etc/fail2ban/fail2ban.d/allowipv6.conf
-#   - Deploy /etc/fail2ban/jail.local (port 22222, banaction=ufw, ignoreip VPN subnet)
-#   - Enable and restart fail2ban service
-
-# ------------------------------------------------------------------------------
-# Block 2C — System Hardening & Compliance
-# ------------------------------------------------------------------------------
-# Step 7 — Kernel Hardening (sysctl):
-#   - Deploy /etc/sysctl.d/99-z-hardening.conf (memory, network, filesystem flags)
-#   - Trigger sysctl --system reload command
-#
-# Step 8 — AppArmor:
-#   - Install apparmor-utils, apparmor-profiles, apparmor-profiles-extra
-#
-# Step 9 — Attack Surface Reduction:
-#   - 9.1: Disable ModemManager; mask packagekit and udisks2; purge apport; hold snapd
-#   - 9.2: Permissions on crontabs (0600) and cron directories (0700); sudoers.d (0750)
-#   - 9.2: Configure login.defs (umask 027, password aging 90/1/14, sha512 rounds 65536)
-#   - 9.2: Deploy PAM common-password, common-session, and limits.conf (core=0)
-#   - 9.3: Deploy /etc/modprobe.d/disable-unused-protocols.conf and update-initramfs
-#   - 9.4: Install and configure rkhunter, acct, and sysstat
-#
-# Step 10 — Audit Trail (auditd + AIDE):
-#   - Install auditd, audispd-plugins, aide, aide-common
-#   - Deploy /etc/audit/rules.d/99-hardening.rules (with immutable -e 2 flag)
-#   - Load audit rules via augenrules --load
-#   - Deploy /etc/aide/aide.conf.d/99-hardening
-#   - Initialize AIDE database idempotently (creates: /var/lib/aide/aide.db)
-#   - Enable daily cron check in /etc/default/aide
-#
-# Step 11 — Log Management (rsyslog + logrotate):
-#   - Enable UFW logging switch
-#   - Pre-create /var/log/ufw.log and /var/log/fail2ban.log (syslog:adm 0640)
-#   - Deploy /etc/rsyslog.d/20-ufw.conf and 99-hardening.conf
-#   - Deploy /etc/logrotate.d/hardening-logs
-#   - Restart rsyslog service
-#
-# Step 12 — Security Audit Baseline (Lynis):
-#   - Install lynis package (version 3.0.9)
-#   - Deploy /etc/lynis/custom.prf
-#   - Execute lynis audit system and assert minimum score (88 VM / 90 EC2)
-
-- name: Hardening role structure outline
-  ansible.builtin.debug:
-    msg: "Hardening role skeleton initialized. Real tasks will be implemented in Phase 2."
+# Step 0 — Admin User Setup (Lockout prevention prerequisite)
+- name: "Step 0 — Admin user setup"
+  ansible.builtin.import_tasks: step_00_admin_user.yml
   tags:
-    - hardening
-    - skeleton
+    - hardening_2a
+    - hardening_step0
+
+# Step 1 — System Update & Automated Security Upgrades
+- name: "Step 1 — System update & automated security upgrades"
+  ansible.builtin.import_tasks: step_01_updates.yml
+  tags:
+    - hardening_2a
+    - hardening_step1
+
+# Step 2 — Static IP Configuration (VM only)
+- name: "Step 2 — Static IP configuration"
+  ansible.builtin.import_tasks: step_02_static_ip.yml
+  tags:
+    - hardening_2a
+    - hardening_step2
+
+# ==============================================================================
+# Block 2B — Access Chain (Steps 3, 4, 5, 6)
+# ==============================================================================
+
+# Step 3 — SSH Hardening
+- name: "Step 3 — SSH hardening"
+  ansible.builtin.import_tasks: step_03_ssh.yml
+  tags:
+    - hardening_2b
+    - hardening_step3
+
+# Step 4 — UFW Firewall
+- name: "Step 4 — UFW firewall"
+  ansible.builtin.import_tasks: step_04_ufw.yml
+  tags:
+    - hardening_2b
+    - hardening_step4
+
+# Step 5 — WireGuard VPN
+- name: "Step 5 — WireGuard VPN"
+  ansible.builtin.import_tasks: step_05_wireguard.yml
+  tags:
+    - hardening_2b
+    - hardening_step5
+
+# Step 6 — Fail2Ban
+- name: "Step 6 — Fail2Ban"
+  ansible.builtin.import_tasks: step_06_fail2ban.yml
+  tags:
+    - hardening_2b
+    - hardening_step6
+
+# ==============================================================================
+# Block 2C — System Hardening & Compliance (Steps 7 to 12)
+# ==============================================================================
+
+# Step 7 — Kernel Hardening (sysctl)
+- name: "Step 7 — Kernel hardening (sysctl)"
+  ansible.builtin.import_tasks: step_07_sysctl.yml
+  tags:
+    - hardening_2c
+    - hardening_step7
+
+# Step 8 — AppArmor
+- name: "Step 8 — AppArmor"
+  ansible.builtin.import_tasks: step_08_apparmor.yml
+  tags:
+    - hardening_2c
+    - hardening_step8
+
+# Step 9.1 — Attack Surface Reduction: Services & Daemons
+- name: "Step 9.1 — Attack surface reduction: services & daemons"
+  ansible.builtin.import_tasks: step_09_1_services.yml
+  tags:
+    - hardening_2c
+    - hardening_step9_1
+
+# Step 9.2 — Attack Surface Reduction: Filesystem & User Hardening
+- name: "Step 9.2 — Attack surface reduction: filesystem & user hardening"
+  ansible.builtin.import_tasks: step_09_2_users_fs.yml
+  tags:
+    - hardening_2c
+    - hardening_step9_2
+
+# Step 9.3 — Attack Surface Reduction: Kernel Modules
+- name: "Step 9.3 — Attack surface reduction: kernel modules"
+  ansible.builtin.import_tasks: step_09_3_modprobe.yml
+  tags:
+    - hardening_2c
+    - hardening_step9_3
+
+# Step 9.4 — Attack Surface Reduction: Monitoring & Forensics
+- name: "Step 9.4 — Attack surface reduction: monitoring & forensics"
+  ansible.builtin.import_tasks: step_09_4_monitoring.yml
+  tags:
+    - hardening_2c
+    - hardening_step9_4
+
+# Step 10 — Audit Trail (auditd + AIDE)
+- name: "Step 10 — Audit trail (auditd + AIDE)"
+  ansible.builtin.import_tasks: step_10_audit.yml
+  tags:
+    - hardening_2c
+    - hardening_step10
+
+# Step 11 — Log Management (rsyslog + logrotate)
+- name: "Step 11 — Log management (rsyslog + logrotate)"
+  ansible.builtin.import_tasks: step_11_logging.yml
+  tags:
+    - hardening_2c
+    - hardening_step11
+
+# Step 12 — Security Audit Baseline (Lynis)
+- name: "Step 12 — Security audit baseline (Lynis)"
+  ansible.builtin.import_tasks: step_12_lynis.yml
+  tags:
+    - hardening_2c
+    - hardening_step12

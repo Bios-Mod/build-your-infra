@@ -9,9 +9,9 @@
 # Source: Ansible Galaxy. Compatible with ansible-core 2.21
 ---
 collections:
-  # Provides ufw and system administration modules
+  # Provides ufw and system administration modules (pinned to latest 13.x release)
   - name: community.general
-    version: "14.0.0"
+    version: "13.5.1"
 
   # Provides sysctl, authorized_key, and POSIX operating system modules
   - name: ansible.posix

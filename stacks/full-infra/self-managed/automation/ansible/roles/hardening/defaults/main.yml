@@ -4,105 +4,153 @@
 # Requires:    none
 #
 # Default variable definitions for the hardening role.
-# Why:         Provides safe defaults for user accounts, ports, network rules, and audit parameters.
-# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 0 to 12
+# Why:         Provides baseline defaults for administration, package updates, network, and validation.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Steps 0, 1, 2, 10, 12
 # Targets:     both
 
 ---
+# ==============================================================================
+# Step 0 — Admin User Setup
+# ==============================================================================
+
 # Name of the non-root administrative user created in Step 0
 hardening_admin_username: "{{ admin_username | default('admin') }}"
 
-# Supplementary groups granted to the administrative user for sudo privilege escalation
-hardening_admin_groups: "{{ admin_groups | default(['sudo', 'adm']) }}"
+# Login shell assigned to the administrator
+hardening_admin_shell: "{{ admin_shell | default('/bin/bash') }}"
 
-# Port assigned to the OpenSSH server in Step 3 (replaces default port 22)
-hardening_ssh_hardened_port: "{{ ssh_hardened_port | default(22222) }}"
+# Supplementary groups granted to the administrative user
+hardening_admin_groups: "{{ admin_groups | default(['sudo', 'adm', 'admin']) }}"
 
-# Grace time in seconds before an unauthenticated SSH connection is terminated
-hardening_ssh_login_grace_time: 30
+# Path to the administrator SSH Ed25519 public key file on the local control node
+hardening_admin_public_key_file: "{{ admin_public_key_file | default('~/.ssh/id_ed25519.pub') }}"
 
-# Maximum number of authentication attempts per connection before drop
-hardening_ssh_max_auth_tries: 3
+# Hashed administrator password for user creation (dynamically passed from vars_prompt in bootstrap.yml)
+hardening_admin_password_hash: ""
 
-# Maximum open shell/subsystem sessions per network connection
-hardening_ssh_max_sessions: 2
+# Root directory containing the source-of-truth hardening configs
+hardening_configs_dir: "{{ configs_root }}/hardening/self-managed/configs"
 
-# Network interface on the local VM target configured in Step 2
-hardening_vm_interface: "{{ vm_interface | default('ens33') }}"
+# ==============================================================================
+# Step 1 — System Update & Package Hygiene
+# ==============================================================================
 
-# Static IPv4 address and CIDR prefix for the local VM
-hardening_vm_static_ip: "{{ vm_static_ip | default('192.168.1.50/24') }}"
+# Whether to update the APT cache before running upgrades
+hardening_update_cache: true
 
-# Default gateway IPv4 address for the local VM
-hardening_vm_gateway: "{{ vm_gateway | default('192.168.1.1') }}"
+# Cache validity duration in seconds to avoid redundant repository lookups
+hardening_cache_valid_time: 3600
 
-# Upstream DNS resolver IPv4 addresses for the local VM
-hardening_vm_dns_servers: "{{ vm_dns_servers | default(['1.1.1.1', '8.8.8.8']) }}"
+# APT upgrade strategy applied during system initialization ('full', 'safe', or 'dist')
+hardening_upgrade_type: "full"
 
-# UDP listen port for the WireGuard VPN service configured in Step 5
-hardening_wireguard_port: "{{ wireguard_port | default(51820) }}"
+# Base package hygiene and automated patch management packages to install
+hardening_base_packages:
+  - unattended-upgrades
+  - debsums
+  - apt-show-versions
+  - apt-listchanges
 
-# IPv4 subnet dedicated to the WireGuard VPN overlay network
-hardening_wireguard_vpn_subnet: "{{ wireguard_vpn_subnet | default('10.8.0.0/24') }}"
+# Packages purged during system cleanup (defaults to empty in Step 1 baseline)
+hardening_purge_packages: []
 
-# WireGuard VPN IP assigned to the host server interface (wg0)
-hardening_wireguard_server_vpn_ip: "{{ wireguard_server_vpn_ip | default('10.8.0.1/24') }}"
+# Daemon services disabled during baseline preparation (defaults to empty in Step 1)
+hardening_disable_services: []
 
-# WireGuard VPN IP assigned to the management Mac workstation peer
-hardening_wireguard_mac_vpn_ip: "{{ wireguard_mac_vpn_ip | default('10.8.0.2/32') }}"
-hardening_wireguard_vm_vpn_ip: "{{ wireguard_vm_vpn_ip | default('10.8.0.3/32') }}"
+# ==============================================================================
+# Step 2 — Static IP Configuration (VM only)
+# ==============================================================================
 
-# WireGuard peer public keys mapped by identifier
-hardening_wireguard_peer_public_keys: "{{ wireguard_peer_public_keys | default({}) }}"
+# Network interface on the local VM target configured in Step 2 (must be defined in host_vars)
+hardening_vm_interface: "{{ vm_interface }}"
+
+# Static IPv4 address and CIDR prefix for the local VM (must be defined in host_vars)
+hardening_vm_static_ip: "{{ vm_static_ip }}"
+
+# Default gateway IPv4 address for the local VM (must be defined in host_vars)
+hardening_vm_gateway: "{{ vm_gateway }}"
 
 # Local LAN CIDR permitted to access administrative services
-hardening_lan_trusted_cidr: "{{ lan_trusted_cidr | default('192.168.1.0/24') }}"
+hardening_lan_trusted_cidr: "{{ lan_trusted_cidr | default('') }}"
 
-# Unnecessary daemon services disabled in Step 7 attack surface reduction
-hardening_services_to_disable:
-  - "cups"
-  - "cups-browsed"
-  - "avahi-daemon"
+# ==============================================================================
+# Block 2B — Access Chain (Steps 3, 4, 5, 6)
+# ==============================================================================
 
-# Unnecessary services masked to prevent activation by dependencies or sockets
-hardening_services_to_mask:
-  - "cups"
-  - "cups-browsed"
-  - "avahi-daemon"
+# Target hardened SSH port configured in Step 3
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"
 
-# Legacy or high-risk networking packages purged from the system in Step 7
-hardening_packages_to_purge:
-  - "telnet"
-  - "rsh-client"
-  - "talk"
-  - "xinetd"
-  - "nis"
+# UFW default incoming and outgoing firewall policies (Step 4)
+hardening_ufw_default_incoming_policy: "deny"
+hardening_ufw_default_outgoing_policy: "allow"
 
-# Unused network protocols blacklisted in modprobe to prevent kernel auto-loading
-hardening_kernel_modules_blacklist:
-  - "dccp"
-  - "sctp"
-  - "rds"
-  - "tipc"
-  - "cramfs"
-  - "freevxfs"
-  - "jffs2"
-  - "hfs"
-  - "hfsplus"
-  - "udf"
+# UFW packet logging verbosity (Step 4)
+hardening_ufw_logging: "medium"
 
-# User creation and authentication parameters for /etc/login.defs in Step 8
-hardening_login_defs_umask: "027"
-hardening_login_defs_pass_max_days: 90
-hardening_login_defs_pass_min_days: 7
-hardening_login_defs_pass_warn_age: 14
-hardening_login_defs_sha_crypt_rounds: 5000
+# WireGuard topology role: 'hub' on EC2, 'client' on VM (Step 5)
+hardening_wireguard_role: "{{ wireguard_role | default('hub' if is_cloud else 'client') }}"
 
-# Auditd immutable flag (-e 2) from Step 10. Default true matches manual baseline; disabled in vm.yml during development.
+# WireGuard UDP listen port (Step 5)
+hardening_wireguard_port: "{{ wireguard_port | default(51820) }}"
+
+# WireGuard VPN subnet (Step 5)
+hardening_wireguard_subnet: "{{ wireguard_subnet | default('172.16.0.0/24') }}"
+
+# WireGuard hub VPN address (Step 5)
+hardening_wireguard_hub_vpn_ip: "{{ wireguard_server_vpn_ip | default('172.16.0.1/24') }}"
+
+# WireGuard local VM peer VPN address (Step 5)
+hardening_wireguard_vm_vpn_ip: "{{ wireguard_vm_vpn_ip | default('172.16.0.3/32') }}"
+
+# WireGuard hub public key configured on client peers (Step 5)
+hardening_wireguard_hub_public_key: "{{ wireguard_hub_public_key | default('') }}"
+
+# Mapping of authorized WireGuard peer public keys configured on hub (Step 5)
+hardening_wireguard_peer_public_keys: "{{ wireguard_peer_public_keys | default({}) }}"
+
+# WireGuard public endpoint for remote clients (Step 5)
+hardening_wireguard_endpoint: "{{ wireguard_endpoint | default('') }}"
+
+# Whether to close public/LAN SSH port 22222 after confirming WireGuard tunnel access (Step 5)
+# Set to false by default for safety; switch to true only after tunnel connectivity is verified
+hardening_wg_close_public_ssh: false
+
+# Fail2Ban default ban parameters (Step 6)
+hardening_fail2ban_bantime: 86400
+hardening_fail2ban_findtime: 300
+hardening_fail2ban_maxretry: 3
+hardening_fail2ban_ssh_bantime: 172800
+
+# ==============================================================================
+# Block 2C — System Hardening & Attack Surface Reduction (Steps 7–12)
+# ==============================================================================
+
+# URL template for downloading AWS Systems Manager Agent deb package on EC2 (Step 9.1)
+hardening_ssm_agent_deb_url: >-
+  https://s3.amazonaws.com/ec2-downloads-windows/SSMAgent/latest/debian_{{
+  'arm64' if ansible_facts.architecture in ['aarch64', 'arm64'] else 'amd64'
+  }}/amazon-ssm-agent.deb
+
+# Default system umask configured in /etc/login.defs (Step 9.2)
+hardening_umask: "027"
+
+# Disable private user groups to ensure umask 027 enforcement in /etc/login.defs (Step 9.2)
+hardening_usergroups_enab: "no"
+
+# Maximum password validity age in days for new accounts in /etc/login.defs and admin user (Step 9.2)
+hardening_password_max_days: 90
+
+# Minimum days required between password changes in /etc/login.defs and admin user (Step 9.2)
+hardening_password_min_days: 1
+
+# Warning window in days before password expiration in /etc/login.defs and admin user (Step 9.2)
+hardening_password_warn_age: 14
+
+# Number of SHA512 hashing rounds enforced in /etc/login.defs and PAM (Step 9.2)
+hardening_sha_crypt_rounds: 65536
+
+# Auditd immutable flag (-e 2) from Step 10. Default true matches baseline; overridden to false in host_vars/multi-lab-local.yml during development.
 hardening_auditd_immutable_mode: true
 
-# Lynis minimum Hardening Index threshold expected for the target host (88 for VM, 90 for EC2)
+# Lynis minimum Hardening Index threshold expected for VM target host (Step 12 baseline; EC2 overrides to 90)
 hardening_lynis_min_score: 88
-
-# Whether to fail the playbook execution if Lynis score is below threshold (false: records score and warns)
-hardening_lynis_enforce: false

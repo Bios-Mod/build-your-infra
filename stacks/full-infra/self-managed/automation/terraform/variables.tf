@@ -24,11 +24,23 @@ variable "instance_type" {
 }
 
 variable "ami_id" {
-  description = "AMI ID to launch — use the active-directory snapshot by default"
+  description = "AMI ID to launch (Ubuntu Server 24.04 LTS ARM64 in eu-west-1)"
   type        = string
 }
 
 variable "key_name" {
   description = "Existing EC2 key pair name"
   type        = string
+}
+
+variable "ssh_bootstrap_cidr" {
+  description = "CIDR allowed for temporary SSH bootstrap access on port 22 (e.g. 'X.X.X.X/32'); empty = closed"
+  type        = string
+  default     = ""
+}
+
+variable "ssh_hardened_cidr" {
+  description = "CIDR allowed for hardened SSH access on port 22222 before WireGuard lockdown (e.g. 'X.X.X.X/32'); empty = closed"
+  type        = string
+  default     = ""
 }

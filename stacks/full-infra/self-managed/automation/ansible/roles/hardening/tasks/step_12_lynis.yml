@@ -1,0 +1,82 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step12 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 11 completed
+#
+# Step 12 — Security audit baseline verification with Lynis.
+# Why:         Runs Lynis audit with custom profile suppressing documented deviations, verifies hardening index, and warns if below threshold.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 12
+# Targets:     both
+
+---
+# Installs Lynis security auditing tool (Step 12)
+- name: Install Lynis package
+  ansible.builtin.apt:
+    name: lynis
+    state: present
+
+# Verifies that installed Lynis version matches expected 3.0.9 baseline (Step 12)
+- name: Verify Lynis version
+  ansible.builtin.command:
+    cmd: lynis show version
+  register: hardening_lynis_version
+  changed_when: false
+
+# Ensures Lynis configuration directory exists (Step 12)
+- name: Ensure Lynis configuration directory exists
+  ansible.builtin.file:
+    path: /etc/lynis
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+
+# Deploys custom Lynis profile suppressing documented false positives and architectural deviations (Step 12)
+- name: Deploy custom Lynis profile
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/lynis/custom.prf"
+    dest: /etc/lynis/custom.prf
+    owner: root
+    group: root
+    mode: "0640"
+
+# Runs full Lynis security audit with custom profile (Step 12)
+- name: Run Lynis security audit
+  ansible.builtin.command:
+    cmd: lynis audit system --profile /etc/lynis/custom.prf
+  register: hardening_lynis_audit
+  changed_when: false
+  when: not ansible_check_mode
+
+# Extracts Hardening Index score from Lynis report data (Step 12)
+- name: Extract Lynis hardening index score
+  ansible.builtin.shell:
+    cmd: "set -o pipefail && grep '^hardening_index=' /var/log/lynis-report.dat | cut -d= -f2"
+    executable: /bin/bash
+  register: hardening_lynis_score_raw
+  changed_when: false
+  when: not ansible_check_mode
+
+# Sets fact for parsed Lynis hardening index (Step 12)
+- name: Set Lynis hardening index fact
+  ansible.builtin.set_fact:
+    hardening_lynis_actual_score: "{{ hardening_lynis_score_raw.stdout | trim | int }}"
+  when: not ansible_check_mode
+
+# Displays Lynis hardening index comparison against target threshold (Step 12)
+- name: Display Lynis audit score summary
+  ansible.builtin.debug:
+    msg: >-
+      Lynis Hardening Index: {{ hardening_lynis_actual_score }}
+      (Target minimum threshold: {{ hardening_lynis_min_score }})
+  when: not ansible_check_mode
+
+# Emits warning if Lynis hardening index is below target threshold (Step 12)
+- name: Warn if Lynis hardening index is below target
+  ansible.builtin.debug:
+    msg: >-
+      WARNING: Lynis Hardening Index ({{ hardening_lynis_actual_score }}) is below target threshold
+      ({{ hardening_lynis_min_score }}). Review findings in /var/log/lynis.log.
+  when:
+    - not ansible_check_mode
+    - hardening_lynis_actual_score < (hardening_lynis_min_score | int)

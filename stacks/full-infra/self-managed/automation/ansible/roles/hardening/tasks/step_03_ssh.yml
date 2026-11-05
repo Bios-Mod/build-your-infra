@@ -1,0 +1,103 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step3 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 0 completed (administrator user provisioned with valid SSH key)
+#
+# Step 3 — SSH daemon hardening, banner deployment, and host key policy.
+# Why:         Restricts access to key-only auth for the dedicated admin user, moves port to 22222, and eliminates weak host keys.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 3
+# Targets:     both
+
+---
+# WARNING: Lockout risk. Pre-flight checks ensure administrator account exists and has valid authorized_keys before disabling password auth and moving SSH port.
+# Retrieves local system accounts to verify administrator user presence (Step 3)
+- name: Verify administrator user account exists
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ hardening_admin_username }}"
+
+# Checks stat on administrator authorized_keys file to ensure key is installed (Step 3)
+- name: Verify administrator authorized_keys file exists and is populated
+  ansible.builtin.stat:
+    path: "/home/{{ hardening_admin_username }}/.ssh/authorized_keys"
+  register: hardening_admin_auth_keys_stat
+
+# Asserts administrator presence and authorized_keys validity to prevent lockout (Step 3)
+- name: Validate administrator SSH access prerequisite
+  ansible.builtin.assert:
+    that:
+      - hardening_admin_username in ansible_facts.getent_passwd
+      - hardening_admin_auth_keys_stat.stat.exists
+      - hardening_admin_auth_keys_stat.stat.size > 0
+    fail_msg: >-
+      SSH hardening aborted: administrator user '{{ hardening_admin_username }}' does not exist or
+      '/home/{{ hardening_admin_username }}/.ssh/authorized_keys' is missing/empty. Continuing would cause
+      permanent lockout because password authentication and root login are being disabled.
+
+# Deploys hardened sshd_config replacing AllowUsers with administrator account (Step 3)
+- name: Deploy hardened OpenSSH daemon configuration
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('file', hardening_configs_dir ~ '/ssh/sshd_config')
+         | replace('AllowUsers <username>', 'AllowUsers ' ~ hardening_admin_username) }}
+    dest: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: "0600"
+    validate: "/usr/sbin/sshd -t -f %s"
+  notify:
+    - Restart sshd
+
+# Deploys SSH pre-authentication legal warning banner (Step 3)
+- name: Deploy SSH pre-authentication banner
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/ssh/issue.net.template"
+    dest: /etc/issue.net
+    owner: root
+    group: root
+    mode: "0644"
+
+# Deploys local console legal warning banner matching SSH pre-auth text (Step 3)
+- name: Deploy local console warning banner
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/ssh/issue.net.template"
+    dest: /etc/issue
+    owner: root
+    group: root
+    mode: "0644"
+
+# Removes legacy RSA and ECDSA host private and public keys from disk to enforce Ed25519 identity (Step 3)
+- name: Remove legacy RSA and ECDSA host keys from disk
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - /etc/ssh/ssh_host_rsa_key
+    - /etc/ssh/ssh_host_rsa_key.pub
+    - /etc/ssh/ssh_host_ecdsa_key
+    - /etc/ssh/ssh_host_ecdsa_key.pub
+
+# Ensures OpenSSH server service is enabled and started across system reboots (Step 3)
+- name: Ensure OpenSSH service is enabled and started
+  ansible.builtin.systemd_service:
+    name: ssh
+    state: started
+    enabled: true
+
+# Flushes handlers immediately to apply hardened SSH configuration before testing connection (Step 3)
+- name: Flush SSH handlers
+  ansible.builtin.meta: flush_handlers
+
+# WARNING: EC2 requirement. Security Group 'multi-lab-sg' MUST allow port 22222 (via ssh_hardened_cidr) before switching connection_mode to 'hardened'.
+# Transitions SSH connection to hardened port 22222 via include_tasks to prevent meta reset_connection from running unconditionally (Step 3)
+- name: Transition SSH connection to hardened port
+  ansible.builtin.include_tasks:
+    file: step_03_ssh_transition.yml
+    apply:
+      tags:
+        - hardening_2b
+        - hardening_step3
+  tags:
+    - hardening_2b
+    - hardening_step3
+  when: connection_mode == 'pre'

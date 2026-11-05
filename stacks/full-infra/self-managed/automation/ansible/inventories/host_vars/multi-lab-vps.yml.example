@@ -4,18 +4,45 @@
 # Requires:    none
 #
 # Host-specific variable definitions for EC2 VPS host (multi-lab-vps).
-# Why:         Defines cloud-init default user and peer public keys without hardcoding secrets.
+# Why:         Defines cloud-init default user, SSH keys, and peer public keys without hardcoding secrets.
 # Doc ref:     context/ansible-implementation.md — Section 4
 # Targets:     ec2
 
 ---
+# Replace the entire value, including the CHANGE_ME prefix.
+
+# AWS Elastic IP allocated to the EC2 instance
+ec2_eip: "CHANGE_ME_eip"
+
 # Default cloud-init user on Ubuntu Server AWS AMI (used in connection_mode: "pre")
-initial_user: "ubuntu"
+ec2_initial_user: "ubuntu"
+
+# Non-root administrator account name created in Step 0
+admin_username: "CHANGE_ME_admin_user"
+
+# Dedicated lab SSH key pair (never use personal or GitHub keys)
+# Path to the public key installed on target host for dedicated administrator (Step 0)
+admin_public_key_file: "~/.ssh/CHANGE_ME_lab_key.pub"
+
+# Connection phase selector:
+# 'pre'      -> Initial bootstrap: port 22, initial user (installer on VM, ubuntu on EC2). Default state.
+# 'hardened' -> Hardened SSH: port 22222, dedicated admin user over LAN/Elastic IP. Switch in host_vars after Step 3.
+# 'wg'       -> WireGuard perimeter: port 22222, dedicated admin user over WireGuard tunnel (172.16.0.1 on EC2). Switch in host_vars after Step 5 and tunnel verified.
+connection_mode: "pre"
+
+# Private key file used by Ansible control node to connect via SSH
+ansible_ssh_private_key_file: "~/.ssh/CHANGE_ME_lab_key"
+
+# Trusted LAN CIDR — empty on EC2 because no home or local subnet is trusted directly
+lan_trusted_cidr: ""
 
 # WireGuard peer public keys mapped for the EC2 VPS hub
 # Note: real keys must never be committed; configure in multi-lab-vps.yml (gitignored)
 wireguard_peer_public_keys:
   # Management Mac workstation peer public key
-  mac: "REPLACE_WITH_MAC_WIREGUARD_PUBLIC_KEY"
+  mac: "CHANGE_ME_MAC_WIREGUARD_PUBLIC_KEY"
   # Local VM peer public key
-  local_vm: "REPLACE_WITH_LOCAL_VM_WIREGUARD_PUBLIC_KEY"
+  local_vm: "CHANGE_ME_LOCAL_VM_WIREGUARD_PUBLIC_KEY"
+
+# Target minimum Lynis Hardening Index threshold for AWS EC2 instance (Step 12)
+hardening_lynis_min_score: 90

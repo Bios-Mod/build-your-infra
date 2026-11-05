@@ -1,0 +1,52 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/bootstrap.yml --limit <host> --ask-become-pass
+# Module:      hardening
+# Requires:    initial_user SSH key access on port 22
+#
+# Bootstrap playbook for dedicated administrator account creation (Step 0).
+# Why:         Sets up the non-root admin user, authorized key, and sudo privileges before lockdown.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 0
+# Targets:     both
+
+---
+- name: Bootstrap admin user (Hardening Step 0)
+  hosts: vm:ec2
+  become: true
+  gather_facts: true
+
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: 600
+
+  vars_prompt:
+    - name: hardening_admin_password
+      prompt: "Admin password"
+      private: true
+
+  pre_tasks:
+    # Validates control node toolchain environment against requirements.txt before execution
+    - name: Assert control node toolchain environment # noqa: run-once[task]
+      run_once: true
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full == controller_ansible_core_version
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.12', '>=')
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.15', '<')
+        fail_msg: >-
+          Control node environment mismatch. Activate the project virtualenv
+          (source .venv/bin/activate) and install pinned dependencies (pip install -r requirements.txt).
+          Expected ansible-core {{ controller_ansible_core_version }} and Python 3.12-3.14.
+          Running ansible-core {{ ansible_version.full }} on Python
+          {{ (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] }} ({{ ansible_playbook_python }}).
+
+  tasks:
+    # Executes Step 0 tasks from the hardening role with runtime-hashed password
+    - name: Provision administrator account and SSH keys
+      ansible.builtin.include_role:
+        name: hardening
+        tasks_from: step_00_admin_user.yml
+      vars:
+        hardening_admin_password_hash: "{{ hardening_admin_password | password_hash('sha512', rounds=65536) }}"

@@ -29,6 +29,21 @@
         fail_msg: "ERROR: configs_root path '{{ configs_root }}' does not exist or is not a directory."
         success_msg: "OK: configs_root verified at '{{ configs_root }}'."
 
+    # Verifies that hardening module configs directory exists under configs_root
+    - name: Check that hardening configs directory exists
+      ansible.builtin.stat:
+        path: "{{ configs_root }}/hardening/self-managed/configs"
+      register: hardening_configs_check
+
+    # Halts execution if the hardening module configs directory cannot be found
+    - name: Assert that hardening configs directory exists and is valid
+      ansible.builtin.assert:
+        that:
+          - hardening_configs_check.stat.exists
+          - hardening_configs_check.stat.isdir
+        fail_msg: "ERROR: Hardening configs path '{{ configs_root }}/hardening/self-managed/configs' does not exist."
+        success_msg: "OK: Hardening configs verified at '{{ configs_root }}/hardening/self-managed/configs'."
+
 - name: Test connectivity to lab hosts
   hosts: vm:ec2
   gather_facts: false

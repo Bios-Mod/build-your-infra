@@ -1,0 +1,60 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/hardening.yml --tags hardening_step11 [--check --diff] --ask-become-pass
+# Module:      hardening
+# Requires:    Step 10 completed
+#
+# Step 11 — Dedicated service log routing (rsyslog) and retention policy (logrotate).
+# Why:         Routes UFW and Fail2Ban events to dedicated log files with syslog:adm ownership and automated log rotation.
+# Doc ref:     modules/hardening/self-managed/hardening-self-managed.md — Step 11
+# Targets:     both
+
+---
+# Enables UFW packet logging switch (Step 11)
+- name: Ensure UFW logging is enabled
+  community.general.ufw:
+    logging: "on"
+
+# Ensures dedicated hardening log files exist with syslog:adm ownership without altering file timestamps (Step 11)
+- name: Ensure dedicated hardening log files exist with correct ownership and permissions
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: touch
+    owner: syslog
+    group: adm
+    mode: "0640"
+    modification_time: preserve
+    access_time: preserve
+  loop:
+    - /var/log/ufw.log
+    - /var/log/fail2ban.log
+
+# Deploys rsyslog configuration routing UFW kernel messages to dedicated log file (Step 11)
+- name: Deploy rsyslog 20-ufw configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/rsyslog/20-ufw.conf"
+    dest: /etc/rsyslog.d/20-ufw.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart rsyslog
+
+# Deploys rsyslog configuration routing Fail2Ban and kernel messages (Step 11)
+- name: Deploy rsyslog 99-hardening configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/rsyslog/99-hardening.conf"
+    dest: /etc/rsyslog.d/99-hardening.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart rsyslog
+
+# Deploys logrotate policy for hardening log files with correct process owners (Step 11)
+- name: Deploy logrotate hardening-logs configuration
+  ansible.builtin.copy:
+    src: "{{ hardening_configs_dir }}/logrotate/hardening-logs"
+    dest: /etc/logrotate.d/hardening-logs
+    owner: root
+    group: root
+    mode: "0644"

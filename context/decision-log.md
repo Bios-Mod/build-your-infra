@@ -138,6 +138,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
   confundir ambos — Terraform aprovisiona, Ansible configura. Ansible está
   planificado pero aún no implementado; junto con la monitorización constituye la
   fase final del repositorio.
+- **Stack self-managed autocontenido (2026-11-04):** incluye el rol y perfil de instancia `multi-lab-ec2-role` con `AmazonSSMManagedInstanceCore`, IMDSv2 obligatorio en la instancia y el Security Group con dos variables de CIDR (puerto 22 y puerto 22222) pasadas en cada `apply` con `$(curl -s ifconfig.me)/32`, vacías = cerrado. No se aplica el módulo aws-native de hardening en la misma cuenta (mismos nombres de VPC, Security Group y rol).
 
 ---
 
@@ -162,6 +163,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Doc de implementación único:** `stacks/full-infra/self-managed/automation/self-managed-automation.md`,
   con una sección por módulo (What was done / Why / Verification). Los hitos de verificación de
   cada módulo se reutilizan en el full stack para comprobar que cada módulo quedó bien aplicado.
+- **(2026-11-04) Estructura del doc de Ansible:** cada módulo (excepto hardening) tiene dos steps — Apply (tabla paso manual -> tarea de Ansible, comando y decisiones propias) y Verify. Hardening mantiene un step por paso por su riesgo de lockout. *(Sustituido el 2026-11-05 por estructura de 4 steps en hardening)*.
 - **Módulos elegibles.** La selección se hace por grupos de inventario (qué módulos se aplican a cada
   host) y por tags (`--tags <module>`) para ejecutar un módulo concreto. Hardening se aplica siempre
   primero y cada módulo comprueba al inicio que hardening está aplicado, fallando con un mensaje claro si no.
@@ -205,7 +207,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Nodo de control: el Mac, con Ansible nativo en un `venv`** y versiones fijadas en
   `requirements.txt`. Tras el Step 5 de hardening, SSH solo escucha por `wg0`; el túnel
   de WireGuard del Mac es nativo y evita el routing adicional de un contenedor o una VM.
-  ansible-core 2.21.6 (Python >= 3.12) y ansible-lint 26.10.1.
+  ansible-core 2.21.6 (Python 3.12 a 3.14, no 3.15) y ansible-lint 26.10.1.
 - **Orden de implementación:** hardening → file-transfer → dns → web-server → directory →
   dhcp. Refleja el orden real de despliegue manual de los módulos.
 - **Partida desde cero en ambos entornos, sin depender de snapshots ni AMIs.**
@@ -224,6 +226,20 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Monitorización (Prometheus + Grafana)** es un módulo posterior, solo self-managed,
   añadido tras cerrar la base de Ansible. También existe en
   `containerize-your-infra`, donde por ahora no se planifica Ansible.
+- **(2026-11-04) Orden de ejecución de hardening: EC2 primero.** El hub de WireGuard es EC2 y la VM es un peer; el bloque de acceso de la VM necesita el hub. Orden: 2A VM -> Terraform EC2 -> 2A, 2B, 2C EC2 -> 2B, 2C VM. Se dispone de créditos de AWS para el laboratorio.
+- **(2026-11-04) Estados de conexión `pre` / `hardened` / `wg`.** Sustituyen a `pre` / `post`: `hardened` es puerto 22222 con admin por LAN/Elastic IP; `wg` es por la IP de `wg0`.
+- **(2026-11-04) Cierre del SSH por LAN/Elastic IP:** solo con la variable explícita `hardening_wg_close_public_ssh: true`, tras confirmar el acceso por el túnel.
+- **(2026-11-04) WireGuard:** variable `hardening_wireguard_role` (`hub` en EC2, `client` en la VM). El par del hub se genera en el host con `creates:`; los pares de la Mac y la VM se generan en cada cliente y sus claves públicas van en `host_vars`. La clave privada nunca aparece en logs ni diffs (`no_log`).
+- **(2026-11-04) Step 9.1:** la tabla VM/VPS es orientativa; solo se reproducen los comandos de los bloques de código (ModemManager, packagekit/udisks2, apport y, en EC2, migración de amazon-ssm-agent y purga de snapd).
+- **(2026-11-04) Step 9.2:** se automatiza `chage -M 90 -m 1 -W 14` para el admin y los usuarios nuevos se crean con 65536 rondas SHA512. Quedan manuales: `chage -E` (ejemplo de verificación, riesgo de lockout) y `passwd` de re-cifrado (interactivo).
+- **(2026-11-04) Parada de demonios snapd antes de limpiar su estado en migraciones:** En la migración de `amazon-ssm-agent` de snap a deb en EC2, si `dpkg -i` se bloquea por estado previo de snap, el demonio `snapd` en memoria mantiene el estado y el preinst del .deb ejecuta `snap list`. Se deben detener `snap.amazon-ssm-agent.amazon-ssm-agent.service`, `snapd.service` y `snapd.socket` antes de eliminar `/var/lib/snapd`.
+- **(2026-11-04) Códigos de retorno aceptados en `rkhunter --update`:** Se aceptan códigos `[0, 1, 2]`. El código `2` indica actualización satisfactoria de ficheros de firmas (`[ Updated ]`), por lo que no constituye un error de ejecución.
+- **(2026-11-04) Obligatoriedad de salto de línea final en ficheros generados:** `lookup('file')` recorta los saltos de línea finales (`rstrip`), lo que provocaba que la directiva `-e 2` en `99-hardening.rules` se concatenara en la misma línea con comentarios añadidos por `augenrules` (`2##`), fallando el parser. Se impone concatenar explícitamente `\n` al desplegar.
+- **(2026-11-04) Aserciones pre-flight para el cliente WireGuard (VM):** Validación estricta de formato (44 caracteres base64 sin `CHANGE_ME` ni `<>`) para `wireguard_hub_public_key` y presencia de `wireguard_endpoint` antes de generar el fichero de configuración de la VM.
+- **(2026-11-04) Política de acceso SSH en la VM local:** La VM mantiene la regla rate-limited de puerto 22222 por LAN (`hardening_wg_close_public_ssh: false`); su SSH permanece accesible tanto por LAN como por el túnel WireGuard (el hub EC2 permanece activo hasta el cierre definitivo del laboratorio).
+- **(2026-11-04) Propiedad y permisos de `fail2ban.log`:** El archivo se pre-crea con `syslog:adm` en el Step 11; Fail2Ban escribe como root y logrotate lo recreará como `root:adm`. Desviación conocida y aceptada, tolerándose 1 changed tras la primera rotación.
+- **(2026-11-04) Omisión de expiración de cuenta (`chage -E`):** No se aplica fecha de expiración al administrador para evitar bloqueos operativos irreversibles, en estricta coherencia con la supresión de AUTH-9282.
+- **(2026-11-04) Tabla de Lynis del Step 12 alineada con `custom.prf`:** Se añade AUTH-9282 como desviación justificada y se retira NAME-4404 para reflejar con exactitud las reglas activas en el perfil de Lynis.
 
 ---
 
@@ -294,6 +310,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **Enfoque orientado al problema sin reescribir.** El README raíz incorpora una breve
   introducción de problema/enfoque y cada README de módulo abre con el problema que
   resuelve. Las secciones `### Why` a nivel de paso se mantienen tal cual están.
+- **`ANALYSIS.md` es un documento de trabajo.** Permanece en `stacks/full-infra/self-managed/automation/ansible/` mientras dure la implementación de Ansible y se elimina en la Fase 9, tras absorber su contenido útil en `self-managed-automation.md`.
 
 ---
 
@@ -302,3 +319,23 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - Estructura y decisiones primero, luego documentos de implementación generados por el asistente arquitecto, después el autor los ejecuta paso a paso y reporta los errores de vuelta a los documentos.
 - Las tareas mecánicas pueden delegarse al agente de código (Antigravity); diseño, docs y justificaciones no se delegan. Los prompts son redactados por el autor y el asistente.
 - El agente de código trabaja en feature branches y abre pull requests; nunca hace push a `main` ni merge, y ejecuta la estructura definida aquí sin decidirla.
+- **(2026-11-03)** El agente trabaja en una feature branch por módulo (hardening usa `feat/hardening-2a`; los siguientes, `feat/ansible-<módulo>`), con un commit por cambio; no crea ramas por correcciones ni por tareas pequeñas. Puede crear y modificar archivos y commitea allí. Nunca hace push a `main` ni merge; el autor revisa y mergea el pull request del módulo cuando está cerrado.
+- **(2026-11-03)** El agente escribe su informe final en `context/last-report.md` (ignorado por git y sobrescrito en cada ejecución) y responde en el chat solo con un resumen breve.
+- **(2026-11-04)** Antes de cada bloque, el asistente solicita el doc manual del módulo, lo contrasta con el código y solo entonces emite el prompt; no se emiten prompts con decisiones abiertas.
+- **(2026-11-05)** Método v2: un commit por prompt (sustituye al commit por cambio del 2026-11-03); prompts en formato delta; informe breve del agente; el asistente verifica por diff en GitHub (`get_commit` con `full_patch`) y solo pide al autor salidas de ejecución y ficheros fuera del repo; las correcciones se acumulan en el siguiente prompt salvo bloqueo; en bloques estables (p. ej. 2C) el autor ejecuta el bloque completo con `--tags` en una pasada. Motivo: reducir fricción y acelerar los módulos.
+- **(2026-11-05)** Reestructuración de `self-managed-automation.md` completada en el cierre de hardening: reducción de 2053 a ≤1000 líneas unificando tablas de comandos por destino y localizando steps por sección.
+
+---
+
+## Reestructuración de Automatización y Robustez de Ansible (2026-11-05)
+
+- **Estructura del doc de automatización:** Se organiza en secciones con steps locales (máx. 4 por sección). Hardening pasa a 4 steps (Baseline, Access chain, System hardening, Verify), sustituyendo la regla de "un step por paso" del 2026-11-04; el resto de módulos mantiene 2 steps (Apply y Verify). Los comandos se presentan en tablas unificadas por destino (`Target | --limit | host_vars | Command | Expected`); las verificaciones enlazan a las secciones del doc manual en vez de duplicar comandos; y la fase de import/redeploy AMI pasa al `Appendix A (legacy)` (histórico, ≤ ~120 líneas). Motivo: el documento alcanzó 2053 líneas por duplicación de bloques EC2/VM y prosa redundante.
+- **Invariabilidad de tareas `step_NN_*.yml`:** Los ficheros de tareas individuales no cambian su granularidad. Son la unidad de implementación 1:1 con el documento manual; los tags (`hardening_step0` ... `hardening_step12`, `hardening_2a`, `hardening_2b`, `hardening_2c`) enlazan directamente la documentación con el código.
+- **Verificación en roles nuevos:** Los roles de módulos posteriores incluirán `tasks/verify.yml` con aserciones automatizadas bajo el tag `<module>_verify`, mientras que el tag `<module>` aplicará el módulo completo.
+- **Robustez del control node:** Se añade `module_defaults` con `ansible.builtin.apt: { lock_timeout: 600 }` en playbooks (tras detectarse que `unattended-upgrades` retiene el bloqueo dpkg tras arranque); `timeout = 30` en `ansible.cfg` (evitando timeout en prompt de sudo); y pre-flight assertion en playbooks (`ansible-core 2.21.6` y Python 3.12–3.14) tras un incidente de ejecución con el Ansible de Homebrew (core 2.21.5, Python 3.15).
+- **Causa raíz del "sin handshake" en WireGuard (VM cliente):** El default `wireguard_endpoint: "{{ vm_lan_ip }}:{{ wireguard_port }}"` en `group_vars/vm.yml` hacía que la VM cliente apuntara a su propia IP de LAN en lugar de a la Elastic IP pública de EC2, imposibilitando el handshake con el hub. Decisión: eliminar el default en `group_vars/vm.yml` convirtiendo `wireguard_endpoint` en obligatorio en `host_vars/multi-lab-local.yml`, y añadir una aserción estricta en `step_05_wireguard.yml` que valida formato (`host:port`) y verifica que el host del endpoint no coincida con `vm_lan_ip` ni con `vm_static_ip`.
+- **Precedencia de `hardening_auditd_immutable_mode`:** `group_vars/vm.yml` mantiene `hardening_auditd_immutable_mode: false` durante desarrollo para permitir recargar reglas sin reiniciar; para la reconstrucción desde cero, `hardening_auditd_immutable_mode: true` se declara en `host_vars/multi-lab-local.yml`, ya que `host_vars` prevalece sobre `group_vars`.
+- **Causa raíz del timeout de escalada en Step 3 y corrección de `meta: reset_connection`:** En ansible-core 2.21, `meta: reset_connection` ignora la cláusula `when: connection_mode == 'pre'`, ejecutándose en cada pasada y reseteando la conexión SSH en medio de la ejecución, lo que provocaba un fallo "Timeout waiting for privilege escalation prompt" en la siguiente tarea con `become` (UFW). Se aísla la transición en `step_03_ssh_transition.yml` incluida con `include_tasks` condicional. Con ello, el Step 3 es estrictamente idempotente y se verificó con 0 `changed` en EC2.
+- **Regla UFW `limit 22222/tcp` oscilante:** En `step_04_ufw.yml`, la tarea que añade `limit 22222/tcp` se condiciona con `when: not hardening_wg_close_public_ssh`. Antes, cuando `hardening_wg_close_public_ssh: true` en EC2, el Step 4 recreaba la regla y el Step 5 la borraba en cada pasada (flapping con 1 `changed` continuo). Ahora, con `close=true`, ni el Step 4 ni el Step 5 reportan cambios en la segunda pasada.
+- **Aplazamiento de la reconstrucción desde cero a la Fase 9:** La reconstrucción desde cero de la VM prevista al cerrar hardening se aplaza a la Fase 9. Hardening se cierra con las puertas de idempotencia (0 changed) sobre los hosts existentes más una prueba del modo inmutable en la VM. Motivo: evitar reconstruir dos veces. Riesgo asumido: las secuencias de arranque en limpio no se re-ejecutan hasta la Fase 9.
+- **Pendientes conocidos:** (a) Puerta `hardening_2b` de la VM verificada tras la corrección de `reset_connection` (Step 3 solo idempotente con 0 `changed`); (b) Desviación de `/var/log/fail2ban.log` aceptada (creado como `syslog:adm` o `root:adm`, logrotate fuerza `0640 root adm`, pudiendo dar 1 `changed`); (c) Causa raíz del cuelgue de apt tras arranque sin determinar a nivel de SO (mitigado operativamente con `lock_timeout: 600`).
