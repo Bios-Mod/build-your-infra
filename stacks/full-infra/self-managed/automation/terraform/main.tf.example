@@ -1,11 +1,10 @@
-# Deploy to:   stacks/full-infra/self-managed/terraform/
-# Apply:       Greenfield path: cp main.tf.example main.tf && terraform apply (no import needed)
-#              Import path: cp main.tf.example main.tf after import cycle is complete (see self-managed-automation.md)
+# Deploy to:   stacks/full-infra/self-managed/automation/terraform/
+# Apply:       cp main.tf.example main.tf && terraform apply (see self-managed-automation.md)
 # Module:      stacks/full-infra/self-managed
 # Requires:    terraform.tfvars
 #
 # Full infrastructure definition for the self-managed lab stack.
-# Supports both greenfield provisioning from a clean AWS account and selective import.
+# Greenfield provisioning from a clean AWS account.
 # Parameters modified from baseline: none
 
 terraform {

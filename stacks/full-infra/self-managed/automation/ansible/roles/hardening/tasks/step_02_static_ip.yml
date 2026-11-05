@@ -167,10 +167,3 @@
 # Flushes handlers immediately to apply network changes before proceeding
 - name: Flush network handlers
   ansible.builtin.meta: flush_handlers
-
-# Waits for SSH reachability to confirm network connectivity after Netplan re-addressing (Step 2)
-- name: Wait for host connectivity after network reconfiguration
-  ansible.builtin.wait_for_connection:
-    delay: 5
-    timeout: 60
-  when: not is_cloud # VM only

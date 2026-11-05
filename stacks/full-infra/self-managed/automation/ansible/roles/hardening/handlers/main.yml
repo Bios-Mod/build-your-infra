@@ -77,3 +77,14 @@
   ansible.builtin.systemd_service:
     name: rsyslog
     state: restarted
+
+# Waits for SSH reachability after network re-addressing; runs only when a Step 2 change was notified (Step 2)
+# become: false because wait_for_connection resets the connection and its ping test fails with
+# "Timeout waiting for privilege escalation prompt" when it runs with become
+- name: Wait for host connectivity after network reconfiguration
+  ansible.builtin.wait_for_connection:
+    delay: 5
+    timeout: 60
+  become: false
+  listen: Apply netplan
+  when: not is_cloud
