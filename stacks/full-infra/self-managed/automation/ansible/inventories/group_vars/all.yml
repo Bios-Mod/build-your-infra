@@ -13,6 +13,9 @@
 # Resolved relative to the executed playbook directory (6 levels up to repository root)
 configs_root: "{{ playbook_dir }}/../../../../../../modules"
 
+# Control node toolchain pinned version required by preflight assertions
+controller_ansible_core_version: "2.21.6"
+
 # Non-root administration username created in hardening Step 0 and whitelisted in sshd_config
 admin_username: "admin"
 
