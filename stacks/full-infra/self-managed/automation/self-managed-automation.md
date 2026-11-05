@@ -999,7 +999,18 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
 
 ---
 
+### Targets & Execution Order
+
+| Target | Inventory Alias | `--limit` | Real `host_vars` File | `connection_mode` Used | Notes |
+| --- | --- | --- | --- | --- | --- |
+| AWS EC2 | `multi-lab-vps` | `--limit multi-lab-vps` | `inventories/host_vars/multi-lab-vps.yml` | `pre` → `hardened` → `wg` | WireGuard VPN hub (`172.16.0.1`). Deployed first. |
+| Local VM | `multi-lab-local` | `--limit multi-lab-local` | `inventories/host_vars/multi-lab-local.yml` | `pre` → `hardened` → `wg` | WireGuard client peer (`172.16.0.3`). Deployed second. |
+
+---
+
 ## Step 13 — SSH hardening (Hardening Step 3)
+
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
 
 ### What was done
 
@@ -1009,7 +1020,9 @@ Deploy the hardened `sshd_config` replacing the `AllowUsers` placeholder with th
 >
 > **EC2 Security Group Prerequisite:** Ensure port `22222` is allowed in Security Group `multi-lab-sg` for your workstation IP (`ssh_hardened_cidr`) before running this step. Keep an active SSH session or SSM Session Manager open in a separate window during deployment.
 
-**Run on the control node (Mac):**
+#### EC2 (multi-lab-vps)
+
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
@@ -1019,16 +1032,23 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step3 --ask-become-pass
 ```
 
+Update `connection_mode: "hardened"` in your real host variables file `inventories/host_vars/multi-lab-vps.yml`.
+
 #### Local VM (multi-lab-local)
 
-On the local VM, the initial user is the OS installer account (`vm_initial_user`, typically `sysadmin`) rather than `ubuntu`. Access migrates identically to the dedicated administrator (`admin_username`). Deploy with:
+On the local VM, the initial user is the OS installer account (`vm_initial_user`, typically `sysadmin`) rather than `ubuntu`. Access migrates identically to the dedicated administrator (`admin_username`).
+
+**VM · multi-lab-local · Run on the control node (Mac):**
 
 ```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step3 --check --diff --ask-become-pass
+
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step3 --ask-become-pass
 ```
 
-Update `connection_mode: "hardened"` in your real host variables file (`inventories/host_vars/multi-lab-vps.yml` or `inventories/host_vars/multi-lab-local.yml`).
+Update `connection_mode: "hardened"` in your real host variables file `inventories/host_vars/multi-lab-local.yml`.
 
 📄 [`configs/ssh/sshd_config`](../../../../modules/hardening/self-managed/configs/ssh/sshd_config)
 📄 [`configs/ssh/issue.net.template`](../../../../modules/hardening/self-managed/configs/ssh/issue.net.template)
@@ -1039,27 +1059,39 @@ Disabling password authentication and restricting access exclusively to Ed25519 
 
 ### Verification
 
-Test passwordless SSH authentication on the new hardened port from a new terminal window:
+#### EC2 (multi-lab-vps)
 
-**Run on the control node (Mac):**
+Test passwordless SSH authentication on the new hardened port:
+
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@<ec2_eip>
 # → authenticates successfully on port 22222
-```
 
-Confirm that password authentication is rejected:
-
-**Run on the control node (Mac):**
-
-```bash
 ssh -p 22222 -o PubkeyAuthentication=no -o PreferredAuthentications=password <admin_username>@<ec2_eip>
 # → Permission denied (publickey)
 ```
 
+#### Local VM (multi-lab-local)
+
+Test passwordless SSH authentication on the new hardened port:
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ssh -p 22222 -i ~/.ssh/id_ed25519_multi-lab <admin_username>@<vm_static_ip>
+# → authenticates successfully on port 22222
+
+ssh -p 22222 -o PubkeyAuthentication=no -o PreferredAuthentications=password <admin_username>@<vm_static_ip>
+# → Permission denied (publickey)
+```
+
+#### Both Targets
+
 Verify effective daemon configuration inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 sudo sshd -T | grep -E "port|permitrootlogin|passwordauthentication|allowusers"
@@ -1076,17 +1108,21 @@ ls /etc/ssh/ssh_host_*
 ### Troubleshooting
 
 - **Sudo password prompt (`BECOME password`):** From this step forward, the `BECOME password` prompted by Ansible is the administrator account password (`admin_username`) created in Step 0, NOT the original installer or cloud-init (`ubuntu`) password.
-- **Connection mode transition:** Add or update `connection_mode: "hardened"` directly in your real host variables file (`inventories/host_vars/multi-lab-vps.yml` or `inventories/host_vars/multi-lab-local.yml`), not in example templates or group variables.
+- **Connection mode transition:** Add or update `connection_mode: "hardened"` directly in your target host variables file (`inventories/host_vars/multi-lab-vps.yml` on EC2, `inventories/host_vars/multi-lab-local.yml` on VM), not in example templates or group variables.
 
 ---
 
 ## Step 14 — UFW firewall (Hardening Step 4)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Configure UFW default policies to deny inbound and allow outbound traffic, apply rate limiting on port 22222/tcp, configure logging level to `medium`, deploy `/etc/ufw/sysctl.conf` to persist `log_martians=1`, and enable the UFW firewall service.
 
-**Run on the control node (Mac):**
+#### EC2 (multi-lab-vps)
+
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
@@ -1100,7 +1136,12 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
 
 On the local VM, UFW activates with SSH on port 22222 without an outer AWS Security Group. There is no risk of cloud SG cut-off, but testing secondary SSH access before closing the active session is mandatory:
 
+**VM · multi-lab-local · Run on the control node (Mac):**
+
 ```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_step4 --check --diff --ask-become-pass
+
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step4 --ask-become-pass
 ```
@@ -1115,7 +1156,7 @@ Default-deny packet filtering ensures no services are exposed to the network unl
 
 Verify UFW status and active firewall rules inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 sudo ufw status verbose
@@ -1130,6 +1171,8 @@ sudo ufw status numbered
 ---
 
 ## Step 15 — WireGuard VPN (Hardening Step 5)
+
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
 
 ### What was done
 
@@ -1167,7 +1210,7 @@ Execute the exact validated sequence below to transition from public SSH to the 
 2. **Deploy Step 5 on EC2 Hub (without `--check`):**
    Run the playbook with `hardening_wg_close_public_ssh: false` (the default). Execute without `--check` on initial deployment so the server key pair is generated on disk:
 
-   **Run on the control node (Mac):**
+   **EC2 · multi-lab-vps · Run on the control node (Mac):**
 
    ```bash
    ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
@@ -1193,7 +1236,7 @@ Execute the exact validated sequence below to transition from public SSH to the 
 4. **Activate Tunnel and Verify Connectivity:**
    Start the tunnel on the Mac and verify the handshake, ICMP ping, and SSH over VPN:
 
-   **Run on the control node (Mac):**
+   **Mac · Run on the control node (Mac):**
 
    ```bash
    sudo wg-quick up wg0
@@ -1207,7 +1250,7 @@ Execute the exact validated sequence below to transition from public SSH to the 
 5. **Close Public SSH on UFW and AWS Security Group:**
    With tunnel connectivity verified, set `hardening_wg_close_public_ssh: true` in your real host variables file `inventories/host_vars/multi-lab-vps.yml` and re-run Step 5 to delete the public rate-limited port 22222 rule from UFW:
 
-   **Run on the control node (Mac):**
+   **EC2 · multi-lab-vps · Run on the control node (Mac):**
 
    ```bash
    ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
@@ -1216,7 +1259,7 @@ Execute the exact validated sequence below to transition from public SSH to the 
 
    Then update the AWS Security Group `multi-lab-sg` via Terraform with empty CIDR variables to close ports 22 and 22222 publicly:
 
-   **Run on the control node (Mac):**
+   **Terraform · Run on the control node (Mac):**
 
    ```bash
    cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
@@ -1229,6 +1272,8 @@ Execute the exact validated sequence below to transition from public SSH to the 
 #### Local VM (multi-lab-local)
 
 The local VM acts as a VPN client (`172.16.0.3/32`), not a hub. It requires the EC2 hub to be deployed first, with `wireguard_hub_public_key` and `wireguard_endpoint` configured in `inventories/host_vars/multi-lab-local.yml`. Port `51820/udp` is not opened in UFW on the VM:
+
+**VM · multi-lab-local · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
@@ -1247,7 +1292,7 @@ WireGuard provides cryptographic authentication at the network transport layer b
 
 Verify WireGuard tunnel status and peer handshakes on the EC2 hub:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 · Run on the instance (SSH session):**
 
 ```bash
 sudo wg show
@@ -1262,7 +1307,7 @@ sudo ufw status numbered
 
 Confirm that public SSH is blocked from outside the tunnel:
 
-**Run on the control node (Mac):**
+**Mac · Run on the control node (Mac):**
 
 ```bash
 ssh -p 22222 -o ConnectTimeout=5 <admin_username>@<ec2_eip>
@@ -1286,20 +1331,24 @@ ssh -p 22222 -o ConnectTimeout=5 <admin_username>@<ec2_eip>
 
 ## Step 16 — Fail2Ban (Hardening Step 6)
 
+> Applies to: EC2 (multi-lab-vps) · VM (multi-lab-local)
+
 ### What was done
 
 Install Fail2Ban, deploy the `allowipv6.conf` override to suppress CLI warnings, and deploy `jail.local` configuring ban escalation policies across `sshd` and `recidive` jails using the UFW ban backend. Whitelist loopback, the WireGuard subnet (`172.16.0.0/24`), and `lan_trusted_cidr` (VM only).
 
-**Run on the control node (Mac):**
+#### EC2 (multi-lab-vps)
+
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
   --tags hardening_step6 --ask-become-pass
 ```
 
-Verify full Block 2B execution and complete idempotence:
+Verify full Block 2B execution on EC2:
 
-**Run on the control node (Mac):**
+**EC2 · multi-lab-vps · Run on the control node (Mac):**
 
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
@@ -1311,9 +1360,21 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-vps \
 
 Deployment is identical to EC2 but operates on local LAN and VPN traffic:
 
+**VM · multi-lab-local · Run on the control node (Mac):**
+
 ```bash
 ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
   --tags hardening_step6 --ask-become-pass
+```
+
+Verify full Block 2B execution on VM:
+
+**VM · multi-lab-local · Run on the control node (Mac):**
+
+```bash
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local \
+  --tags hardening_2b --ask-become-pass
+# → changed=0 (gate for block 2B)
 ```
 
 📄 [`configs/fail2ban/jail.local`](../../../../modules/hardening/self-managed/configs/fail2ban/jail.local)
@@ -1327,7 +1388,7 @@ Fail2Ban provides defense-in-depth at the application layer for any traffic reac
 
 Verify active jails and aggressive filter mode inside the SSH session:
 
-**Run on the VM / EC2 (inside the SSH session):**
+**EC2 & VM · Run on the target host (SSH session):**
 
 ```bash
 sudo fail2ban-client status
