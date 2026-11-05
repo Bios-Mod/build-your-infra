@@ -236,6 +236,10 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **(2026-11-04) Códigos de retorno aceptados en `rkhunter --update`:** Se aceptan códigos `[0, 1, 2]`. El código `2` indica actualización satisfactoria de ficheros de firmas (`[ Updated ]`), por lo que no constituye un error de ejecución.
 - **(2026-11-04) Obligatoriedad de salto de línea final en ficheros generados:** `lookup('file')` recorta los saltos de línea finales (`rstrip`), lo que provocaba que la directiva `-e 2` en `99-hardening.rules` se concatenara en la misma línea con comentarios añadidos por `augenrules` (`2##`), fallando el parser. Se impone concatenar explícitamente `\n` al desplegar.
 - **(2026-11-04) Aserciones pre-flight para el cliente WireGuard (VM):** Validación estricta de formato (44 caracteres base64 sin `CHANGE_ME` ni `<>`) para `wireguard_hub_public_key` y presencia de `wireguard_endpoint` antes de generar el fichero de configuración de la VM.
+- **(2026-11-04) Política de acceso SSH en la VM local:** La VM mantiene la regla rate-limited de puerto 22222 por LAN (`hardening_wg_close_public_ssh: false`); su SSH permanece accesible tanto por LAN como por el túnel WireGuard (el hub EC2 permanece activo hasta el cierre definitivo del laboratorio).
+- **(2026-11-04) Propiedad y permisos de `fail2ban.log`:** El archivo se pre-crea con `syslog:adm` en el Step 11; Fail2Ban escribe como root y logrotate lo recreará como `root:adm`. Desviación conocida y aceptada, tolerándose 1 changed tras la primera rotación.
+- **(2026-11-04) Omisión de expiración de cuenta (`chage -E`):** No se aplica fecha de expiración al administrador para evitar bloqueos operativos irreversibles, en estricta coherencia con la supresión de AUTH-9282.
+- **(2026-11-04) Tabla de Lynis del Step 12 alineada con `custom.prf`:** Se añade AUTH-9282 como desviación justificada y se retira NAME-4404 para reflejar con exactitud las reglas activas en el perfil de Lynis.
 
 ---
 
