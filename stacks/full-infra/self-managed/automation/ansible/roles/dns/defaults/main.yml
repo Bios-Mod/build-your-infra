@@ -18,5 +18,8 @@ hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"  # noqa: var-nami
 # Internal VPC domain forwarded to VPC resolver and excluded from DNSSEC validation
 dns_vpc_domain: "compute.internal"
 
+# Reverse lookup zone for the 10.0.0.0/16 VPC network; PTR records of VPC hosts
+dns_vpc_reverse_domain: "10.in-addr.arpa"
+
 # AWS VPC resolver address used as upstream forwarder for internal VPC domain queries
 dns_vpc_resolver: "10.0.0.2"

@@ -25,6 +25,7 @@ None required. All network ranges and baseline paths are inherited from `group_v
 | `dns_configs_dir` | `{{ configs_root }}/dns/self-managed/configs` | Path to static DNS source configuration files. |
 | `hardening_ssh_port` | `{{ ssh_hardened_port \| default(22222) }}` | Hardened OpenSSH listening port verified in pre-flight assertions. |
 | `dns_vpc_domain` | `compute.internal` | Internal AWS VPC DNS domain forwarded to VPC resolver and excluded from DNSSEC validation. |
+| `dns_vpc_reverse_domain` | `10.in-addr.arpa` | Reverse lookup zone for 10.0.0.0/16 VPC network forwarded to VPC resolver and excluded from DNSSEC validation. |
 | `dns_vpc_resolver` | `10.0.0.2` | Amazon VPC DNS resolver IP used as upstream forwarder for internal VPC queries. |
 
 ---
@@ -55,4 +56,4 @@ Execution can be targeted via Ansible tags:
 3. **Step 8 (Pre-AMI Cleanup):** Pre-AMI sanitization of `/etc/resolv.conf` is excluded from Ansible automation because the infrastructure workflow is greenfield (Terraform and Ansible rebuild from base OS), eliminating dependency on golden AMIs.
 4. **Package `bind9-dnsutils`:** Installed alongside `bind9` and `bind9utils` to provide the `dig` diagnostic utility required for automated post-deploy verification assertions.
 5. **System Resolver Selection After Reboot:** After rebooting the host, if `resolvectl status ens5` shows `Current DNS Server: 10.0.0.2`, execute `sudo systemctl restart systemd-resolved` (the role only restarts it when applying the Netplan overlay).
-6. **Role additions to the manual configs:** When deploying `named.conf.options` and `named.conf.local`, the role adds on the fly `validate-except { "compute.internal"; };` and a `forward only` zone for `compute.internal` pointing to `10.0.0.2`. Without these additions, queries for internal VPC names (e.g. `*.eu-west-1.compute.internal`) fail DNSSEC validation via external forwarders with `SERVFAIL`, causing `systemd-resolved` to mark `127.0.0.1` defective and fall back permanently to `10.0.0.2` (which returns `NXDOMAIN` for `lab.internal`).
+6. **Role additions to the manual configs:** When deploying `named.conf.options` and `named.conf.local`, the role adds on the fly `validate-except { "compute.internal"; "10.in-addr.arpa"; };` and two `forward only` zones (`compute.internal` and `10.in-addr.arpa`) pointing to `10.0.0.2`. Without these additions, queries for internal VPC names (e.g. `*.eu-west-1.compute.internal`) and reverse PTR lookups for VPC host IPs fail DNSSEC validation via external forwarders with `SERVFAIL`, causing `systemd-resolved` to mark `127.0.0.1` defective and fall back permanently to `10.0.0.2` (which returns `NXDOMAIN` for `lab.internal`).

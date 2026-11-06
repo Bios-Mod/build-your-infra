@@ -104,14 +104,17 @@
     - dns
     - dns_verify
 
-# Asserts parsed configuration contains validate-except and VPC forward zone (Step 2 & 3 Verification)
-- name: Assert parsed configuration contains validate-except and VPC forward zone
+# Asserts parsed configuration contains validate-except and VPC forward zones (Step 2 & 3 Verification)
+- name: Assert parsed configuration contains validate-except and VPC forward zones
   ansible.builtin.assert:
     that:
       - "'validate-except' in dns_checkconf_p.stdout"
-      - "('zone \"' ~ dns_vpc_domain ~ '\"') in dns_checkconf_p.stdout"
+      - ('"' ~ dns_vpc_reverse_domain ~ '"') in dns_checkconf_p.stdout
+      - ('zone "' ~ dns_vpc_domain ~ '"') in dns_checkconf_p.stdout
+      - ('zone "' ~ dns_vpc_reverse_domain ~ '"') in dns_checkconf_p.stdout
     fail_msg: >-
-      Parsed BIND9 configuration does not contain validate-except or zone "{{ dns_vpc_domain }}".
+      Parsed BIND9 configuration does not contain validate-except with {{ dns_vpc_reverse_domain }}
+      or zones {{ dns_vpc_domain }} and {{ dns_vpc_reverse_domain }}.
       Output: {{ dns_checkconf_p.stdout }}
   when: not ansible_check_mode or dns_verify_stat_named.stat.exists
   tags:
@@ -293,6 +296,31 @@
       resolvectl status ens5 does not contain expected DNS Servers (127.0.0.1, 10.0.0.2) or DNS Domain (lab.internal):
       {{ dns_resolvectl_status.stdout }}
   when: not ansible_check_mode or dns_verify_stat_netplan.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Queries VPC host IP PTR resolution via BIND loopback to verify NOERROR status (Step 7 Verification)
+- name: Query VPC host IP PTR resolution via BIND loopback
+  ansible.builtin.command:
+    cmd: "dig @127.0.0.1 -x {{ ansible_default_ipv4.address }} +noall +comments"
+  register: dns_dig_vpc_ptr
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or (dns_verify_stat_named.stat.exists and dns_verify_stat_netplan.stat.exists)
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts BIND returns NOERROR for VPC host IP PTR query (Step 7 Verification)
+- name: Assert BIND returns NOERROR for VPC host IP PTR query
+  ansible.builtin.assert:
+    that:
+      - "'status: NOERROR' in dns_dig_vpc_ptr.stdout"
+    fail_msg: >-
+      BIND returned error for VPC host IP PTR query (status is not NOERROR); systemd-resolved would fall back to 10.0.0.2.
+      Output: {{ dns_dig_vpc_ptr.stdout }}
+  when: not ansible_check_mode or (dns_verify_stat_named.stat.exists and dns_verify_stat_netplan.stat.exists)
   tags:
     - dns
     - dns_verify

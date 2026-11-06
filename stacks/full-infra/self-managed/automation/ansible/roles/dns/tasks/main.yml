@@ -80,7 +80,7 @@
 # ==============================================================================
 
 # Deploys global BIND9 options restricting listeners and recursion to lab-net ACL (Step 2)
-# Adds validate-except for VPC domain to prevent DNSSEC validation failure (SERVFAIL) on internal VPC queries
+# Adds validate-except for VPC forward and reverse domains to prevent DNSSEC validation failure (SERVFAIL) on internal VPC queries
 - name: Deploy named.conf.options configuration
   vars:
     dns_options_raw: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.options') }}"
@@ -89,7 +89,11 @@
     content: >-
       {{
         dns_options_raw |
-        replace('dnssec-validation auto;', 'dnssec-validation auto;' ~ dns_options_newline ~ '    validate-except { "' ~ dns_vpc_domain ~ '"; };')
+        replace(
+          'dnssec-validation auto;',
+          'dnssec-validation auto;' ~ dns_options_newline ~
+          '    validate-except { "' ~ dns_vpc_domain ~ '"; "' ~ dns_vpc_reverse_domain ~ '"; };'
+        )
       }}
     dest: /etc/bind/named.conf.options
     owner: root
@@ -149,7 +153,7 @@
     - dns
 
 # Deploys named.conf.local declaring forward and reverse zones, plus VPC forwarder (Step 3)
-# Injects compute.internal forward zone to VPC resolver to avoid SERVFAIL and systemd-resolved failover
+# Injects compute.internal and 10.in-addr.arpa forward zones to VPC resolver to avoid SERVFAIL and systemd-resolved failover
 - name: Deploy named.conf.local configuration
   vars:
     dns_local_raw: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.local') }}"
@@ -159,6 +163,11 @@
         dns_nl ~ dns_nl ~
         '// ── DNS — VPC internal names forwarded to the VPC resolver ──' ~ dns_nl ~
         'zone "' ~ dns_vpc_domain ~ '" {' ~ dns_nl ~
+        '    type forward;' ~ dns_nl ~
+        '    forward only;' ~ dns_nl ~
+        '    forwarders { ' ~ dns_vpc_resolver ~ '; };' ~ dns_nl ~
+        '};' ~ dns_nl ~ dns_nl ~
+        'zone "' ~ dns_vpc_reverse_domain ~ '" {' ~ dns_nl ~
         '    type forward;' ~ dns_nl ~
         '    forward only;' ~ dns_nl ~
         '    forwarders { ' ~ dns_vpc_resolver ~ '; };' ~ dns_nl ~
