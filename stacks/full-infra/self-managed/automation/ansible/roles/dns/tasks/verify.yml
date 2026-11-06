@@ -303,7 +303,7 @@
 # Queries VPC host IP PTR resolution via BIND loopback to verify NOERROR status (Step 7 Verification)
 - name: Query VPC host IP PTR resolution via BIND loopback
   ansible.builtin.command:
-    cmd: "dig @127.0.0.1 -x {{ ansible_default_ipv4.address }} +noall +comments"
+    cmd: "dig @127.0.0.1 -x {{ ansible_facts['default_ipv4']['address'] }} +noall +comments"
   register: dns_dig_vpc_ptr
   check_mode: false
   changed_when: false
