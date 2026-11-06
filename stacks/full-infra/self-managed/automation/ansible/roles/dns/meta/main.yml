@@ -1,0 +1,35 @@
+# Deploy to:   local Ansible controller (metadata only)
+# Apply:       read by Ansible Galaxy and dependency resolver
+# Module:      dns
+# Requires:    none
+#
+# Role metadata and platform compatibility definitions for the dns role.
+# Why:         Declares author, license, supported OS distributions, and dependencies for the role.
+# Doc ref:     modules/dns/self-managed/dns-self-managed.md
+# Targets:     ec2
+
+---
+galaxy_info:
+  role_name: dns
+  author: Bios-Mod
+  description: Authoritative BIND9 DNS service role with forward and reverse zones, UFW rules, AIDE monitoring, and Netplan overlay.
+  company: build-your-infra
+  license: MIT
+  min_ansible_version: "2.16"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+  galaxy_tags:
+    - dns
+    - bind9
+    - networking
+    - ufw
+    - aide
+    - netplan
+    - security
+    - ubuntu
+
+dependencies: []

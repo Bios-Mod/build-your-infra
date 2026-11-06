@@ -1,0 +1,258 @@
+# Deploy to:   dns_servers
+# Apply:       ansible-playbook playbooks/dns.yml [--tags <tag>] [--check --diff] --ask-become-pass
+# Module:      dns
+# Requires:    playbooks/hardening.yml executed
+#
+# Task orchestration entry point for the dns role.
+# Why:         Installs BIND9, configures authoritative zones, UFW perimeter rules, AIDE integrity, and Netplan resolver.
+# Doc ref:     modules/dns/self-managed/dns-self-managed.md — Steps 1, 2, 3, 4, 6, 7
+# Targets:     ec2
+
+---
+# ==============================================================================
+# Pre-flight Checks (Prerequisites)
+# ==============================================================================
+
+# Queries active OpenSSH daemon configuration to verify hardening baseline port is active (Hardening prerequisite)
+- name: Query active OpenSSH daemon configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -T
+  register: dns_sshd_config_query
+  check_mode: false
+  changed_when: false
+  tags:
+    - dns
+
+# Asserts that the hardening baseline is applied by checking the active SSH port matches hardening_ssh_port
+- name: Assert hardening baseline is applied
+  ansible.builtin.assert:
+    that:
+      - ("port " ~ (hardening_ssh_port | string)) in dns_sshd_config_query.stdout_lines
+    fail_msg: >-
+      Hardening baseline prerequisite not met: active OpenSSH port is not {{ hardening_ssh_port }}.
+      Ensure role 'hardening' is fully deployed on the target before deploying 'dns'.
+  tags:
+    - dns
+
+# Checks if BIND9 utilities binary exists to allow dry-run (--check) on unprovisioned hosts
+- name: Stat named-checkconf binary
+  ansible.builtin.stat:
+    path: /usr/bin/named-checkconf
+  register: dns_stat_named
+  check_mode: false
+  tags:
+    - dns
+
+# ==============================================================================
+# Step 1 — Install BIND9 Packages
+# ==============================================================================
+
+# Installs BIND9 DNS server, checking utilities, and DNS diagnostic tools (Step 1)
+# Note: bind9-dnsutils is an accepted deviation from the manual doc to provide 'dig' for verification assertions
+- name: Install BIND9 and DNS utilities
+  ansible.builtin.apt:
+    name:
+      - bind9
+      - bind9utils
+      - bind9-dnsutils
+    state: present
+  tags:
+    - dns
+
+# ==============================================================================
+# Step 2 — Configure named.conf.options
+# ==============================================================================
+
+# Deploys global BIND9 options restricting listeners and recursion to lab-net ACL (Step 2)
+# Config file contains no placeholders; deployed without backup
+- name: Deploy named.conf.options configuration
+  ansible.builtin.copy:
+    src: "{{ dns_configs_dir }}/bind/named.conf.options"
+    dest: /etc/bind/named.conf.options
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "named-checkconf %s"
+  notify:
+    - Reload named (dns)
+  when: not ansible_check_mode or dns_stat_named.stat.exists
+  tags:
+    - dns
+
+# ==============================================================================
+# Step 3 — Zone Configuration (Forward + Reverse)
+# ==============================================================================
+
+# Creates directory for authoritative zone database files (Step 3)
+- name: Ensure /etc/bind/zones directory exists
+  ansible.builtin.file:
+    path: /etc/bind/zones
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: not ansible_check_mode or dns_stat_named.stat.exists
+  tags:
+    - dns
+
+# Deploys authoritative forward zone definition for lab.internal (Step 3)
+- name: Deploy lab.internal forward zone database
+  ansible.builtin.copy:
+    src: "{{ dns_configs_dir }}/bind/zones/db.lab.internal"
+    dest: /etc/bind/zones/db.lab.internal
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "named-checkzone lab.internal %s"
+  notify:
+    - Reload named (dns)
+  when: not ansible_check_mode or dns_stat_named.stat.exists
+  tags:
+    - dns
+
+# Deploys authoritative reverse zone definition for 172.16.0.0/24 subnet (Step 3)
+- name: Deploy 172.16.0.0/24 reverse zone database
+  ansible.builtin.copy:
+    src: "{{ dns_configs_dir }}/bind/zones/db.172.16.0"
+    dest: /etc/bind/zones/db.172.16.0
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "named-checkzone 0.16.172.in-addr.arpa %s"
+  notify:
+    - Reload named (dns)
+  when: not ansible_check_mode or dns_stat_named.stat.exists
+  tags:
+    - dns
+
+# Deploys named.conf.local declaring forward and reverse zones; zones must exist before reloading named (Step 3)
+- name: Deploy named.conf.local configuration
+  ansible.builtin.copy:
+    src: "{{ dns_configs_dir }}/bind/named.conf.local"
+    dest: /etc/bind/named.conf.local
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload named (dns)
+  when: not ansible_check_mode or dns_stat_named.stat.exists
+  tags:
+    - dns
+
+# Validates full BIND9 configuration and loaded zones together before reload (Step 3)
+- name: Validate full BIND9 configuration and zones
+  ansible.builtin.command:
+    cmd: named-checkconf -z
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode or dns_stat_named.stat.exists
+  tags:
+    - dns
+
+# Ensures BIND9 DNS service is enabled on boot and started (Steps 1, 3)
+- name: Ensure named service is enabled and started
+  ansible.builtin.systemd_service:
+    name: named
+    enabled: true
+    state: started
+  when: not ansible_check_mode or dns_stat_named.stat.exists
+  tags:
+    - dns
+
+# ==============================================================================
+# Step 4 — UFW: Allow DNS on WireGuard Interface
+# ==============================================================================
+
+# Allows inbound DNS queries over UDP on WireGuard interface; do not open port 53 on public interface (Step 4)
+- name: Allow incoming DNS queries over UDP on wg0
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: wg0
+    to_port: "53"
+    proto: udp
+    comment: "DNS — WireGuard"
+  tags:
+    - dns
+
+# Allows inbound DNS queries over TCP on WireGuard interface; do not open port 53 on public interface (Step 4)
+- name: Allow incoming DNS queries over TCP on wg0
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: wg0
+    to_port: "53"
+    proto: tcp
+    comment: "DNS — WireGuard TCP"
+  tags:
+    - dns
+
+# ==============================================================================
+# Step 5 — auditd: Zone File Monitoring (Manual / Non-Automated)
+# ==============================================================================
+# Note: Step 5 (auditd dns_config rule) is excluded from Ansible automation as an
+# accepted deviation. The hardening baseline locks auditd in immutable mode (-e 2)
+# and clears rules with -D, preventing drop-in audit rule additions without a kernel reboot.
+
+# ==============================================================================
+# Step 6 — AIDE: Extend Baseline for BIND9
+# ==============================================================================
+
+# Deploys AIDE integrity monitoring drop-in covering BIND9 configs and zones while excluding cache (Step 6)
+- name: Deploy AIDE DNS integrity monitoring configuration
+  ansible.builtin.copy:
+    src: "{{ dns_configs_dir }}/aide/99-hardening"
+    dest: /etc/aide/aide.conf.d/97-dns
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Regenerate AIDE database (dns)
+  tags:
+    - dns
+
+# ==============================================================================
+# Step 7 — Point System Resolver to BIND9 (EC2 Only)
+# ==============================================================================
+
+# WARNING: Must be applied only after named is active to prevent system resolution breakage.
+# Deploys Netplan DNS overlay routing lab.internal queries to local BIND9 resolver without modifying 50-cloud-init.yaml (Step 7)
+- name: Deploy Netplan DNS overlay configuration
+  ansible.builtin.copy:
+    src: "{{ dns_configs_dir }}/netplan/51-dns-lab.yaml"
+    dest: /etc/netplan/51-dns-lab.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify:
+    - Apply netplan (dns)
+  tags:
+    - dns
+
+# Note: Step 7 for WireGuard peers (updating DNS in /etc/wireguard/wg0.conf on clients like the local VM)
+# is not automated because the hardening role owns wg0.conf and would revert peer modifications on rerun.
+# Peer DNS configuration is performed manually on client nodes.
+
+# ==============================================================================
+# Step 8 — Pre-AMI Cleanup (Excluded)
+# ==============================================================================
+# Note: Step 8 (pre-AMI cleanup of /etc/resolv.conf) is excluded from Ansible automation
+# because the deployment workflow is greenfield (Terraform and Ansible provision from scratch),
+# eliminating dependency on golden AMIs or snapshot state.
+
+# ==============================================================================
+# Handler Flushing & Verification
+# ==============================================================================
+
+# Flushes notified handlers (named reload, AIDE database regeneration, and Netplan apply) before verification tasks
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - dns
+
+# Executes verification assertions for the dns module
+- name: Verify dns deployment
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - dns
+    - dns_verify

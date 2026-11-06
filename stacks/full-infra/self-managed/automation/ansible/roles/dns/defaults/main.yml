@@ -1,0 +1,16 @@
+# Deploy to:   dns_servers
+# Apply:       included automatically when role 'dns' is invoked
+# Module:      dns
+# Requires:    none
+#
+# Default variable definitions for the dns role.
+# Why:         Provides baseline defaults for source config paths and hardening pre-flight verification.
+# Doc ref:     modules/dns/self-managed/dns-self-managed.md
+# Targets:     ec2
+
+---
+# Root directory containing the source-of-truth dns configs
+dns_configs_dir: "{{ configs_root }}/dns/self-managed/configs"
+
+# Hardened OpenSSH daemon port configured by the hardening baseline
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"  # noqa: var-naming[no-role-prefix]

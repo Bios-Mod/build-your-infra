@@ -1,0 +1,335 @@
+# Deploy to:   dns_servers
+# Apply:       ansible-playbook playbooks/dns.yml --tags dns_verify [--check --diff] --ask-become-pass
+# Module:      dns
+# Requires:    dns applied
+#
+# Verification tasks and assertions for the dns role.
+# Why:         Validates service state, zone loading, socket listeners, DNS resolution, firewall rules, and AIDE drop-in.
+# Doc ref:     modules/dns/self-managed/dns-self-managed.md — Verification sections
+# Targets:     ec2
+
+---
+# ==============================================================================
+# Prerequisites & Binary Stat (Guards check_mode)
+# ==============================================================================
+
+# Checks if named-checkconf binary exists on target to guard check_mode runs (Prerequisite Verification)
+- name: Stat named-checkconf binary for verification
+  ansible.builtin.stat:
+    path: /usr/bin/named-checkconf
+  register: dns_verify_stat_named
+  check_mode: false
+  tags:
+    - dns
+    - dns_verify
+
+# Checks if Netplan overlay file exists on target to guard check_mode runs (Step 7 Verification)
+- name: Stat Netplan 51-dns-lab.yaml overlay
+  ansible.builtin.stat:
+    path: /etc/netplan/51-dns-lab.yaml
+  register: dns_verify_stat_netplan
+  check_mode: false
+  tags:
+    - dns
+    - dns_verify
+
+# ==============================================================================
+# Step 1 Verification — Service Active
+# ==============================================================================
+
+# Queries named systemd service state (Step 1 Verification)
+- name: Query named service status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active named
+  register: dns_named_status
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts named service is active (Step 1 Verification)
+- name: Assert named service is active
+  ansible.builtin.assert:
+    that:
+      - dns_named_status.rc == 0
+      - dns_named_status.stdout.strip() == 'active'
+    fail_msg: >-
+      BIND9 named service is not active (status: '{{ dns_named_status.stdout | default("unknown") }}').
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# ==============================================================================
+# Step 2 & Step 3 Verification — Config Syntax & Loaded Zones
+# ==============================================================================
+
+# Validates BIND9 configuration syntax and zone files loading (Step 2 & 3 Verification)
+- name: Verify named configuration and zones with named-checkconf
+  ansible.builtin.command:
+    cmd: named-checkconf -z
+  register: dns_checkconf_z
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts named-checkconf validates successfully (Step 2 & 3 Verification)
+- name: Assert named-checkconf validates successfully
+  ansible.builtin.assert:
+    that:
+      - dns_checkconf_z.rc == 0
+    fail_msg: >-
+      named-checkconf -z failed with return code {{ dns_checkconf_z.rc }}.
+      Output: {{ dns_checkconf_z.stdout }} {{ dns_checkconf_z.stderr }}
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Queries active UDP listening sockets using ss (Step 2 Verification)
+- name: Query active UDP listening sockets
+  ansible.builtin.command:
+    cmd: ss -ulnH
+  register: dns_ss_udp
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts UDP port 53 is listening on loopback (127.0.0.1) and WireGuard hub IP (172.16.0.1) (Step 2 Verification)
+- name: Assert DNS listening on 127.0.0.1 and WireGuard IP
+  ansible.builtin.assert:
+    that:
+      - "'127.0.0.1:53' in dns_ss_udp.stdout"
+      - "'172.16.0.1:53' in dns_ss_udp.stdout or ((wireguard_server_vpn_ip ~ ':53') in dns_ss_udp.stdout)"
+    fail_msg: >-
+      DNS socket not found listening on 127.0.0.1:53 or {{ wireguard_server_vpn_ip }}:53 in ss output:
+      {{ dns_ss_udp.stdout }}
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Queries forward resolution for ns1.lab.internal via loopback (Step 3 Verification)
+- name: Query ns1.lab.internal forward resolution via loopback
+  ansible.builtin.command:
+    cmd: dig @127.0.0.1 ns1.lab.internal A +short
+  register: dns_dig_ns1
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Queries forward resolution for vps.lab.internal via loopback (Step 3 Verification)
+- name: Query vps.lab.internal forward resolution via loopback
+  ansible.builtin.command:
+    cmd: dig @127.0.0.1 vps.lab.internal A +short
+  register: dns_dig_vps
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts forward resolution for ns1.lab.internal and vps.lab.internal returns 172.16.0.1 (Step 3 Verification)
+- name: Assert forward resolution for ns1 and vps
+  ansible.builtin.assert:
+    that:
+      - dns_dig_ns1.stdout.strip() == '172.16.0.1'
+      - dns_dig_vps.stdout.strip() == '172.16.0.1'
+    fail_msg: >-
+      Forward resolution failed: ns1.lab.internal returned '{{ dns_dig_ns1.stdout.strip() }}',
+      vps.lab.internal returned '{{ dns_dig_vps.stdout.strip() }}'. Expected 172.16.0.1.
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Queries reverse resolution for 172.16.0.1 via loopback (Step 3 Verification)
+- name: Query reverse resolution for 172.16.0.1 via loopback
+  ansible.builtin.command:
+    cmd: dig @127.0.0.1 -x 172.16.0.1 +short
+  register: dns_dig_reverse
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts reverse resolution contains both ns1.lab.internal. and vps.lab.internal. (Step 3 Verification)
+- name: Assert reverse resolution for 172.16.0.1
+  ansible.builtin.assert:
+    that:
+      - "'ns1.lab.internal.' in dns_dig_reverse.stdout_lines"
+      - "'vps.lab.internal.' in dns_dig_reverse.stdout_lines"
+    fail_msg: >-
+      Reverse resolution for 172.16.0.1 missing expected PTR records.
+      Got lines: {{ dns_dig_reverse.stdout_lines }}
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Queries external recursive resolution for google.com via loopback (Step 2 Verification)
+- name: Query external recursive resolution for google.com via loopback
+  ansible.builtin.command:
+    cmd: dig @127.0.0.1 google.com +short
+  register: dns_dig_recursive
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts recursive resolution returns non-empty output (Step 2 Verification)
+- name: Assert external recursion succeeds
+  ansible.builtin.assert:
+    that:
+      - dns_dig_recursive.stdout.strip() | length > 0
+    fail_msg: >-
+      Recursive resolution for google.com returned empty output. Check external forwarders.
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# ==============================================================================
+# Step 4 Verification — UFW Firewall Rules
+# ==============================================================================
+
+# Queries active UFW firewall rules with verbose output (Step 4 Verification)
+- name: Query UFW status verbose
+  ansible.builtin.command:
+    cmd: ufw status verbose
+  register: dns_ufw_status
+  check_mode: false
+  changed_when: false
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts UFW allows incoming 53/udp and 53/tcp traffic on wg0 interface (Step 4 Verification)
+- name: Assert UFW rules for DNS on wg0 exist
+  vars:
+    ufw_lines: "{{ dns_ufw_status.stdout_lines }}"
+  ansible.builtin.assert:
+    that:
+      - ufw_lines | select('search', '53/udp') | select('search', 'ALLOW IN') | select('search', 'wg0') | list | length > 0
+      - ufw_lines | select('search', '53/tcp') | select('search', 'ALLOW IN') | select('search', 'wg0') | list | length > 0
+    fail_msg: >-
+      UFW status does not contain ALLOW IN for 53/udp or 53/tcp on interface wg0:
+      {{ dns_ufw_status.stdout }}
+  tags:
+    - dns
+    - dns_verify
+
+# ==============================================================================
+# Step 7 Verification — System Resolver (resolvectl & dig)
+# ==============================================================================
+
+# Queries systemd-resolved status on ens5 interface (Step 7 Verification)
+- name: Query resolvectl status on ens5
+  ansible.builtin.command:
+    cmd: resolvectl status ens5
+  register: dns_resolvectl_status
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_netplan.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts systemd-resolved has 127.0.0.1 and 10.0.0.2 in DNS Servers and lab.internal in DNS Domain (Step 7 Verification)
+- name: Assert resolvectl status configuration
+  vars:
+    resolvectl_text: "{{ dns_resolvectl_status.stdout }}"
+  ansible.builtin.assert:
+    that:
+      - "'127.0.0.1' in resolvectl_text"
+      - "'10.0.0.2' in resolvectl_text"
+      - "'lab.internal' in resolvectl_text"
+    fail_msg: >-
+      resolvectl status ens5 does not contain expected DNS Servers (127.0.0.1, 10.0.0.2) or DNS Domain (lab.internal):
+      {{ dns_resolvectl_status.stdout }}
+  when: not ansible_check_mode or dns_verify_stat_netplan.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Queries ns1.lab.internal using default system resolver (Step 7 Verification)
+- name: Query ns1.lab.internal using system resolver
+  ansible.builtin.command:
+    cmd: dig ns1.lab.internal +short
+  register: dns_dig_system
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or (dns_verify_stat_named.stat.exists and dns_verify_stat_netplan.stat.exists)
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts system resolver returns 172.16.0.1 for ns1.lab.internal (Step 7 Verification)
+- name: Assert system resolver returns 172.16.0.1
+  ansible.builtin.assert:
+    that:
+      - dns_dig_system.stdout.strip() == '172.16.0.1'
+    fail_msg: >-
+      System resolver returned '{{ dns_dig_system.stdout.strip() }}' instead of 172.16.0.1 for ns1.lab.internal.
+  when: not ansible_check_mode or (dns_verify_stat_named.stat.exists and dns_verify_stat_netplan.stat.exists)
+  tags:
+    - dns
+    - dns_verify
+
+# ==============================================================================
+# Step 6 Verification — AIDE Configuration Drop-in
+# ==============================================================================
+
+# Retrieves filesystem attributes for AIDE DNS drop-in configuration (Step 6 Verification)
+- name: Stat AIDE DNS drop-in configuration
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d/97-dns
+  register: dns_verify_stat_aide
+  check_mode: false
+  tags:
+    - dns
+    - dns_verify
+
+# Reads content of AIDE DNS drop-in configuration (Step 6 Verification)
+- name: Read AIDE DNS drop-in configuration
+  ansible.builtin.slurp:
+    path: /etc/aide/aide.conf.d/97-dns
+  register: dns_verify_aide_slurp
+  check_mode: false
+  when: not ansible_check_mode or dns_verify_stat_aide.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts AIDE drop-in exists and contains /etc/bind and !/var/cache/bind (Step 6 Verification)
+- name: Assert AIDE DNS drop-in content
+  vars:
+    aide_content: "{{ (dns_verify_aide_slurp.content | b64decode) if (dns_verify_aide_slurp is defined and 'content' in dns_verify_aide_slurp) else '' }}"
+  ansible.builtin.assert:
+    that:
+      - dns_verify_stat_aide.stat.exists
+      - "'/etc/bind' in aide_content"
+      - "'!/var/cache/bind' in aide_content"
+    fail_msg: >-
+      AIDE drop-in /etc/aide/aide.conf.d/97-dns missing or does not contain /etc/bind and !/var/cache/bind.
+  when: not ansible_check_mode or dns_verify_stat_aide.stat.exists
+  tags:
+    - dns
+    - dns_verify
