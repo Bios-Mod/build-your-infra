@@ -48,3 +48,14 @@
   changed_when: true
   when: not ansible_check_mode
   listen: Apply netplan (dns)
+
+# Restarts systemd-resolved to ensure 127.0.0.1 is selected as the current DNS server (Step 7)
+# With 127.0.0.1 and 10.0.0.2 on the same interface, systemd-resolved retains the current server and only falls over on failure.
+# If 127.0.0.1 was not responding at apply time, resolved stays with VPC resolver 10.0.0.2 (which returns NXDOMAIN for lab.internal).
+# Restarting systemd-resolved with named active resets selection to the primary server (127.0.0.1).
+- name: Restart systemd-resolved (dns)
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: restarted
+  when: not ansible_check_mode
+  listen: Apply netplan (dns)

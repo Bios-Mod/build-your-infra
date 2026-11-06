@@ -778,6 +778,7 @@ For macOS WireGuard DNS behavior and optional fallback configuration, follow [ma
 - **Configs as single source of truth:** the role copies files directly from `modules/dns/self-managed/configs/` without altering repo configs or manual documentation text. The configuration files take precedence over descriptive documentation.
 - **Ordering (named before Netplan):** Netplan overlay `51-dns-lab.yaml` configures systemd-resolved to prioritize `127.0.0.1`. BIND9 must be fully running and validated (`named-checkconf -z`) before Netplan is applied to prevent local resolution failures.
 - **Dedicated AIDE drop-in:** hardening owns `/etc/aide/aide.conf.d/99-hardening`. The role deploys `/etc/aide/aide.conf.d/99-zz-dns` (ordered after `99-hardening`, which defines the `CONTENTEX` group) as an independent drop-in and regenerates the database only if the drop-in changes.
+- **Restarting systemd-resolved:** with `127.0.0.1` and `10.0.0.2` on the same interface (`ens5`), `systemd-resolved` retains its current server and only falls over on failure. If `127.0.0.1` was not responding at apply time, resolved stays with the VPC resolver (`10.0.0.2`), which returns NXDOMAIN for `lab.internal`. Restarting `systemd-resolved` after Netplan application while BIND9 is active resets query routing to the primary server (`127.0.0.1`).
 - **Manual auditd rule:** `-D` (flush rules) and `-e 2` (immutable mode) in `99-hardening.rules` prevent dynamic drop-in rule insertion at runtime without a kernel restart. The manually added audit rule lives in `99-hardening.rules`, owned by hardening: if Step 10 of hardening is re-run, the file is restored and the `dns_config` rule disappears, so it must be added again.
 - **Manual peer DNS configuration:** the `hardening` role owns `/etc/wireguard/wg0.conf` on peers and would overwrite external changes during subsequent hardening runs.
 - **Exclusion of Step 8:** pre-AMI sanitization of `/etc/resolv.conf` is omitted because the automated provisioning architecture is greenfield (Terraform and Ansible build clean environments), removing dependencies on golden AMIs.
@@ -832,6 +833,16 @@ What the assertions check on EC2 (`multi-lab-vps`):
 | Netplan resolver | `ens5` configured with `127.0.0.1`, `10.0.0.2` and domain `lab.internal` | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
 | System resolution | Local system resolver resolves `ns1.lab.internal` to `172.16.0.1` | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
 | AIDE integrity | Drop-in `99-zz-dns` monitors `/etc/bind` and excludes `/var/cache/bind` | [Step 6](../../../../modules/dns/self-managed/dns-self-managed.md#step-6--aide-extend-baseline) |
+
+After rebooting the host, if `resolvectl status ens5` shows `Current DNS Server: 10.0.0.2`, restart `systemd-resolved` to switch back to the local resolver (the role only restarts it when applying the Netplan overlay):
+
+**EC2 · multi-lab-vps:**
+
+```bash
+sudo systemctl restart systemd-resolved
+resolvectl status ens5 | grep "Current DNS Server"
+# → Current DNS Server: 127.0.0.1
+```
 
 Test resolution from the WireGuard peer over the tunnel:
 
