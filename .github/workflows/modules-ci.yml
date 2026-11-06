@@ -38,6 +38,7 @@ jobs:
       directory-self-managed: ${{ steps.filter.outputs.directory-self-managed }}
       directory-aws-native: ${{ steps.filter.outputs.directory-aws-native }}
       dhcp-self-managed: ${{ steps.filter.outputs.dhcp-self-managed }}
+      ansible-self-managed: ${{ steps.filter.outputs.ansible-self-managed }}
       any-module: ${{ steps.filter.outputs.any-module }}
     steps:
       - uses: actions/checkout@v7
@@ -73,6 +74,8 @@ jobs:
               - 'modules/directory/aws-native/**'
             dhcp-self-managed:
               - 'modules/dhcp/self-managed/**'
+            ansible-self-managed:
+              - 'stacks/full-infra/self-managed/automation/ansible/**'
             any-module:
               - 'modules/**'
 
@@ -326,3 +329,35 @@ jobs:
         run: |
           terraform init -backend=false
           terraform validate
+
+  ansible-self-managed:
+    needs: changes
+# Validate Ansible roles, playbooks, and inventory for the self-managed stack
+    if: needs.changes.outputs.ansible-self-managed == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install dependencies
+        working-directory: stacks/full-infra/self-managed/automation/ansible
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          ansible-galaxy collection install -r requirements.yml
+      - name: Prepare example inventory
+        working-directory: stacks/full-infra/self-managed/automation/ansible
+        run: cp inventories/hosts.yml.example inventories/hosts.yml
+      - name: Run ansible-lint
+        working-directory: stacks/full-infra/self-managed/automation/ansible
+        run: ansible-lint --profile production
+      - name: Validate playbook syntax
+        working-directory: stacks/full-infra/self-managed/automation/ansible
+        run: |
+          set -e
+          for pb in playbooks/*.yml; do
+            echo "Checking syntax: $pb"
+            ansible-playbook "$pb" --syntax-check
+          done

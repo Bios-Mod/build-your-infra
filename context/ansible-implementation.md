@@ -2,7 +2,7 @@
 
 **Repo:** build-your-infra · **Alcance:** automatizar **exactamente lo que ya está hecho a mano** en `self-managed`, en cada destino donde se aplicó (VM local y/o EC2). Monitorización (Prometheus + Grafana) queda fuera de este plan.
 **Idioma:** este plan es interno (español). Todo lo que se escriba en el repo (docs de módulos y entornos, README, configs, YAML, comentarios) va en inglés. `AGENTS.md`, `decision-log.md` y este plan están en español.
-**Decisiones:** cerradas y registradas en `decision-log.md` (sección "Decisiones de Ansible"). Este plan no las reabre.
+**Decisiones:** cerradas y registradas exclusivamente en `decision-log.md` (sección "Automatización — Decisiones de Ansible"). Este plan no contiene decisiones técnicas propias ni las reabre; define únicamente fases, matriz y operativa de ejecución.
 **Fuente de la matriz:** `snapshots/README.md` (registro documental de lo desplegado a mano).
 
 ---
@@ -11,33 +11,17 @@
 
 | Quién | Qué hace |
 | --- | --- |
-| Autor | Ejecuta manualmente cada paso de los `.md` en la VM y en EC2, reporta errores y aprende. Revisa y mergea los PR. |
-| Asistente (arquitecto) | Genera los `.md` de implementación y los prompts del agente. Corrige los docs con los errores reportados. |
-| Agente Flash (Antigravity) | Trabaja en ramas, hace commits y abre PR. Ejecuta tareas mecánicas: scaffolding, roles, tareas y handlers con comentarios, jobs de CI, enlaces. Ejecuta la estructura del decision-log; no la decide. Nunca hace push a `main` ni merge. |
+| Autor | Decide, ejecuta manualmente cada paso sobre la infraestructura real, reporta salidas y errores, revisa el código de un vistazo, abre y mergea los PRs (Squash and merge). |
+| Asistente (arquitecto) | Genera los `.md` de implementación y los prompts delta para el agente. Corrige los docs con los errores reportados. |
+| Agente de código (Antigravity) | Trabaja en feature branch (`feat/ansible-<módulo>`; CI: `feat/ansible-ci`), un commit por prompt y push solo a la rama de feature cuando se autoriza; entrega informe mínimo en `last-report.md`. Ejecuta tareas mecánicas: scaffolding, roles, tareas, handlers, CI y enlaces. Ejecuta la estructura del decision-log; no la decide. Nunca abre PRs, nunca push a `main` ni merge. |
 
 Ciclo por módulo: **rol + sección del doc → ejecución manual en cada destino donde aplica → errores al doc → hito por destino → siguiente módulo.**
 
 ---
 
-## 1. Decisiones aplicadas (resumen)
+## 1. Decisiones aplicadas
 
-| Tema | Decisión |
-| --- | --- |
-| Alcance | Se automatiza lo ya aplicado a mano, por destino (sección 4). Sin funcionalidad nueva; las limitaciones conocidas se reproducen. |
-| Nivel | Ansible solo a nivel de stack, como el Terraform de self-managed. Los módulos self-managed no tienen carpeta `automation/`. |
-| Ubicación | Todo en `stacks/full-infra/self-managed/automation/ansible/`: `ansible.cfg`, `requirements.txt`, `inventories/`, `playbooks/`, `roles/<module>/`. |
-| Roles | Un rol por módulo, con `tasks/`, `handlers/`, `defaults/`, `templates/`, `meta/` y un `README.md` corto. Un rol sirve a ambos destinos. |
-| Doc | `self-managed-automation.md` del stack, organizado en secciones con steps locales (máx. 4 por sección; hardening 4 steps, resto 2), tablas de comandos por destino y enlaces a las verificaciones del doc manual. |
-| Selección de módulos | Grupos de inventario + tags. Hardening siempre primero; cada módulo comprueba que hardening está aplicado. |
-| Fuente de configs | `configs/` de cada módulo; los roles las leen desde el nodo de control (`configs_root`) y sustituyen placeholders con variables de inventario. |
-| Nodo de control | Mac, Ansible nativo en `venv` con Python 3.12 a 3.14 (no 3.15), versiones fijadas en `requirements.txt`. |
-| Partida | Desde cero en ambos entornos, sin depender de snapshots ni AMIs. VM nueva con `local-vm-setup.md`; EC2 lanzada por Terraform desde Ubuntu 24.04 ARM64 base, pasando su AMI en la variable `ami_id` existente. El acceso SSH inicial se abre con una variable de Terraform (CIDR de bootstrap). |
-| Desarrollo | Incremental: un módulo por fase sobre el mismo host. Reconstrucción completa desde cero en el cierre del plan (Fase 9). |
-| Orden | hardening → file-transfer → dns → web-server → directory → dhcp. |
-| Pruebas | `ansible-lint` + `--syntax-check` en CI; pre-flight de toolchain en playbooks (`ansible-core 2.21.6`, Python 3.12–3.14); `--check --diff` y 0 `changed` en la segunda pasada; verificaciones enlazadas del manual; Lynis ≥ 88 (VM) / ≥ 90 (EC2). Sin Molecule. |
-| Privilegios y secretos | `--ask-become-pass`; sin secretos en el repo; claves de WireGuard solo en su host. |
-| Fuera de Ansible | Security Groups y SSM. |
-| VM actual | Intacta y apagada hasta cerrar Ansible y pasar a monitorización. |
+Todas las decisiones arquitectónicas y técnicas de Ansible se rigen exclusivamente por `context/decision-log.md` (sección "Automatización — Decisiones de Ansible"). Este plan no duplica decisiones técnicas.
 
 ---
 
@@ -70,7 +54,7 @@ modules/<m>/self-managed/
 
 stacks/full-infra/self-managed/automation/
 ├── self-managed-automation.md                (una sección por módulo)
-├── terraform/                                (existente; la variable de AMI se añade en Fase 1)
+├── terraform/                                (existente)
 └── ansible/
     ├── ansible.cfg
     ├── requirements.txt
@@ -187,12 +171,12 @@ Hitos:
 - 2C EC2: Steps 7-12; Lynis >= 90; 0 `changed`.
 - 2B VM: igual, como peer del hub; acceso por el túnel verificado.
 - 2C VM: Lynis >= 88; 0 `changed`.
-- Cierre de hardening: reestructuración del doc de automatización y de los README; puertas de idempotencia (0 `changed`) sobre los hosts existentes más verificación del modo inmutable (`-e 2`) en la VM (la reconstrucción completa desde cero de la VM se aplaza a la Fase 9 para evitar duplicar el proceso; riesgo asumido: las secuencias de arranque en limpio no se re-ejecutan hasta la Fase 9); verificación de hitos y merge del PR #7 a `main`.
+- Cierre de hardening (completado): reestructuración de `self-managed-automation.md` y READMEs; puertas de idempotencia (0 `changed`) sobre los hosts existentes y verificación del modo inmutable (`-e 2`) en la VM (reconstrucción completa desde cero de ambos entornos aplazada a la Fase 9); PR #7 verificado y mergeado a `main`.
 
 ### Fase 3 — Ansible en el CI
 
-- **Entregables (agente):** un único filtro y un job en `modules-ci.yml` sobre `stacks/full-infra/self-managed/automation/ansible/**` (`ansible-lint` + `--syntax-check`); no se tocan `push-ci.yml` ni `pull-request.yml`. Actualizar `continuous-integration.md`.
-- **Hito:** un PR de prueba que modifica solo el rol de hardening dispara el job de Ansible y pasa; un error de sintaxis deliberado lo hace fallar; se revierte.
+- **Entregables:** un único filtro y un job (`ansible-self-managed`) en `modules-ci.yml` sobre `stacks/full-infra/self-managed/automation/ansible/**` (`actions/setup-python@v5` con Python 3.12, `requirements.txt`, `requirements.yml`, copia de `hosts.yml.example` a `hosts.yml`, `ansible-lint --profile production` y bucle dinámico `ansible-playbook --syntax-check` sobre `playbooks/*.yml`); no se tocan `push-ci.yml` ni `pull-request.yml`. Actualizar `continuous-integration.md`, `README.md` (raíz) y `context/decision-log.md`.
+- **Hito:** un PR de prueba que modifica solo el rol de hardening dispara el job de Ansible (`ansible-self-managed`) y pasa; un error de sintaxis deliberado lo hace fallar; se revierte.
 
 ### Fases 4–8 — Módulos
 
@@ -238,7 +222,6 @@ La instancia EC2 se mantiene entre las fases 4 y 7 (apagada entre sesiones).
 | Contraseña de sudo | `--ask-become-pass`. |
 | Recursos AWS fuera de Ansible (Security Group) | Paso manual previo en cada hito EC2. |
 | Sin oráculo: el doc manual puede no reflejar el estado real | El doc es la especificación; los fallos se corrigen en el doc o en el rol y se registran. |
-| | El stack de Terraform self-managed no abre el puerto 22 y apunta a un AMI inexistente | `ami_id` ya es variable; en Terraform EC2 se añade el CIDR de bootstrap SSH condicional. |
 | Límites de emisión de Let's Encrypt | `staging` en ensayos; emisión real una vez por entorno. |
 | Samba 4.19.5 en aarch64 | Se reproduce el estado documentado; SMB2 fuera de alcance. |
 | Ficheros compartidos entre roles (`sshd_config`) | Un rol dueño del fichero; el resto usa drop-ins o bloques con marcador propio. |
