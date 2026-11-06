@@ -26,6 +26,30 @@
   tags:
     - file_transfer
 
+# Checks if the specified SFTP public key file physically exists on the local control node (Step 3 prerequisite)
+- name: Check SFTP public key file exists on control node
+  ansible.builtin.stat:
+    path: "{{ file_transfer_sftp_public_key_file | expanduser }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  register: file_transfer_sftp_public_key_stat
+  tags:
+    - file_transfer
+
+# Asserts that the SFTP public key exists on the control node before proceeding (Step 3 prerequisite)
+- name: Assert SFTP public key file exists on control node
+  ansible.builtin.assert:
+    that:
+      - file_transfer_sftp_public_key_stat.stat.exists
+    fail_msg: >-
+      SFTP public key file '{{ file_transfer_sftp_public_key_file }}' was not found on the control node.
+      Ensure the public key file exists at the specified path before running the playbook.
+      If you only have the private key, derive the public key using:
+      ssh-keygen -y -f <private_key_path> > <public_key_path>
+  tags:
+    - file_transfer
+
 # Queries active OpenSSH daemon configuration to verify hardening baseline port is active (Hardening prerequisite)
 - name: Query active OpenSSH daemon configuration
   ansible.builtin.command:
@@ -65,15 +89,34 @@
 # Step 1 — Dedicated SFTP User
 # ==============================================================================
 
-# Creates dedicated SFTP system user with nologin shell and unmatchable password (Step 1)
+# Creates dedicated SFTP group; required because hardening sets USERGROUPS_ENAB=no so useradd defaults to group 'users' (Step 1)
+- name: Ensure dedicated SFTP group exists
+  ansible.builtin.group:
+    name: "{{ file_transfer_user }}"
+    state: present
+  tags:
+    - file_transfer
+
+# Creates dedicated SFTP system user with nologin shell, primary group, and unmatchable password (Step 1)
 - name: Ensure dedicated SFTP user exists
   ansible.builtin.user:
     name: "{{ file_transfer_user }}"
+    group: "{{ file_transfer_user }}"
     shell: /usr/sbin/nologin
     password: "*"
     update_password: on_create
     create_home: true
     state: present
+  tags:
+    - file_transfer
+
+# Ensures SFTP user home directory has dedicated group ownership matching manual adduser behavior (Step 1)
+- name: Ensure SFTP user home directory has dedicated group ownership # noqa: risky-file-permissions
+  ansible.builtin.file:
+    path: "/home/{{ file_transfer_user }}"
+    state: directory
+    owner: "{{ file_transfer_user }}"
+    group: "{{ file_transfer_user }}"
   tags:
     - file_transfer
 
@@ -201,4 +244,3 @@
   tags:
     - file_transfer
     - file_transfer_verify
-

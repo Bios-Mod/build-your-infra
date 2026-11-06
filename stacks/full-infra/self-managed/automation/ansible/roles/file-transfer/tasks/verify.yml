@@ -28,12 +28,12 @@
 - name: Assert SFTP user has nologin shell
   ansible.builtin.assert:
     that:
-      - file_transfer_user in ansible_facts.getent_passwd
+      - (ansible_facts.getent_passwd | default({}))[file_transfer_user] is not none
       - ansible_facts.getent_passwd[file_transfer_user][5] == '/usr/sbin/nologin'
     fail_msg: >-
       SFTP user '{{ file_transfer_user }}' missing from passwd database or has shell
-      '{{ ansible_facts.getent_passwd[file_transfer_user][5] | default('none') }}' instead of '/usr/sbin/nologin'.
-  when: not ansible_check_mode or (file_transfer_user in (ansible_facts.getent_passwd | default({})))
+      '{{ (ansible_facts.getent_passwd[file_transfer_user] | default([]))[5] | default('none') }}' instead of '/usr/sbin/nologin'.
+  when: not ansible_check_mode or ((ansible_facts.getent_passwd | default({}))[file_transfer_user] is not none)
   tags:
     - file_transfer
     - file_transfer_verify
@@ -249,4 +249,3 @@
   tags:
     - file_transfer
     - file_transfer_verify
-
