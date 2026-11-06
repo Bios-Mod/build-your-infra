@@ -588,6 +588,14 @@ It automates [`file-transfer-self-managed.md`](../../../../modules/file-transfer
 
 The `file-transfer` role reproduces on both hosts the state that the manual module leaves behind: the `sftpuser` account with no shell, the root-owned chroot with its writable `uploads/` directory, the public key in `authorized_keys`, the `Match User` SSH block and the AIDE entry for the chroot. It reuses the SFTP key pair you already created in the manual module (`~/.ssh/id_ed25519_sftp`); Ansible only reads the `.pub` file and generates nothing.
 
+The public key file must already exist on the control node at the path you set; Ansible copies it to `/home/sftpuser/.ssh/authorized_keys` on each host, so no manual copy is needed. If only the private key is present, derive the public one:
+
+**Control node (Mac):**
+
+```bash
+ssh-keygen -y -f ~/.ssh/id_ed25519_sftp > ~/.ssh/id_ed25519_sftp.pub
+```
+
 > The auditd rule (manual Step 5) and the client `~/.ssh/config` alias (manual Step 7) are not part of the role. The auditd rule stays manual because `99-hardening.rules` ends with `-e 2`; the client alias lives on your Mac.
 
 First, point each host to the existing public key. Add this line to `inventories/host_vars/multi-lab-vps.yml` and to `inventories/host_vars/multi-lab-local.yml` (there is no default):
@@ -664,8 +672,8 @@ What the assertions check, on both targets:
 | `sftpuser` | Exists, shell `/usr/sbin/nologin` | [Step 1](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-1--dedicated-sftp-user) |
 | Directories | `/srv`, `/srv/sftp` root-owned without group/other write; chroot `root:root 0755`; `uploads/` `sftpuser:sftpuser 0750` | [Step 2](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-2--chroot-directory-structure) |
 | SSH key | `.ssh` `0700`, `authorized_keys` `0600`, owned by `sftpuser` | [Step 3](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-3--ssh-key-for-sftp-user) |
-| sshd for `sftpuser` | `forcecommand internal-sftp -l VERBOSE`, chroot directory, `passwordauthentication no`, `allowtcpforwarding no`, `allowusers` lists admin and `sftpuser` | [Step 4](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) |
-| sshd for the admin | Port `22222`, `forcecommand none` | [Step 4](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) |
+| sshd for `sftpuser` | `forcecommand internal-sftp -l VERBOSE`, chroot directory, `passwordauthentication no`, `allowtcpforwarding no`, `allowusers sftpuser` only (the `Match` replaces the global list for that user) | [Step 4](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) |
+| sshd for the admin | Port `22222`, `forcecommand none`, `allowusers` is the admin only | [Step 4](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) |
 | AIDE | `98-file-transfer` contains the `sftpuser` entry | [Step 6](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-6--aide-extend-baseline) |
 
 Client setup (manual Step 7). Add the alias for EC2 to `~/.ssh/config` on the Mac:
