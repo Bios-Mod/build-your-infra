@@ -295,6 +295,7 @@ Decisiones técnicas que están cerradas y no deben reabrirse sin solicitud expl
 - **La validación de Ansible** se añade como un único filtro + job sobre
   `stacks/full-infra/self-managed/automation/ansible/**` dentro de `modules-ci.yml`
   (`ansible-lint` y `--syntax-check`); los workflows de entrada no se tocan.
+- **2026-11-05 — Validación de Ansible en CI (Fase 3):** Se incorpora el job `ansible-self-managed` en `modules-ci.yml` condicionado al filtro `stacks/full-infra/self-managed/automation/ansible/**`. El job ejecuta `ansible-lint` (perfil production) y `ansible-playbook --syntax-check` sobre todos los playbooks (`ping.yml`, `bootstrap.yml`, `hardening.yml`) con inventario de ejemplo (`hosts.yml.example` copiado a `hosts.yml`) en runner `ubuntu-24.04-arm` con Python 3.12 (`actions/setup-python@v5`). No se incluye en `any-module` para no disparar `full-infra` innecesariamente. Valida sintaxis estática, convenciones y playbooks sin credenciales ni acceso a red; la ejecución de roles y `--check` contra hosts reales queda deliberadamente fuera de CI como paso manual antes del despliegue (análogo a `terraform plan`). `push-ci.yml` y `pull-request.yml` permanecen intactos.
 
 ---
 

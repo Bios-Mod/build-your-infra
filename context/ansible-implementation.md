@@ -191,8 +191,8 @@ Hitos:
 
 ### Fase 3 — Ansible en el CI
 
-- **Entregables (agente):** un único filtro y un job en `modules-ci.yml` sobre `stacks/full-infra/self-managed/automation/ansible/**` (`ansible-lint` + `--syntax-check`); no se tocan `push-ci.yml` ni `pull-request.yml`. Actualizar `continuous-integration.md`.
-- **Hito:** un PR de prueba que modifica solo el rol de hardening dispara el job de Ansible y pasa; un error de sintaxis deliberado lo hace fallar; se revierte.
+- **Entregables (agente):** un único filtro y un job (`ansible-self-managed`) en `modules-ci.yml` sobre `stacks/full-infra/self-managed/automation/ansible/**` (`actions/setup-python@v5` con Python 3.12, `requirements.txt`, `requirements.yml`, copia de `hosts.yml.example` a `hosts.yml`, `ansible-lint --profile production` y `ansible-playbook --syntax-check` sobre `ping.yml`, `bootstrap.yml` y `hardening.yml`); no se tocan `push-ci.yml` ni `pull-request.yml`. Actualizar `continuous-integration.md`, `README.md` (raíz) y `context/decision-log.md`.
+- **Hito:** un PR de prueba que modifica solo el rol de hardening dispara el job de Ansible (`ansible-self-managed`) y pasa; un error de sintaxis deliberado lo hace fallar; se revierte.
 
 ### Fases 4–8 — Módulos
 

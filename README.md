@@ -127,7 +127,7 @@ The self-managed Terraform stack provisions a clean EC2 host running Ubuntu Serv
 
 ## Continuous Integration
 
-Every module is validated on push and pull request via GitHub Actions — self-managed configs through native syntax checkers (`sshd -t`, `named-checkconf`, `testparm`, `nginx -t`, `fail2ban-client -t`, `aide --check`), and aws-native Terraform through `fmt -check` and `validate`. A single reusable workflow (`modules-ci.yml`) defines every check once; push and pull-request entry points call it via `workflow_call`, avoiding duplicated validation logic across triggers.
+Every module and automation stack is validated on push and pull request via GitHub Actions — self-managed configs through native syntax checkers (`sshd -t`, `named-checkconf`, `testparm`, `nginx -t`, `fail2ban-client -t`, `aide --check`), Ansible automation through `ansible-lint` and `--syntax-check`, and aws-native Terraform through `fmt -check` and `validate`. A single reusable workflow (`modules-ci.yml`) defines every check once; push and pull-request entry points call it via `workflow_call`, avoiding duplicated validation logic across triggers.
 
 `terraform plan` is intentionally excluded from CI — there is no persistent AWS environment in this lab, so `plan` remains a manual, local step before apply.
 
