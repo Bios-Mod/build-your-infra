@@ -1,0 +1,256 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/file-transfer.yml --tags file_transfer_verify [--check --diff] --ask-become-pass
+# Module:      file-transfer
+# Requires:    file-transfer applied
+#
+# Verification tasks and assertions for the file-transfer role.
+# Why:         Validates user configuration, chroot permissions, OpenSSH effective rules, and AIDE drop-in.
+# Doc ref:     modules/file-transfer/self-managed/file-transfer-self-managed.md — Verification sections
+# Targets:     both
+
+---
+# ==============================================================================
+# Step 1 Verification — SFTP User & Login Shell
+# ==============================================================================
+
+# Verifies sftpuser account exists in passwd database (Step 1 Verification)
+- name: Verify SFTP user account in passwd database
+  ansible.builtin.getent:
+    database: passwd
+    key: "{{ file_transfer_user }}"
+    fail_key: "{{ not ansible_check_mode }}"
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Asserts SFTP user has nologin shell to prevent interactive shell access (Step 1 Verification)
+- name: Assert SFTP user has nologin shell
+  ansible.builtin.assert:
+    that:
+      - (ansible_facts.getent_passwd | default({}))[file_transfer_user] is not none
+      - ansible_facts.getent_passwd[file_transfer_user][5] == '/usr/sbin/nologin'
+    fail_msg: >-
+      SFTP user '{{ file_transfer_user }}' missing from passwd database or has shell
+      '{{ (ansible_facts.getent_passwd[file_transfer_user] | default([]))[5] | default('none') }}' instead of '/usr/sbin/nologin'.
+  when: not ansible_check_mode or ((ansible_facts.getent_passwd | default({}))[file_transfer_user] is not none)
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# ==============================================================================
+# Step 2 & Step 3 Verification — Chroot and SSH Key Permissions
+# ==============================================================================
+
+# Retrieves filesystem attributes for the SFTP chroot root directory (Step 2 Verification)
+- name: Stat SFTP chroot root directory
+  ansible.builtin.stat:
+    path: "{{ file_transfer_chroot_dir }}"
+  register: file_transfer_stat_chroot
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Retrieves filesystem attributes for the writable uploads directory (Step 2 Verification)
+- name: Stat SFTP uploads directory
+  ansible.builtin.stat:
+    path: "{{ file_transfer_chroot_dir }}/uploads"
+  register: file_transfer_stat_uploads
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Retrieves filesystem attributes for the SFTP user's .ssh directory (Step 3 Verification)
+- name: Stat SFTP user .ssh directory
+  ansible.builtin.stat:
+    path: "/home/{{ file_transfer_user }}/.ssh"
+  register: file_transfer_stat_ssh
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Retrieves filesystem attributes for the SFTP user's authorized_keys file (Step 3 Verification)
+- name: Stat SFTP user authorized_keys file
+  ansible.builtin.stat:
+    path: "/home/{{ file_transfer_user }}/.ssh/authorized_keys"
+  register: file_transfer_stat_auth_keys
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Asserts ownership and permission modes across SFTP chroot, uploads, and SSH key directories (Steps 2 & 3 Verification)
+- name: Assert SFTP directories and authorized_keys permissions and ownership
+  ansible.builtin.assert:
+    that:
+      - file_transfer_stat_chroot.stat.exists
+      - file_transfer_stat_chroot.stat.pw_name == 'root'
+      - file_transfer_stat_chroot.stat.gr_name == 'root'
+      - file_transfer_stat_chroot.stat.mode == '0755'
+      - file_transfer_stat_uploads.stat.exists
+      - file_transfer_stat_uploads.stat.pw_name == file_transfer_user
+      - file_transfer_stat_uploads.stat.gr_name == file_transfer_user
+      - file_transfer_stat_uploads.stat.mode == '0750'
+      - file_transfer_stat_ssh.stat.exists
+      - file_transfer_stat_ssh.stat.pw_name == file_transfer_user
+      - file_transfer_stat_ssh.stat.gr_name == file_transfer_user
+      - file_transfer_stat_ssh.stat.mode == '0700'
+      - file_transfer_stat_auth_keys.stat.exists
+      - file_transfer_stat_auth_keys.stat.pw_name == file_transfer_user
+      - file_transfer_stat_auth_keys.stat.gr_name == file_transfer_user
+      - file_transfer_stat_auth_keys.stat.mode == '0600'
+    fail_msg: >-
+      SFTP directory or key file ownership/permissions mismatch.
+      Expected chroot root root:root 0755, uploads {{ file_transfer_user }}:{{ file_transfer_user }} 0750,
+      .ssh {{ file_transfer_user }}:{{ file_transfer_user }} 0700, and authorized_keys {{ file_transfer_user }}:{{ file_transfer_user }} 0600.
+  when: not ansible_check_mode or file_transfer_stat_chroot.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Retrieves filesystem attributes for /srv base directory (Step 2 Verification)
+- name: Stat /srv directory
+  ansible.builtin.stat:
+    path: /srv
+  register: file_transfer_stat_srv
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Retrieves filesystem attributes for /srv/sftp directory (Step 2 Verification)
+- name: Stat /srv/sftp directory
+  ansible.builtin.stat:
+    path: /srv/sftp
+  register: file_transfer_stat_srv_sftp
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Asserts /srv and /srv/sftp are owned by root with no group or other write permissions (Step 2 Verification)
+- name: Assert /srv and /srv/sftp root ownership and strict permissions
+  ansible.builtin.assert:
+    that:
+      - file_transfer_stat_srv.stat.exists
+      - file_transfer_stat_srv.stat.pw_name == 'root'
+      - not file_transfer_stat_srv.stat.wgrp
+      - not file_transfer_stat_srv.stat.woth
+      - file_transfer_stat_srv_sftp.stat.exists
+      - file_transfer_stat_srv_sftp.stat.pw_name == 'root'
+      - not file_transfer_stat_srv_sftp.stat.wgrp
+      - not file_transfer_stat_srv_sftp.stat.woth
+    fail_msg: >-
+      Chroot parent directory (/srv or /srv/sftp) is not owned by root or has group/other write permissions.
+  when: not ansible_check_mode or file_transfer_stat_srv_sftp.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# ==============================================================================
+# Step 4 Verification — OpenSSH Effective Match User Rules
+# ==============================================================================
+
+# Retrieves filesystem attributes for OpenSSH drop-in configuration file (Step 4 Verification)
+- name: Stat SFTP OpenSSH drop-in configuration
+  ansible.builtin.stat:
+    path: /etc/ssh/sshd_config.d/50-file-transfer.conf
+  register: file_transfer_stat_sshd_dropin
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Tests OpenSSH effective configuration for SFTP user against Match block (Step 4 Verification)
+- name: Query effective OpenSSH configuration for SFTP user
+  ansible.builtin.command:
+    cmd: >-
+      /usr/sbin/sshd -T -C user={{ file_transfer_user }},host=localhost,addr=127.0.0.1
+  register: file_transfer_sshd_sftp_test
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or file_transfer_stat_sshd_dropin.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Asserts effective OpenSSH directives for SFTP user match chroot and confinement requirements (Step 4 Verification)
+- name: Assert effective OpenSSH configuration for SFTP user
+  vars:
+    allowusers_tokens: "{{ (file_transfer_sshd_sftp_test.stdout_lines | select('match', '^allowusers\\s+') | join(' ')).split() }}"
+  ansible.builtin.assert:
+    that:
+      - "'forcecommand internal-sftp -l VERBOSE' in file_transfer_sshd_sftp_test.stdout_lines"
+      - ("chrootdirectory " ~ file_transfer_chroot_dir) in file_transfer_sshd_sftp_test.stdout_lines
+      - "'passwordauthentication no' in file_transfer_sshd_sftp_test.stdout_lines"
+      - "'allowtcpforwarding no' in file_transfer_sshd_sftp_test.stdout_lines"
+      - file_transfer_user in allowusers_tokens
+    fail_msg: >-
+      SFTP OpenSSH effective configuration mismatch. Verify forcecommand, chrootdirectory,
+      passwordauthentication, allowtcpforwarding, and AllowUsers directives.
+  when: not ansible_check_mode or file_transfer_stat_sshd_dropin.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Tests OpenSSH effective configuration for administrator user to verify unconfined access (Step 4 Verification)
+- name: Query effective OpenSSH configuration for admin user
+  ansible.builtin.command:
+    cmd: >-
+      /usr/sbin/sshd -T -C user={{ hardening_admin_username }},host=localhost,addr=127.0.0.1
+  register: file_transfer_sshd_admin_test
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or file_transfer_stat_sshd_dropin.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Asserts administrator maintains unconfined shell access and hardened port (Step 4 Verification)
+# Verifies that the SFTP Match block does not leak to admin and that admin retains access
+- name: Assert effective OpenSSH configuration for admin user
+  vars:
+    allowusers_tokens_admin: "{{ (file_transfer_sshd_admin_test.stdout_lines | select('match', '^allowusers\\s+') | join(' ')).split() }}"
+  ansible.builtin.assert:
+    that:
+      - ("port " ~ (hardening_ssh_port | string)) in file_transfer_sshd_admin_test.stdout_lines
+      - "'forcecommand none' in file_transfer_sshd_admin_test.stdout_lines"
+      - hardening_admin_username in allowusers_tokens_admin
+      - file_transfer_user not in allowusers_tokens_admin
+    fail_msg: >-
+      Administrator OpenSSH configuration mismatch: expected port {{ hardening_ssh_port }}, forcecommand none,
+      admin user '{{ hardening_admin_username }}' in AllowUsers, and SFTP user '{{ file_transfer_user }}' absent from AllowUsers.
+  when: not ansible_check_mode or file_transfer_stat_sshd_dropin.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# ==============================================================================
+# Step 6 Verification — AIDE Configuration Drop-in
+# ==============================================================================
+
+# Retrieves filesystem attributes for AIDE drop-in configuration file (Step 6 Verification)
+- name: Stat AIDE drop-in configuration file
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d/98-file-transfer
+  register: file_transfer_stat_aide_dropin
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Verifies SFTP chroot path is monitored in AIDE drop-in configuration (Step 6 Verification)
+- name: Check sftpuser in AIDE drop-in configuration
+  ansible.builtin.command:
+    cmd: grep sftpuser /etc/aide/aide.conf.d/98-file-transfer
+  register: file_transfer_aide_grep
+  check_mode: false
+  changed_when: false
+  failed_when: file_transfer_aide_grep.rc != 0
+  when: not ansible_check_mode or file_transfer_stat_aide_dropin.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify

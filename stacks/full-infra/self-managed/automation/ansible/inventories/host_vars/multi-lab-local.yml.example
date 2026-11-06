@@ -66,3 +66,6 @@ hardening_lynis_min_score: 88
 # Auditd immutable flag (-e 2) from Step 10: disabled during local development to allow
 # rule modifications without kernel reboot; switch to true during greenfield rebuild in Block 2C
 hardening_auditd_immutable_mode: false
+
+# Dedicated Ed25519 public key file for SFTP user (file-transfer module)
+file_transfer_sftp_public_key_file: "~/.ssh/CHANGE_ME_sftp_key.pub"
