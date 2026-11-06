@@ -26,3 +26,4 @@ hardening_admin_username: "{{ admin_username | default('admin') }}"
 
 # Note: file_transfer_sftp_public_key_file has NO default value by design.
 # It must be defined explicitly in host_vars (e.g. inventories/host_vars/multi-lab-local.yml or multi-lab-vps.yml).
+
