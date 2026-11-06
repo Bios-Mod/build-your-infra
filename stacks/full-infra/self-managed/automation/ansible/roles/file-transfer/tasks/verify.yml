@@ -187,7 +187,6 @@
       - ("chrootdirectory " ~ file_transfer_chroot_dir) in file_transfer_sshd_sftp_test.stdout_lines
       - "'passwordauthentication no' in file_transfer_sshd_sftp_test.stdout_lines"
       - "'allowtcpforwarding no' in file_transfer_sshd_sftp_test.stdout_lines"
-      - hardening_admin_username in allowusers_tokens
       - file_transfer_user in allowusers_tokens
     fail_msg: >-
       SFTP OpenSSH effective configuration mismatch. Verify forcecommand, chrootdirectory,
@@ -211,13 +210,19 @@
     - file_transfer_verify
 
 # Asserts administrator maintains unconfined shell access and hardened port (Step 4 Verification)
+# Verifies that the SFTP Match block does not leak to admin and that admin retains access
 - name: Assert effective OpenSSH configuration for admin user
+  vars:
+    allowusers_tokens_admin: "{{ (file_transfer_sshd_admin_test.stdout_lines | select('match', '^allowusers\\s+') | join(' ')).split() }}"
   ansible.builtin.assert:
     that:
       - ("port " ~ (hardening_ssh_port | string)) in file_transfer_sshd_admin_test.stdout_lines
       - "'forcecommand none' in file_transfer_sshd_admin_test.stdout_lines"
+      - hardening_admin_username in allowusers_tokens_admin
+      - file_transfer_user not in allowusers_tokens_admin
     fail_msg: >-
-      Administrator OpenSSH configuration mismatch: expected port {{ hardening_ssh_port }} and forcecommand none.
+      Administrator OpenSSH configuration mismatch: expected port {{ hardening_ssh_port }}, forcecommand none,
+      admin user '{{ hardening_admin_username }}' in AllowUsers, and SFTP user '{{ file_transfer_user }}' absent from AllowUsers.
   when: not ansible_check_mode or file_transfer_stat_sshd_dropin.stat.exists
   tags:
     - file_transfer
