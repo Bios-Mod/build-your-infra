@@ -48,7 +48,7 @@ Execution is organized into modular sections with local step numbers (maximum 4 
 | Module | Self-Managed Stack | Automation Status | Implementation Doc |
 | --- | --- | --- | --- |
 | **hardening** | OpenSSH · UFW · WireGuard · Fail2Ban · sysctl · AppArmor · auditd · Lynis | **Complete** | This document (Section: Hardening) |
-| **file-transfer** | SFTP (`internal-sftp` subsystem with chroot jail) | Pending | Downstream implementation |
+| **file-transfer** | SFTP (`internal-sftp` subsystem with chroot jail) | **Complete** | This document (Section: File Transfer) |
 | **dns** | BIND9 authoritative private zone (`lab.internal`) | Pending | Downstream implementation |
 | **web-server** | Nginx HTTPS reverse proxy + Certbot | Pending | Downstream implementation |
 | **directory** | Samba 4 Active Directory Domain Controller | Pending | Downstream implementation |
@@ -734,5 +734,131 @@ ansible-playbook playbooks/hardening.yml --limit multi-lab-local --ask-become-pa
 2. **VM Block 2B Gate Idempotency:** The 'Timeout waiting for privilege escalation prompt' encountered during Block 2B was caused by `meta: reset_connection` executing unconditionally on every pass in ansible-core 2.21, resetting the SSH connection right before UFW privilege escalation. This was resolved by isolating the transition in `step_03_ssh_transition.yml` via conditional `include_tasks`. Live idempotency verification (full Block 2B gate with `changed=0` across both targets) will be confirmed following this fix, while the from-scratch rebuild is deferred to Phase 9.
 3. **WireGuard Client Endpoint Trap:** In the local VM client configuration, `wireguard_endpoint` must explicitly point to the public Elastic IP and port of the EC2 hub (`<ec2_eip>:51820`). It must be declared in `inventories/host_vars/multi-lab-local.yml` and must never default to the VM's own LAN IP, which previously prevented handshake completion.
 4. **UFW Port 22222 Flapping Prevention:** In `step_04_ufw.yml`, the task that allows rate-limited incoming connections on port 22222 is guarded by `when: not hardening_wg_close_public_ssh`. This prevents the rule from being recreated on Step 4 and deleted on Step 5 on every run in EC2 when public SSH closure is active.
+
+---
+
+## File Transfer — SFTP Service
+
+The file-transfer service automates the deployment of a hardened, isolated SFTP server using OpenSSH's internal subsystem (`internal-sftp`), building on top of the security baseline established in [`file-transfer-self-managed.md`](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md).
+
+---
+
+### Step 1 — Deploy File Transfer Service (Apply · Tag `file_transfer`)
+
+#### What was done
+
+Provisions a dedicated unprivileged system account (`sftpuser`) with no interactive login shell, configures an isolated chroot jail directory hierarchy with strict root ownership, injects the authorized Ed25519 public key, deploys an OpenSSH `Match User` configuration drop-in, and extends file integrity monitoring via AIDE.
+
+| Manual Step | Task File (`roles/file-transfer/tasks/`) | Tag | Ansible Implementation & Status |
+| --- | --- | --- | --- |
+| [Step 1 — Dedicated SFTP User](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-1--dedicated-sftp-user) | `main.yml` | `file_transfer` | Provisions `sftpuser` with `shell: /usr/sbin/nologin`, `password: "*"` (unmatchable shadow password, allowing key auth while disallowing password login), `update_password: on_create`, and `create_home: true`. |
+| [Step 2 — Chroot Directory Structure](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-2--chroot-directory-structure) | `main.yml` | `file_transfer` | Enforces strict directory permissions: `/srv/sftp` (`0755 root:root`), chroot jail `/srv/sftp/sftpuser` (`0755 root:root`), and writable upload path `/srv/sftp/sftpuser/uploads` (`0750 sftpuser:sftpuser`). Strict root ownership satisfies OpenSSH chroot requirements. |
+| [Step 3 — SSH Key for SFTP User](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-3--ssh-key-for-sftp-user) | `main.yml` | `file_transfer` | Client Ed25519 keypair generation (`ssh-keygen -t ed25519 -C "sftp-multi-lab" -f ~/.ssh/id_ed25519_sftp`) is performed out-of-band on the operator workstation (**not automated**). Ansible provisions `/home/sftpuser/.ssh` (`0700 sftpuser:sftpuser`) and deploys the public key provided via `file_transfer_sftp_public_key_file` to `authorized_keys` (`0600 sftpuser:sftpuser`). |
+| [Step 4 — sshd_config: Match User Block](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) | `main.yml` | `file_transfer` | Deploys drop-in `/etc/ssh/sshd_config.d/50-file-transfer.conf` (`0644 root:root`) with `validate: "/usr/sbin/sshd -t -f %s"`. Appends `AllowUsers sftpuser` directly inside the `Match User sftpuser` block. Executes full `/usr/sbin/sshd -t` validation and triggers handler `Reload sshd (file-transfer)`. |
+| [Step 5 — auditd: SFTP Activity Rule](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-5--auditd-sftp-activity-rule) | N/A | None | **Not automated (accepted architectural deviation).** The hardening baseline locks auditd in immutable mode (`-e 2`) with rule flush (`-D`) in `99-hardening.rules`. Appending audit rules at runtime causes `augenrules --load` failure without a kernel reboot. Step 5 is preserved exclusively in manual documentation. |
+| [Step 6 — AIDE: Extend Baseline](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-6--aide-extend-baseline) | `main.yml` | `file_transfer` | Deploys `/etc/aide/aide.conf.d/98-file-transfer` (`0644 root:root`) from `modules/file-transfer/self-managed/configs/aide/99-hardening`. Chained handlers listening on `Regenerate AIDE database (file-transfer)` execute `aide --init` (accepting exit code 17) and activate the database via `mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db`. |
+| [Step 7 — Client Connection](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-7--client-connection) | N/A | None | **Not automated.** Client SSH alias configuration (`~/.ssh/config` `Host multi-lab-sftp`) and transfer testing are performed directly on the operator workstation. |
+
+> [!WARNING]
+> **Lockout Risk:**
+> While OpenSSH daemon configuration is deployed via a modular drop-in `/etc/ssh/sshd_config.d/50-file-transfer.conf`, syntax errors could prevent the SSH daemon from reloading or restarting. The role executes local file validation (`validate: "/usr/sbin/sshd -t -f %s"`) followed by global validation (`/usr/sbin/sshd -t`) before flushing handlers to trigger daemon reloads.
+
+#### Architectural Decisions
+
+- **Modular OpenSSH Drop-in (`50-file-transfer.conf`):** Hardening retains exclusive ownership of `/etc/ssh/sshd_config`. OpenSSH's native `Include /etc/ssh/sshd_config.d/*.conf` loads `50-file-transfer.conf` dynamically without altering the global baseline.
+- **Scoping `AllowUsers` in `Match User`:** The hardening baseline sets `AllowUsers admin` globally. Without an explicit `AllowUsers sftpuser` directive inside `Match User sftpuser`, OpenSSH rejects `sftpuser` logins at pre-authentication. Placing `AllowUsers sftpuser` inside the drop-in Match block authorizes SFTP access while preserving global administrative restrictions.
+- **AIDE Modular Drop-in (`98-file-transfer`):** Keeps hardening's `99-hardening` intact while extending monitoring to `/srv/sftp/sftpuser` and explicitly excluding `/srv/sftp/sftpuser/uploads` to prevent false alarms during normal transfers.
+- **Unmatchable Shadow Password (`password: "*"`):** Setting `password: "*"` in `ansible.builtin.user` writes an unmatchable hash to `/etc/shadow`. This permits authorized public-key authentication while blocking password logins, avoiding the locked account state (`!`) that can interfere with PAM checks.
+- **Public Key Path via Host Variables (`file_transfer_sftp_public_key_file`):** Requires the operator to define `file_transfer_sftp_public_key_file` explicitly in `inventories/host_vars/`, ensuring no real keys, secrets, or workstation paths are committed to defaults.
+- **Auditd Rule Omission (Step 5):** The runtime immutability (`-e 2`) and rule flushing (`-D`) of `99-hardening.rules` prevent dynamic rule injection without a kernel reboot. Step 5 is documented as an accepted architectural deviation.
+
+#### Target Environments
+
+| Target | Inventory Alias | Ansible `--limit` | Host Variables File | Role & Transport |
+| --- | --- | --- | --- | --- |
+| AWS EC2 Self-Managed | `multi-lab-vps` | `--limit multi-lab-vps` | `inventories/host_vars/multi-lab-vps.yml` | WireGuard Hub (`172.16.0.1:22222`). Reached via VPN tunnel (`connection_mode: "wg"`). |
+| Local VM (Hypervisor) | `multi-lab-local` | `--limit multi-lab-local` | `inventories/host_vars/multi-lab-local.yml` | WireGuard Peer (`172.16.0.3:22222`). Reached via VPN tunnel (`connection_mode: "wg"`). |
+
+#### Unified Execution Commands
+
+Before executing, verify the WireGuard VPN tunnel is connected and active from the control node. Ensure `file_transfer_sftp_public_key_file` is defined in each host's variables file:
+
+| Target | --limit | host_vars File | Command | Expected Output |
+| --- | --- | --- | --- | --- |
+| EC2 | `--limit multi-lab-vps` | `inventories/host_vars/multi-lab-vps.yml` | `ansible-playbook playbooks/file-transfer.yml --limit multi-lab-vps --check --diff --ask-become-pass` | Inspect diff; verify 0 errors |
+| EC2 | `--limit multi-lab-vps` | `inventories/host_vars/multi-lab-vps.yml` | `ansible-playbook playbooks/file-transfer.yml --limit multi-lab-vps --ask-become-pass` | First run: changed > 0; all verification tasks OK |
+| EC2 | `--limit multi-lab-vps` | `inventories/host_vars/multi-lab-vps.yml` | `ansible-playbook playbooks/file-transfer.yml --limit multi-lab-vps --ask-become-pass` | changed=0 (idempotence gate passed) |
+| VM | `--limit multi-lab-local` | `inventories/host_vars/multi-lab-local.yml` | `ansible-playbook playbooks/file-transfer.yml --limit multi-lab-local --check --diff --ask-become-pass` | Inspect diff; verify 0 errors |
+| VM | `--limit multi-lab-local` | `inventories/host_vars/multi-lab-local.yml` | `ansible-playbook playbooks/file-transfer.yml --limit multi-lab-local --ask-become-pass` | First run: changed > 0; all verification tasks OK |
+| VM | `--limit multi-lab-local` | `inventories/host_vars/multi-lab-local.yml` | `ansible-playbook playbooks/file-transfer.yml --limit multi-lab-local --ask-become-pass` | changed=0 (idempotence gate passed) |
+
+#### Why
+
+Deploying SFTP via OpenSSH's built-in `internal-sftp` subsystem avoids installing standalone FTP/SFTP daemons (such as vsftpd or ProFTPD), reducing attack surface and maintenance overhead. Isolating transfers to a root-owned chroot hierarchy ensures that authenticated clients cannot traverse the host filesystem or escape their designated jail.
+
+#### Verification
+
+Verify initial deployment syntax and daemon state directly on the target host:
+
+**Target host (via WireGuard SSH):**
+
+```bash
+# Verify OpenSSH syntax after drop-in deployment
+sudo sshd -t
+# → returns no output (success)
+
+# Confirm sshd service remains active
+sudo systemctl is-active ssh
+# → active
+```
+
+---
+
+### Step 2 — Verification & Service Validation (Verify · Tag `file_transfer_verify`)
+
+#### What was done
+
+Executes automated assertion tasks from `roles/file-transfer/tasks/verify.yml` to confirm account settings, filesystem permissions, effective OpenSSH directives, and AIDE drop-in configuration across both cloud and local targets.
+
+#### Target Compliance Thresholds
+
+| Inspection Item | AWS EC2 (`multi-lab-vps`) | Local VM (`multi-lab-local`) | Verification Link |
+| --- | --- | --- | --- |
+| **SFTP User Shell** | `/usr/sbin/nologin` (interactive login disabled) | `/usr/sbin/nologin` (interactive login disabled) | [Step 1 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-1--dedicated-sftp-user) |
+| **Chroot Root Directory** | `/srv/sftp/sftpuser` owned by `root:root`, mode `0755` | `/srv/sftp/sftpuser` owned by `root:root`, mode `0755` | [Step 2 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-2--chroot-directory-structure) |
+| **Uploads Directory** | `/srv/sftp/sftpuser/uploads` owned by `sftpuser:sftpuser`, mode `0750` | `/srv/sftp/sftpuser/uploads` owned by `sftpuser:sftpuser`, mode `0750` | [Step 2 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-2--chroot-directory-structure) |
+| **Parent Paths Security** | `/srv` and `/srv/sftp` owned by `root:root`, no group/other write | `/srv` and `/srv/sftp` owned by `root:root`, no group/other write | [Step 2 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-2--chroot-directory-structure) |
+| **SSH Key Files** | `~/.ssh` (`0700`), `authorized_keys` (`0600`) owned by `sftpuser` | `~/.ssh` (`0700`), `authorized_keys` (`0600`) owned by `sftpuser` | [Step 3 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-3--ssh-key-for-sftp-user) |
+| **Effective SFTP Config** | `forcecommand internal-sftp -l VERBOSE`, `chrootdirectory`, `passwordauthentication no`, `allowtcpforwarding no`, `AllowUsers` includes `admin` & `sftpuser` | Same | [Step 4 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) |
+| **Effective Admin Access** | Port `22222`, `forcecommand none` | Port `22222`, `forcecommand none` | [Step 4 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) |
+| **AIDE File Integrity Drop-in** | `/srv/sftp/sftpuser OwnerMode`, `!/srv/sftp/sftpuser/uploads` in `98-file-transfer` | Same | [Step 6 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-6--aide-extend-baseline) |
+| **Interactive Client Transfer** | `sftp multi-lab-sftp` connects, confined to `/uploads/` | `sftp multi-lab-sftp` connects, confined to `/uploads/` | [Step 7 Verification](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-7--client-connection) |
+
+#### Automated Verification Commands
+
+Run verification assertions separately per target without re-applying configuration:
+
+| Target | --limit | host_vars File | Command | Expected Output |
+| --- | --- | --- | --- | --- |
+| EC2 | `--limit multi-lab-vps` | `inventories/host_vars/multi-lab-vps.yml` | `ansible-playbook playbooks/file-transfer.yml --limit multi-lab-vps --tags file_transfer_verify --ask-become-pass` | All assertions pass; ok=... changed=0 failed=0 |
+| VM | `--limit multi-lab-local` | `inventories/host_vars/multi-lab-local.yml` | `ansible-playbook playbooks/file-transfer.yml --limit multi-lab-local --tags file_transfer_verify --ask-become-pass` | All assertions pass; ok=... changed=0 failed=0 |
+
+#### Full Idempotency Gate (0 Changed)
+
+Execute the complete playbook across both environments. Execution must complete with **changed=0**:
+
+**EC2 · multi-lab-vps · Run on control node:**
+
+```bash
+ansible-playbook playbooks/file-transfer.yml --limit multi-lab-vps --ask-become-pass
+# → multi-lab-vps : ok=... changed=0 failed=0
+```
+
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/file-transfer.yml --limit multi-lab-local --ask-become-pass
+# → multi-lab-local : ok=... changed=0 failed=0
+```
 
 ---

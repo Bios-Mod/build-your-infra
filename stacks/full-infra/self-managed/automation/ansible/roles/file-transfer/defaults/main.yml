@@ -1,0 +1,28 @@
+# Deploy to:   vm:ec2
+# Apply:       included automatically when role 'file-transfer' is invoked
+# Module:      file-transfer
+# Requires:    none
+#
+# Default variable definitions for the file-transfer role.
+# Why:         Provides baseline defaults for dedicated SFTP user, chroot directory, and config paths.
+# Doc ref:     modules/file-transfer/self-managed/file-transfer-self-managed.md — Steps 1, 2, 4, 6
+# Targets:     both
+
+---
+# Dedicated system user created for SFTP access (must match user defined in configs/ssh/sshd_config)
+file_transfer_user: sftpuser
+
+# Path to the SFTP chroot jail root directory (must match ChrootDirectory in configs/ssh/sshd_config)
+file_transfer_chroot_dir: /srv/sftp/sftpuser
+
+# Root directory containing the source-of-truth file-transfer configs
+file_transfer_configs_dir: "{{ configs_root }}/file-transfer/self-managed/configs"
+
+# Hardened OpenSSH daemon port configured by the hardening baseline
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"
+
+# Administrative username configured by the hardening baseline
+hardening_admin_username: "{{ admin_username | default('admin') }}"
+
+# Note: file_transfer_sftp_public_key_file has NO default value by design.
+# It must be defined explicitly in host_vars (e.g. inventories/host_vars/multi-lab-local.yml or multi-lab-vps.yml).

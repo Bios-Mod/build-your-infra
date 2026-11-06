@@ -1,0 +1,203 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/file-transfer.yml [--tags <tag>] [--check --diff] --ask-become-pass
+# Module:      file-transfer
+# Requires:    playbooks/hardening.yml executed
+#
+# Task orchestration entry point for the file-transfer role.
+# Why:         Applies dedicated SFTP user, chroot hierarchy, OpenSSH drop-in, and AIDE integrity monitoring.
+# Doc ref:     modules/file-transfer/self-managed/file-transfer-self-managed.md — Steps 1, 2, 3, 4, 6
+# Targets:     both
+
+---
+# ==============================================================================
+# Pre-flight Checks (Prerequisites)
+# ==============================================================================
+
+# Validates that SFTP public key file path is provided via host_vars before provisioning (Step 3 prerequisite)
+- name: Assert SFTP public key file is defined
+  ansible.builtin.assert:
+    that:
+      - file_transfer_sftp_public_key_file is defined
+      - file_transfer_sftp_public_key_file | length > 0
+    fail_msg: >-
+      Variable 'file_transfer_sftp_public_key_file' is not defined or is empty.
+      Define the path to the SFTP public key in your host_vars (e.g., inventories/host_vars/multi-lab-local.yml
+      or inventories/host_vars/multi-lab-vps.yml).
+  tags:
+    - file_transfer
+
+# Queries active OpenSSH daemon configuration to verify hardening baseline port is active (Hardening prerequisite)
+- name: Query active OpenSSH daemon configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -T
+  register: file_transfer_sshd_config_query
+  check_mode: false
+  changed_when: false
+  tags:
+    - file_transfer
+
+# Asserts that the hardening baseline is applied by checking the active SSH port matches hardening_ssh_port
+- name: Assert hardening baseline is applied
+  ansible.builtin.assert:
+    that:
+      - ("port " ~ (hardening_ssh_port | string)) in file_transfer_sshd_config_query.stdout_lines
+    fail_msg: >-
+      Hardening baseline prerequisite not met: active OpenSSH port is not {{ hardening_ssh_port }}.
+      Ensure role 'hardening' is fully deployed on the target before deploying 'file-transfer'.
+  tags:
+    - file_transfer
+
+# Validates that source-of-truth sshd_config contains the required Match User and ChrootDirectory directives
+- name: Assert source sshd_config contains required Match User and ChrootDirectory
+  vars:
+    file_transfer_source_sshd_config: "{{ lookup('file', file_transfer_configs_dir ~ '/ssh/sshd_config') }}"
+  ansible.builtin.assert:
+    that:
+      - ('Match User ' ~ file_transfer_user) in file_transfer_source_sshd_config
+      - ('ChrootDirectory ' ~ file_transfer_chroot_dir) in file_transfer_source_sshd_config
+    fail_msg: >-
+      Source configuration '{{ file_transfer_configs_dir }}/ssh/sshd_config' does not contain
+      expected 'Match User {{ file_transfer_user }}' or 'ChrootDirectory {{ file_transfer_chroot_dir }}'.
+  tags:
+    - file_transfer
+
+# ==============================================================================
+# Step 1 — Dedicated SFTP User
+# ==============================================================================
+
+# Creates dedicated SFTP system user with nologin shell and unmatchable password (Step 1)
+- name: Ensure dedicated SFTP user exists
+  ansible.builtin.user:
+    name: "{{ file_transfer_user }}"
+    shell: /usr/sbin/nologin
+    password: "*"
+    update_password: on_create
+    create_home: true
+    state: present
+  tags:
+    - file_transfer
+
+# ==============================================================================
+# Step 2 — Chroot Directory Structure
+# ==============================================================================
+
+# Creates base SFTP directory with root ownership for chroot compliance (Step 2)
+- name: Ensure base SFTP directory exists
+  ansible.builtin.file:
+    path: /srv/sftp
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - file_transfer
+
+# Creates user chroot jail directory owned by root (Step 2)
+- name: Ensure SFTP user chroot jail directory exists
+  ansible.builtin.file:
+    path: "{{ file_transfer_chroot_dir }}"
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - file_transfer
+
+# Creates writable uploads directory inside chroot owned by SFTP user (Step 2)
+- name: Ensure SFTP uploads directory exists
+  ansible.builtin.file:
+    path: "{{ file_transfer_chroot_dir }}/uploads"
+    state: directory
+    owner: "{{ file_transfer_user }}"
+    group: "{{ file_transfer_user }}"
+    mode: "0750"
+  tags:
+    - file_transfer
+
+# ==============================================================================
+# Step 3 — SSH Key for SFTP User
+# ==============================================================================
+
+# Ensures ~/.ssh directory exists for SFTP user with restricted permissions (Step 3)
+- name: Ensure .ssh directory exists for SFTP user
+  ansible.builtin.file:
+    path: "/home/{{ file_transfer_user }}/.ssh"
+    state: directory
+    owner: "{{ file_transfer_user }}"
+    group: "{{ file_transfer_user }}"
+    mode: "0700"
+  tags:
+    - file_transfer
+
+# Deploys authorized Ed25519 public key for SFTP user from control node (Step 3)
+- name: Deploy authorized SSH public key for SFTP user
+  ansible.builtin.copy:
+    content: "{{ lookup('file', file_transfer_sftp_public_key_file) ~ '\n' }}"
+    dest: "/home/{{ file_transfer_user }}/.ssh/authorized_keys"
+    owner: "{{ file_transfer_user }}"
+    group: "{{ file_transfer_user }}"
+    mode: "0600"
+  tags:
+    - file_transfer
+
+# ==============================================================================
+# Step 4 — sshd_config: Match User Block
+# ==============================================================================
+
+# WARNING: Modifies SSH daemon configuration. Tested via validate flag before deployment.
+# Deploys SFTP Match User drop-in configuration appending AllowUsers for the SFTP user because hardening AllowUsers is global (Step 4)
+- name: Deploy SFTP OpenSSH daemon configuration drop-in
+  ansible.builtin.copy:
+    content: >-
+      {{ lookup('file', file_transfer_configs_dir ~ '/ssh/sshd_config') ~ '\n    AllowUsers ' ~ file_transfer_user ~ '\n' }}
+    dest: /etc/ssh/sshd_config.d/50-file-transfer.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "/usr/sbin/sshd -t -f %s"
+  notify:
+    - Reload sshd (file-transfer)
+  tags:
+    - file_transfer
+
+# WARNING: Validates full OpenSSH server configuration to prevent daemon reload failure and lockout (Step 4)
+- name: Validate full OpenSSH daemon configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -t
+  changed_when: false
+  tags:
+    - file_transfer
+
+# ==============================================================================
+# Step 6 — AIDE: Extend Baseline
+# ==============================================================================
+
+# Deploys AIDE integrity monitoring drop-in covering SFTP chroot path while excluding uploads (Step 6)
+- name: Deploy AIDE file-transfer integrity monitoring configuration
+  ansible.builtin.copy:
+    src: "{{ file_transfer_configs_dir }}/aide/99-hardening"
+    dest: /etc/aide/aide.conf.d/98-file-transfer
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Regenerate AIDE database (file-transfer)
+  tags:
+    - file_transfer
+
+# ==============================================================================
+# Handler Flushing & Verification
+# ==============================================================================
+
+# Flushes notified handlers (sshd reload and AIDE database regeneration) before verification tasks
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - file_transfer
+
+# Executes verification assertions for the file-transfer module
+- name: Verify file-transfer deployment
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - file_transfer
+    - file_transfer_verify

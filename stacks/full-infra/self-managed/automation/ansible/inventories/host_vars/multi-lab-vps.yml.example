@@ -46,3 +46,6 @@ wireguard_peer_public_keys:
 
 # Target minimum Lynis Hardening Index threshold for AWS EC2 instance (Step 12)
 hardening_lynis_min_score: 90
+
+# Dedicated Ed25519 public key file for SFTP user (file-transfer module)
+file_transfer_sftp_public_key_file: "~/.ssh/CHANGE_ME_sftp_key.pub"
