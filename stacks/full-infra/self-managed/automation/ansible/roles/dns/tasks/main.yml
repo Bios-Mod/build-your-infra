@@ -153,14 +153,16 @@
 - name: Deploy named.conf.local configuration
   vars:
     dns_local_raw: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.local') }}"
+    dns_nl: "\n"
     dns_vpc_forward_block: >-
       {{
-        "\n\n// ── DNS — VPC internal names forwarded to the VPC resolver ──\n" ~
-        "zone \"" ~ dns_vpc_domain ~ "\" {\n" ~
-        "    type forward;\n" ~
-        "    forward only;\n" ~
-        "    forwarders { " ~ dns_vpc_resolver ~ "; };\n" ~
-        "};\n"
+        dns_nl ~ dns_nl ~
+        '// ── DNS — VPC internal names forwarded to the VPC resolver ──' ~ dns_nl ~
+        'zone "' ~ dns_vpc_domain ~ '" {' ~ dns_nl ~
+        '    type forward;' ~ dns_nl ~
+        '    forward only;' ~ dns_nl ~
+        '    forwarders { ' ~ dns_vpc_resolver ~ '; };' ~ dns_nl ~
+        '};' ~ dns_nl
       }}
   ansible.builtin.copy:
     content: "{{ dns_local_raw ~ dns_vpc_forward_block }}"
