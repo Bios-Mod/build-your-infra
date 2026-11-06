@@ -5,7 +5,7 @@
 #
 # Group variables for AWS EC2 self-managed environment (t4g.micro Graviton).
 # Why:         Configures cloud-specific parameters, Elastic IP routing, and Let's Encrypt TLS.
-# Doc ref:     context/ansible-implementation.md — Section 4
+# Doc ref:     stacks/full-infra/self-managed/automation/self-managed-automation.md
 # Targets:     ec2
 
 ---

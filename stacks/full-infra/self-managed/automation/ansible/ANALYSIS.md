@@ -1,6 +1,6 @@
 # Hardening Automation Analysis — Ansible Implementation
 
-This document provides the technical analysis and architectural blueprint for automating the self-managed hardening baseline (`modules/hardening/self-managed/hardening-self-managed.md`) using Ansible, as defined in `context/ansible-implementation.md` (Phase 1).
+This document provides the technical analysis and architectural blueprint for automating the self-managed hardening baseline (`modules/hardening/self-managed/hardening-self-managed.md`) using Ansible.
 
 ---
 
@@ -35,7 +35,7 @@ All configuration deployments strictly consume upstream files from `modules/hard
 ## 2. Definitive Mapping of Steps 6–12, Fail2Ban Location, and Phase 2 Blocks
 
 ### Fail2Ban Location: Placement in Block 2B
-In `context/ansible-implementation.md`, Fail2Ban (Step 6) was placed provisionally between Block 2B and Block 2C.
+In the initial planning, Fail2Ban (Step 6) was placed provisionally between Block 2B and Block 2C.
 **Definitive Decision:** **Fail2Ban belongs in Block 2B.**
 - **Technical Rationale:** Fail2Ban uses `banaction = ufw` and targets port `22222`. In `jail.local`, `ignoreip` whitelists `127.0.0.1/8 ::1` and the WireGuard VPN subnet `172.16.0.0/24`. Configuring Fail2Ban immediately after UFW (Step 4) and WireGuard (Step 5) ensures that the network perimeter and intrusion prevention rules are tightly coupled. Furthermore, any connection testing over WireGuard can verify that the admin IP is not blocked before proceeding to general system configuration.
 

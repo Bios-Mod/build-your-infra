@@ -143,11 +143,7 @@ See [`continuous-integration.md`](continuous-integration.md) for the full workfl
 │       ├── modules-ci.yml
 │       ├── pull-request.yml
 │       └── push-ci.yml
-├── AGENTS.md
 ├── banner.png
-├── context
-│   ├── ansible-implementation.md
-│   └── decision-log.md
 ├── continuous-integration.md
 ├── CONTRIBUTING.md
 ├── environments

@@ -5,7 +5,7 @@
 #
 # Host-specific variable definitions for EC2 VPS host (multi-lab-vps).
 # Why:         Defines cloud-init default user, SSH keys, and peer public keys without hardcoding secrets.
-# Doc ref:     context/ansible-implementation.md — Section 4
+# Doc ref:     stacks/full-infra/self-managed/automation/self-managed-automation.md
 # Targets:     ec2
 
 ---
