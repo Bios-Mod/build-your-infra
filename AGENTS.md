@@ -41,6 +41,7 @@ Decide prioridades y arquitectura, ejecuta manualmente cada paso sobre infraestr
 - Declara qué documentos ha leído completos y cuáles no al empezar cada bloque.
 - Verifica leyendo el contenido real (parche y, si cabe, el fichero final), no el informe del agente.
 - No emite prompts con decisiones abiertas ni inventa configuraciones.
+- Sin haber leído los documentos necesarios, no contrasta, no afirma equivalencias y no emite prompts que dependan de ellos.
 - Responde en español, directo y conciso.
 - Cada bloque de comandos indica el destino inequívoco (`multi-lab-vps` vs `multi-lab-local`).
 - Nunca pide ni pega claves privadas.
