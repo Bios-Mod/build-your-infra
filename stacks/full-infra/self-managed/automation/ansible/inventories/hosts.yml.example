@@ -5,7 +5,7 @@
 #
 # Inventory template for self-managed lab environments (VM and EC2).
 # Why:         Separates host definitions and group membership from committed code.
-# Doc ref:     context/ansible-implementation.md — Section 4.1
+# Doc ref:     stacks/full-infra/self-managed/automation/self-managed-automation.md
 # Targets:     both
 
 all:

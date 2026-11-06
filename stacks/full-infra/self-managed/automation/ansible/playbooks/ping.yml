@@ -5,7 +5,7 @@
 #
 # Connectivity and environment verification playbook.
 # Why:         Confirms target network reachability and verifies local path to source-of-truth configs.
-# Doc ref:     context/ansible-implementation.md — Section 5 (Fase 1)
+# Doc ref:     stacks/full-infra/self-managed/automation/self-managed-automation.md
 # Targets:     both
 
 ---

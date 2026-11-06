@@ -5,7 +5,7 @@
 #
 # Global variables shared across all self-managed environments.
 # Why:         Centralizes repository paths, network parameters, and security policies.
-# Doc ref:     context/ansible-implementation.md — Section 1 & Section 4
+# Doc ref:     stacks/full-infra/self-managed/automation/self-managed-automation.md
 # Targets:     both
 
 ---
