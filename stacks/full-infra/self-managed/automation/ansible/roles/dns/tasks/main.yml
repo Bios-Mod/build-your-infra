@@ -34,6 +34,22 @@
   tags:
     - dns
 
+# Asserts source BIND9 configuration files meet baseline structural requirements (Prerequisites)
+- name: Assert source named configuration files meet baseline requirements
+  vars:
+    dns_source_options: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.options') }}"
+    dns_source_local: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.local') }}"
+  ansible.builtin.assert:
+    that:
+      - dns_source_options.count('dnssec-validation auto;') == 1
+      - dns_source_local.strip().endswith('};')
+    fail_msg: >-
+      Source BIND9 configuration files mismatch. Expected '{{ dns_configs_dir }}/bind/named.conf.options'
+      to contain exactly one 'dnssec-validation auto;' directive and '{{ dns_configs_dir }}/bind/named.conf.local'
+      to terminate with '};'.
+  tags:
+    - dns
+
 # Checks if BIND9 utilities binary exists to allow dry-run (--check) on unprovisioned hosts
 - name: Stat named-checkconf binary
   ansible.builtin.stat:
@@ -64,10 +80,17 @@
 # ==============================================================================
 
 # Deploys global BIND9 options restricting listeners and recursion to lab-net ACL (Step 2)
-# Config file contains no placeholders; deployed without backup
+# Adds validate-except for VPC domain to prevent DNSSEC validation failure (SERVFAIL) on internal VPC queries
 - name: Deploy named.conf.options configuration
+  vars:
+    dns_options_raw: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.options') }}"
+    dns_options_newline: "\n"
   ansible.builtin.copy:
-    src: "{{ dns_configs_dir }}/bind/named.conf.options"
+    content: >-
+      {{
+        dns_options_raw |
+        replace('dnssec-validation auto;', 'dnssec-validation auto;' ~ dns_options_newline ~ '    validate-except { "' ~ dns_vpc_domain ~ '"; };')
+      }}
     dest: /etc/bind/named.conf.options
     owner: root
     group: root
@@ -125,10 +148,22 @@
   tags:
     - dns
 
-# Deploys named.conf.local declaring forward and reverse zones; zones must exist before reloading named (Step 3)
+# Deploys named.conf.local declaring forward and reverse zones, plus VPC forwarder (Step 3)
+# Injects compute.internal forward zone to VPC resolver to avoid SERVFAIL and systemd-resolved failover
 - name: Deploy named.conf.local configuration
+  vars:
+    dns_local_raw: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.local') }}"
+    dns_vpc_forward_block: >-
+      {{
+        "\n\n// ── DNS — VPC internal names forwarded to the VPC resolver ──\n" ~
+        "zone \"" ~ dns_vpc_domain ~ "\" {\n" ~
+        "    type forward;\n" ~
+        "    forward only;\n" ~
+        "    forwarders { " ~ dns_vpc_resolver ~ "; };\n" ~
+        "};\n"
+      }}
   ansible.builtin.copy:
-    src: "{{ dns_configs_dir }}/bind/named.conf.local"
+    content: "{{ dns_local_raw ~ dns_vpc_forward_block }}"
     dest: /etc/bind/named.conf.local
     owner: root
     group: root

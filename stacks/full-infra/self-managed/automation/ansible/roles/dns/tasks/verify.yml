@@ -92,6 +92,32 @@
     - dns
     - dns_verify
 
+# Queries parsed BIND9 configuration with named-checkconf -p (Step 2 & 3 Verification)
+- name: Query parsed BIND9 configuration with named-checkconf
+  ansible.builtin.command:
+    cmd: named-checkconf -p
+  register: dns_checkconf_p
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts parsed configuration contains validate-except and VPC forward zone (Step 2 & 3 Verification)
+- name: Assert parsed configuration contains validate-except and VPC forward zone
+  ansible.builtin.assert:
+    that:
+      - "'validate-except' in dns_checkconf_p.stdout"
+      - "('zone \"' ~ dns_vpc_domain ~ '\"') in dns_checkconf_p.stdout"
+    fail_msg: >-
+      Parsed BIND9 configuration does not contain validate-except or zone "{{ dns_vpc_domain }}".
+      Output: {{ dns_checkconf_p.stdout }}
+  when: not ansible_check_mode or dns_verify_stat_named.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
 # Queries active UDP listening sockets using ss (Step 2 Verification)
 - name: Query active UDP listening sockets
   ansible.builtin.command:
@@ -291,6 +317,31 @@
     fail_msg: >-
       System resolver returned '{{ dns_dig_system.stdout.strip() }}' instead of 172.16.0.1 for ns1.lab.internal.
   when: not ansible_check_mode or (dns_verify_stat_named.stat.exists and dns_verify_stat_netplan.stat.exists)
+  tags:
+    - dns
+    - dns_verify
+
+# Queries current active DNS server in systemd-resolved on ens5 interface (Step 7 Verification)
+- name: Query current DNS server on ens5
+  ansible.builtin.command:
+    cmd: resolvectl status ens5
+  register: dns_resolvectl_current
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dns_verify_stat_netplan.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts current DNS server is 127.0.0.1 to verify systemd-resolved has not fallen back to VPC resolver (Step 7 Verification)
+- name: Assert current DNS server is 127.0.0.1
+  ansible.builtin.assert:
+    that:
+      - "'Current DNS Server: 127.0.0.1' in dns_resolvectl_current.stdout"
+    fail_msg: >-
+      systemd-resolved fell back to VPC resolver (Current DNS Server is not 127.0.0.1).
+      Output: {{ dns_resolvectl_current.stdout }}. Restart systemd-resolved to recover.
+  when: not ansible_check_mode or dns_verify_stat_netplan.stat.exists
   tags:
     - dns
     - dns_verify
