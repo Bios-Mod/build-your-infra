@@ -730,7 +730,7 @@ It automates [`dns-self-managed.md`](../../../../modules/dns/self-managed/dns-se
 
 #### What was done
 
-The `dns` role reproduces on EC2 (`dns_servers`) the state that the manual module leaves behind: BIND9 packages and checking utilities installed, `named.conf.options` restricting recursion and queries to `lab-net`, forward and reverse zone database files in `/etc/bind/zones/`, `named.conf.local` referencing the zones, full configuration checked with `named-checkconf -z`, `named` service enabled and started, UFW rules allowing UDP and TCP port 53 on `wg0`, AIDE drop-in `/etc/aide/aide.conf.d/97-dns`, and Netplan overlay `/etc/netplan/51-dns-lab.yaml` pointing the system resolver to `127.0.0.1` with the VPC resolver (`10.0.0.2`) as fallback.
+The `dns` role reproduces on EC2 (`dns_servers`) the state that the manual module leaves behind: BIND9 packages and checking utilities installed, `named.conf.options` restricting recursion and queries to `lab-net`, forward and reverse zone database files in `/etc/bind/zones/`, `named.conf.local` referencing the zones, full configuration checked with `named-checkconf -z`, `named` service enabled and started, UFW rules allowing UDP and TCP port 53 on `wg0`, AIDE drop-in `/etc/aide/aide.conf.d/99-zz-dns`, and Netplan overlay `/etc/netplan/51-dns-lab.yaml` pointing the system resolver to `127.0.0.1` with the VPC resolver (`10.0.0.2`) as fallback.
 
 Ensure `connection_mode: "wg"` is set in `inventories/host_vars/multi-lab-vps.yml`. With the WireGuard tunnel up, run the three commands in order on the EC2 hub: a dry run to review the diff, the real apply, and a second apply that must report `changed=0`.
 
@@ -777,8 +777,8 @@ For macOS WireGuard DNS behavior and optional fallback configuration, follow [ma
 
 - **Configs as single source of truth:** the role copies files directly from `modules/dns/self-managed/configs/` without altering repo configs or manual documentation text. The configuration files take precedence over descriptive documentation.
 - **Ordering (named before Netplan):** Netplan overlay `51-dns-lab.yaml` configures systemd-resolved to prioritize `127.0.0.1`. BIND9 must be fully running and validated (`named-checkconf -z`) before Netplan is applied to prevent local resolution failures.
-- **Dedicated AIDE drop-in:** hardening owns `/etc/aide/aide.conf.d/99-hardening`. The role deploys `/etc/aide/aide.conf.d/97-dns` as an independent drop-in and regenerates the database only if the drop-in changes.
-- **Manual auditd rule:** `-D` (flush rules) and `-e 2` (immutable mode) in `99-hardening.rules` prevent dynamic drop-in rule insertion at runtime without a kernel restart.
+- **Dedicated AIDE drop-in:** hardening owns `/etc/aide/aide.conf.d/99-hardening`. The role deploys `/etc/aide/aide.conf.d/99-zz-dns` (ordered after `99-hardening`, which defines the `CONTENTEX` group) as an independent drop-in and regenerates the database only if the drop-in changes.
+- **Manual auditd rule:** `-D` (flush rules) and `-e 2` (immutable mode) in `99-hardening.rules` prevent dynamic drop-in rule insertion at runtime without a kernel restart. The manually added audit rule lives in `99-hardening.rules`, owned by hardening: if Step 10 of hardening is re-run, the file is restored and the `dns_config` rule disappears, so it must be added again.
 - **Manual peer DNS configuration:** the `hardening` role owns `/etc/wireguard/wg0.conf` on peers and would overwrite external changes during subsequent hardening runs.
 - **Exclusion of Step 8:** pre-AMI sanitization of `/etc/resolv.conf` is omitted because the automated provisioning architecture is greenfield (Terraform and Ansible build clean environments), removing dependencies on golden AMIs.
 
@@ -831,7 +831,7 @@ What the assertions check on EC2 (`multi-lab-vps`):
 | UFW rules | Incoming `53/udp` and `53/tcp` allowed on `wg0` (`ALLOW IN`) | [Step 4](../../../../modules/dns/self-managed/dns-self-managed.md#step-4--ufw-allow-dns) |
 | Netplan resolver | `ens5` configured with `127.0.0.1`, `10.0.0.2` and domain `lab.internal` | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
 | System resolution | Local system resolver resolves `ns1.lab.internal` to `172.16.0.1` | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
-| AIDE integrity | Drop-in `97-dns` monitors `/etc/bind` and excludes `/var/cache/bind` | [Step 6](../../../../modules/dns/self-managed/dns-self-managed.md#step-6--aide-extend-baseline) |
+| AIDE integrity | Drop-in `99-zz-dns` monitors `/etc/bind` and excludes `/var/cache/bind` | [Step 6](../../../../modules/dns/self-managed/dns-self-managed.md#step-6--aide-extend-baseline) |
 
 Test resolution from the WireGuard peer over the tunnel:
 

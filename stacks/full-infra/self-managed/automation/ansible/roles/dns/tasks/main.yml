@@ -199,15 +199,26 @@
 # ==============================================================================
 
 # Deploys AIDE integrity monitoring drop-in covering BIND9 configs and zones while excluding cache (Step 6)
+# Named 99-zz-dns to load after 99-hardening in alphabetical order because 99-hardening defines the CONTENTEX rule group
 - name: Deploy AIDE DNS integrity monitoring configuration
   ansible.builtin.copy:
     src: "{{ dns_configs_dir }}/aide/99-hardening"
-    dest: /etc/aide/aide.conf.d/97-dns
+    dest: /etc/aide/aide.conf.d/99-zz-dns
     owner: root
     group: root
     mode: "0644"
   notify:
     - Regenerate AIDE database (dns)
+  tags:
+    - dns
+
+# Validates AIDE configuration syntax; the handler tolerates rc 17 (changes detected during init), so syntax is validated beforehand (Step 6)
+- name: Validate AIDE configuration syntax
+  ansible.builtin.command:
+    cmd: aide --config-check --config /etc/aide/aide.conf
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
   tags:
     - dns
 

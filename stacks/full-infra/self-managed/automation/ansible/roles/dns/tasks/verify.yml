@@ -217,6 +217,7 @@
   register: dns_ufw_status
   check_mode: false
   changed_when: false
+  when: not ansible_check_mode
   tags:
     - dns
     - dns_verify
@@ -224,14 +225,15 @@
 # Asserts UFW allows incoming 53/udp and 53/tcp traffic on wg0 interface (Step 4 Verification)
 - name: Assert UFW rules for DNS on wg0 exist
   vars:
-    ufw_lines: "{{ dns_ufw_status.stdout_lines }}"
+    ufw_lines: "{{ dns_ufw_status.stdout_lines | default([]) }}"
   ansible.builtin.assert:
     that:
       - ufw_lines | select('search', '53/udp') | select('search', 'ALLOW IN') | select('search', 'wg0') | list | length > 0
       - ufw_lines | select('search', '53/tcp') | select('search', 'ALLOW IN') | select('search', 'wg0') | list | length > 0
     fail_msg: >-
       UFW status does not contain ALLOW IN for 53/udp or 53/tcp on interface wg0:
-      {{ dns_ufw_status.stdout }}
+      {{ dns_ufw_status.stdout | default('') }}
+  when: not ansible_check_mode
   tags:
     - dns
     - dns_verify
@@ -300,7 +302,7 @@
 # Retrieves filesystem attributes for AIDE DNS drop-in configuration (Step 6 Verification)
 - name: Stat AIDE DNS drop-in configuration
   ansible.builtin.stat:
-    path: /etc/aide/aide.conf.d/97-dns
+    path: /etc/aide/aide.conf.d/99-zz-dns
   register: dns_verify_stat_aide
   check_mode: false
   tags:
@@ -310,7 +312,7 @@
 # Reads content of AIDE DNS drop-in configuration (Step 6 Verification)
 - name: Read AIDE DNS drop-in configuration
   ansible.builtin.slurp:
-    path: /etc/aide/aide.conf.d/97-dns
+    path: /etc/aide/aide.conf.d/99-zz-dns
   register: dns_verify_aide_slurp
   check_mode: false
   when: not ansible_check_mode or dns_verify_stat_aide.stat.exists
@@ -328,7 +330,7 @@
       - "'/etc/bind' in aide_content"
       - "'!/var/cache/bind' in aide_content"
     fail_msg: >-
-      AIDE drop-in /etc/aide/aide.conf.d/97-dns missing or does not contain /etc/bind and !/var/cache/bind.
+      AIDE drop-in /etc/aide/aide.conf.d/99-zz-dns missing or does not contain /etc/bind and !/var/cache/bind.
   when: not ansible_check_mode or dns_verify_stat_aide.stat.exists
   tags:
     - dns
