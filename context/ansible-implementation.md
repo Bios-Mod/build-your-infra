@@ -11,9 +11,9 @@
 
 | Quién | Qué hace |
 | --- | --- |
-| Autor | Ejecuta manualmente cada paso de los `.md` en la VM y en EC2, reporta errores y aprende. Revisa y mergea los PR. |
-| Asistente (arquitecto) | Genera los `.md` de implementación y los prompts del agente. Corrige los docs con los errores reportados. |
-| Agente Flash (Antigravity) | Trabaja en ramas, hace commits y abre PR. Ejecuta tareas mecánicas: scaffolding, roles, tareas y handlers con comentarios, jobs de CI, enlaces. Ejecuta la estructura del decision-log; no la decide. Nunca hace push a `main` ni merge. |
+| Autor | Decide, ejecuta manualmente cada paso sobre la infraestructura real, reporta salidas y errores, revisa el código de un vistazo, abre y mergea los PRs (Squash and merge). |
+| Asistente (arquitecto) | Genera los `.md` de implementación y los prompts delta para el agente. Corrige los docs con los errores reportados. |
+| Agente de código (Antigravity) | Trabaja en feature branch (`feat/ansible-<módulo>`; CI: `feat/ansible-ci`), un commit por prompt y push solo a la rama de feature cuando se autoriza; entrega informe mínimo en `last-report.md`. Ejecuta tareas mecánicas: scaffolding, roles, tareas, handlers, CI y enlaces. Ejecuta la estructura del decision-log; no la decide. Nunca abre PRs, nunca push a `main` ni merge. |
 
 Ciclo por módulo: **rol + sección del doc → ejecución manual en cada destino donde aplica → errores al doc → hito por destino → siguiente módulo.**
 
@@ -187,11 +187,11 @@ Hitos:
 - 2C EC2: Steps 7-12; Lynis >= 90; 0 `changed`.
 - 2B VM: igual, como peer del hub; acceso por el túnel verificado.
 - 2C VM: Lynis >= 88; 0 `changed`.
-- Cierre de hardening: reestructuración del doc de automatización y de los README; puertas de idempotencia (0 `changed`) sobre los hosts existentes más verificación del modo inmutable (`-e 2`) en la VM (la reconstrucción completa desde cero de la VM se aplaza a la Fase 9 para evitar duplicar el proceso; riesgo asumido: las secuencias de arranque en limpio no se re-ejecutan hasta la Fase 9); verificación de hitos y merge del PR #7 a `main`.
+- Cierre de hardening (completado): reestructuración de `self-managed-automation.md` y READMEs; puertas de idempotencia (0 `changed`) sobre los hosts existentes y verificación del modo inmutable (`-e 2`) en la VM (reconstrucción completa desde cero de ambos entornos aplazada a la Fase 9); PR #7 verificado y mergeado a `main`.
 
 ### Fase 3 — Ansible en el CI
 
-- **Entregables (agente):** un único filtro y un job (`ansible-self-managed`) en `modules-ci.yml` sobre `stacks/full-infra/self-managed/automation/ansible/**` (`actions/setup-python@v5` con Python 3.12, `requirements.txt`, `requirements.yml`, copia de `hosts.yml.example` a `hosts.yml`, `ansible-lint --profile production` y `ansible-playbook --syntax-check` sobre `ping.yml`, `bootstrap.yml` y `hardening.yml`); no se tocan `push-ci.yml` ni `pull-request.yml`. Actualizar `continuous-integration.md`, `README.md` (raíz) y `context/decision-log.md`.
+- **Entregables:** un único filtro y un job (`ansible-self-managed`) en `modules-ci.yml` sobre `stacks/full-infra/self-managed/automation/ansible/**` (`actions/setup-python@v5` con Python 3.12, `requirements.txt`, `requirements.yml`, copia de `hosts.yml.example` a `hosts.yml`, `ansible-lint --profile production` y bucle dinámico `ansible-playbook --syntax-check` sobre `playbooks/*.yml`); no se tocan `push-ci.yml` ni `pull-request.yml`. Actualizar `continuous-integration.md`, `README.md` (raíz) y `context/decision-log.md`.
 - **Hito:** un PR de prueba que modifica solo el rol de hardening dispara el job de Ansible (`ansible-self-managed`) y pasa; un error de sintaxis deliberado lo hace fallar; se revierte.
 
 ### Fases 4–8 — Módulos

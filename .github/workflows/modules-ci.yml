@@ -356,6 +356,8 @@ jobs:
       - name: Validate playbook syntax
         working-directory: stacks/full-infra/self-managed/automation/ansible
         run: |
-          ansible-playbook playbooks/ping.yml --syntax-check
-          ansible-playbook playbooks/bootstrap.yml --syntax-check
-          ansible-playbook playbooks/hardening.yml --syntax-check
+          set -e
+          for pb in playbooks/*.yml; do
+            echo "Checking syntax: $pb"
+            ansible-playbook "$pb" --syntax-check
+          done
