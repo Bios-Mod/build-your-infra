@@ -190,9 +190,10 @@
 # WARNING: Modifies SSH daemon configuration. Tested via validate flag before deployment.
 # Deploys SFTP Match User drop-in configuration appending AllowUsers for the SFTP user because hardening AllowUsers is global (Step 4)
 - name: Deploy SFTP OpenSSH daemon configuration drop-in
+  vars:
+    file_transfer_sshd_tail: "\n    AllowUsers {{ file_transfer_user }}\n"
   ansible.builtin.copy:
-    content: >-
-      {{ lookup('file', file_transfer_configs_dir ~ '/ssh/sshd_config') ~ '\n    AllowUsers ' ~ file_transfer_user ~ '\n' }}
+    content: "{{ lookup('file', file_transfer_configs_dir ~ '/ssh/sshd_config') ~ file_transfer_sshd_tail }}"
     dest: /etc/ssh/sshd_config.d/50-file-transfer.conf
     owner: root
     group: root
