@@ -41,4 +41,3 @@
     - role: web-server
       tags:
         - web-server
-

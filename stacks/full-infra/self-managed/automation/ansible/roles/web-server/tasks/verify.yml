@@ -23,6 +23,16 @@
     - web-server
     - web-server_verify
 
+# Checks if auditctl binary exists on target to guard check_mode runs on unprovisioned hosts (Step 5 Verification)
+- name: Stat auditctl binary for verification guards
+  ansible.builtin.stat:
+    path: /sbin/auditctl
+  register: web_server_stat_auditctl
+  check_mode: false
+  tags:
+    - web-server
+    - web-server_verify
+
 # ==============================================================================
 # Step 1 Verification — Service Active & UFW Rule
 # ==============================================================================
@@ -207,6 +217,42 @@
       certbot.timer is not active (status: '{{ web_server_certbot_timer_status.stdout | default("unknown") }}').
   when:
     - tls_mode == 'letsencrypt'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Executes dry-run certificate renewal simulation when opt-in variable is enabled (Step 2 Verification - EC2)
+# EC2 only
+- name: Execute Certbot renewal dry-run simulation
+  ansible.builtin.command:
+    cmd: certbot renew --dry-run
+  register: web_server_certbot_renew_dry_run
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - tls_mode == 'letsencrypt'
+    - web_server_verify_renewal | default(false)
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts Certbot renewal dry-run completed successfully (Step 2 Verification - EC2)
+# EC2 only
+- name: Assert Certbot renewal dry-run succeeded
+  ansible.builtin.assert:
+    that:
+      - web_server_certbot_renew_dry_run.rc == 0
+      - "'all simulated renewals succeeded' in (web_server_certbot_renew_dry_run.stdout | lower)"
+    fail_msg: >-
+      Certbot renewal dry-run simulation failed:
+      {{ web_server_certbot_renew_dry_run.stdout }}
+      {{ web_server_certbot_renew_dry_run.stderr }}
+  when:
+    - tls_mode == 'letsencrypt'
+    - web_server_verify_renewal | default(false)
     - not ansible_check_mode or web_server_stat_nginx.stat.exists
   tags:
     - web-server
@@ -397,6 +443,54 @@
       HTTPS request to https://localhost did not return expected status code (502 Bad Gateway or 200 OK):
       {{ web_server_https_curl.stdout }}
   when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# ==============================================================================
+# Step 5 Verification — auditd Web Server Rule
+# ==============================================================================
+
+# Queries active auditd rules from the kernel using auditctl -l (Step 5 Verification)
+- name: Query active auditd rules via auditctl -l
+  ansible.builtin.command:
+    cmd: /sbin/auditctl -l
+  register: web_server_auditctl_list
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or web_server_stat_auditctl.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Displays notice when audit rule is staged in immutable mode awaiting manual reboot (Step 5 Verification)
+- name: Display notice for staged auditd rules awaiting reboot
+  ansible.builtin.debug:
+    msg: "audit rule staged; reboot required to load into kernel"
+  when:
+    - (web_server_audit_rules_deploy.changed | default(false))
+    - (hardening_auditd_immutable_mode | default(false))
+    - not (web_server_auditd_reboot | default(false))
+    - not ansible_check_mode or web_server_stat_auditctl.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts active auditd rules contain nginx_config key when rules are loaded (Step 5 Verification)
+- name: Assert auditd rules monitor Nginx configuration
+  ansible.builtin.assert:
+    that:
+      - web_server_auditctl_list.rc == 0
+      - "'nginx_config' in web_server_auditctl_list.stdout"
+    fail_msg: >-
+      Active auditd rules do not contain key 'nginx_config'.
+      Auditctl output: {{ web_server_auditctl_list.stdout | default('') }}
+  when:
+    - not ansible_check_mode or web_server_stat_auditctl.stat.exists
+    - not ((web_server_audit_rules_deploy.changed | default(false)) and
+           (hardening_auditd_immutable_mode | default(false)) and
+           not (web_server_auditd_reboot | default(false)))
   tags:
     - web-server
     - web-server_verify

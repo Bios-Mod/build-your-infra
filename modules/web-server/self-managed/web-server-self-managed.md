@@ -197,9 +197,7 @@ configuration. The config file is deployed as a full-file replace into
 `/etc/nginx/sites-available/` and then symlinked into `sites-enabled/`.
 Two variants exist in `configs/` — deploy the one that matches the environment.
 
-> `buildyourinfra.click` is a domain registered for this lab; fork users must
-> replace it with their own domain (or an sslip.io alias); an A record pointing
-> to the instance Elastic IP must exist before running Certbot.
+The domain used in this module is described in Step 2.
 
 ```bash
 # Disable the default site

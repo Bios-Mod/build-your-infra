@@ -44,3 +44,9 @@ variable "ssh_hardened_cidr" {
   type        = string
   default     = ""
 }
+
+variable "route53_zone_name" {
+  description = "Public Route 53 zone name for the lab A record; empty disables it"
+  type        = string
+  default     = ""
+}

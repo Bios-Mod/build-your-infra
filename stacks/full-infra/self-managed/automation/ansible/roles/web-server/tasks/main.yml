@@ -85,6 +85,19 @@
   tags:
     - web-server
 
+# Asserts web_server_auditd_reboot is defined as boolean when auditd immutable mode is active (Prerequisites)
+- name: Assert web_server_auditd_reboot is defined for immutable auditd hosts
+  ansible.builtin.assert:
+    that:
+      - web_server_auditd_reboot is defined
+      - web_server_auditd_reboot is boolean
+    fail_msg: >-
+      Variable 'web_server_auditd_reboot' (boolean) must be defined in host_vars when
+      hardening_auditd_immutable_mode is active.
+  when: hardening_auditd_immutable_mode | default(false)
+  tags:
+    - web-server
+
 # Checks if index.html source file exists on the local control node (Prerequisites)
 - name: Check index.html source file exists on control node
   ansible.builtin.stat:
@@ -306,6 +319,7 @@
       certbot certonly --nginx
       --cert-name {{ web_server_domain }}
       -d {{ web_server_domain }}
+      --server https://acme-v02.api.letsencrypt.org/directory
       --force-renewal
       --non-interactive
       --agree-tos
@@ -446,12 +460,36 @@
     - web-server
 
 # ==============================================================================
-# Step 5 — auditd: Web Server Activity Rule (Excluded / Manual Step)
+# Step 5 — auditd: Web Server Activity Rule Drop-in
 # ==============================================================================
-# Note: Step 5 (auditd rule monitoring /etc/nginx and /etc/nginx/ssl) is an
-# accepted deviation. The hardening baseline locks auditd in immutable mode (-e 2)
-# and clears rules with -D, preventing drop-in audit rule additions without a kernel reboot.
-# This procedure is performed manually as documented in self-managed-automation.md.
+
+# Deploys auditd drop-in configuration for monitoring Nginx configuration and TLS paths (Step 5)
+# Preserves only active rule definitions from configs/audit/99-hardening.rules stripping non-ASCII comments
+# to prevent auditd parser aborts, adding an ASCII header
+- name: Deploy web-server auditd monitoring rules
+  vars:
+    web_server_audit_raw: "{{ lookup('file', web_server_configs_dir ~ '/audit/99-hardening.rules') }}"
+    web_server_nl: "\n"
+    web_server_audit_header: "# web-server audit rules (managed by Ansible)"
+  ansible.builtin.copy:
+    content: >-
+      {{
+        web_server_audit_header ~ web_server_nl ~
+        ((web_server_audit_raw.splitlines() |
+          reject('match', '^[ \t]*#') |
+          map('trim') |
+          reject('equalto', '')) |
+         join(web_server_nl)) ~ web_server_nl
+      }}
+    dest: /etc/audit/rules.d/99-zz-web-server.rules
+    owner: root
+    group: root
+    mode: "0640"
+  register: web_server_audit_rules_deploy
+  notify:
+    - Load auditd rules (web-server)
+  tags:
+    - web-server
 
 # ==============================================================================
 # Step 6 — AIDE: Extend Baseline for Web Server

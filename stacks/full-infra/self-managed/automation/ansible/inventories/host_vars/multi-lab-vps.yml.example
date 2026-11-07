@@ -64,3 +64,7 @@ web_server_certbot_email: "CHANGE_ME_email@example.com"
 
 # Set true to test against Let's Encrypt staging environment without rate limit penalties; set false for the real issuance
 web_server_certbot_staging: true
+
+# Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
+# Set to true to automatically reboot the EC2 host when the web-server audit drop-in rule is deployed.
+web_server_auditd_reboot: true

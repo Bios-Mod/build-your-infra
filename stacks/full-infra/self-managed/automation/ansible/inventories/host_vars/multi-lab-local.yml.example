@@ -75,3 +75,7 @@ tls_mode: "self_signed"
 
 # Local port where internal upstream service is listening (simulated reverse proxy target)
 web_server_upstream_port: 8080
+
+# Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
+# Not triggered on local VM because hardening_auditd_immutable_mode is false.
+web_server_auditd_reboot: false
