@@ -1042,7 +1042,7 @@ Verify AWS Security Group ingress rules (read-only check from control node):
 **Control node (Mac):**
 
 ```bash
-aws ec2 describe-security-groups --region eu-west-1 --profile multi-lab-admin --group-names multi-lab-sg \
+aws ec2 describe-security-groups --region eu-west-1 --profile multi-lab-admin --filters Name=group-name,Values=multi-lab-sg \
   --query 'SecurityGroups[0].IpPermissions[?ToPort==`80` || ToPort==`443`].[FromPort,ToPort,IpRanges[0].CidrIp]' --output text
 # → 80   80   0.0.0.0/0
 # → 443  443  0.0.0.0/0

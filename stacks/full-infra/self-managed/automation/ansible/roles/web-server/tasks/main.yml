@@ -76,11 +76,14 @@
       - web_server_domain | length > 0
       - web_server_certbot_email is defined
       - web_server_certbot_email | length > 0
+      - web_server_certbot_email is search('^[^@<> ]+@[^@<> ]+[.][^@<> ]+$')
+      - "'CHANGE_ME' not in (web_server_certbot_email | upper)"
       - web_server_certbot_staging is defined
       - web_server_certbot_staging is boolean
     fail_msg: >-
       When tls_mode is 'letsencrypt', variables 'web_server_domain', 'web_server_certbot_email', and
       'web_server_certbot_staging' (boolean) must be explicitly defined in host_vars.
+      'web_server_certbot_email' must be a valid email address and not a placeholder; configure a real email address in host_vars.
   when: tls_mode == 'letsencrypt'
   tags:
     - web-server

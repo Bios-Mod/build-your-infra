@@ -26,7 +26,7 @@ Defined in `inventories/host_vars/multi-lab-local.yml` and `multi-lab-vps.yml`:
 | `tls_mode` | Mandatory (both) | Certificate strategy: `self_signed` (VM) or `letsencrypt` (EC2). |
 | `web_server_upstream_port` | Mandatory (both) | Local TCP port of internal service proxied by Nginx (e.g. `8080`). |
 | `web_server_domain` | Mandatory (`letsencrypt`) | Fully qualified domain name pointing to EC2 Elastic IP (e.g. `buildyourinfra.click`). |
-| `web_server_certbot_email` | Mandatory (`letsencrypt`) | Administrative email for Let's Encrypt certificate registration and renewal notices. |
+| `web_server_certbot_email` | Mandatory (`letsencrypt`) | Administrative email for Let's Encrypt certificate registration and renewal notices (validated in pre-flight: must be a valid email format without `CHANGE_ME` placeholders). |
 | `web_server_certbot_staging` | Mandatory (`letsencrypt`) | Boolean flag: `true` for Let's Encrypt staging environment, `false` for production issuance. |
 | `web_server_auditd_reboot` | Mandatory (when immutable) | Boolean flag: controls whether to reboot the host when audit rules change in immutable mode (`-e 2`). |
 
