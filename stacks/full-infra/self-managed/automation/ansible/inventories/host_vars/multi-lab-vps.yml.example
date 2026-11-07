@@ -49,3 +49,18 @@ hardening_lynis_min_score: 90
 
 # Dedicated Ed25519 public key file for SFTP user (file-transfer module)
 file_transfer_sftp_public_key_file: "~/.ssh/CHANGE_ME_sftp_key.pub"
+
+# TLS certificate generation mode for web-server ('letsencrypt' for EC2)
+tls_mode: "letsencrypt"
+
+# Fully qualified domain name pointing to EC2 Elastic IP for Let's Encrypt TLS certificate
+web_server_domain: "buildyourinfra.click"
+
+# Local port where internal upstream service is listening (simulated reverse proxy target)
+web_server_upstream_port: 8080
+
+# Email address for Let's Encrypt certificate registration and renewal notices
+web_server_certbot_email: "CHANGE_ME_email@example.com"
+
+# Set true to test against Let's Encrypt staging environment without rate limit penalties; set false for the real issuance
+web_server_certbot_staging: true

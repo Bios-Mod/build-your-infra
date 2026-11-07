@@ -117,6 +117,10 @@ Elastic IP assigned, the domain mapping is stable and auto-renewal works
 without intervention. Replace `buildyourinfra.click` with the actual domain or
 `sslip.io` alias (e.g. `1-2-3-4.sslip.io`).
 
+> `buildyourinfra.click` is a domain registered for this lab; fork users must
+> replace it with their own domain (or an sslip.io alias); an A record pointing
+> to the instance Elastic IP must exist before running Certbot.
+
 ```bash
 sudo apt install certbot python3-certbot-nginx -y
 
@@ -193,6 +197,10 @@ configuration. The config file is deployed as a full-file replace into
 `/etc/nginx/sites-available/` and then symlinked into `sites-enabled/`.
 Two variants exist in `configs/` — deploy the one that matches the environment.
 
+> `buildyourinfra.click` is a domain registered for this lab; fork users must
+> replace it with their own domain (or an sslip.io alias); an A record pointing
+> to the instance Elastic IP must exist before running Certbot.
+
 ```bash
 # Disable the default site
 sudo rm -f /etc/nginx/sites-enabled/default
@@ -201,7 +209,7 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo cp ~/build-your-infra/modules/web-server/self-managed/configs/nginx/multi-lab-vm.conf \
   /etc/nginx/sites-available/multi-lab.conf
 
-# EC2 — Let's Encrypt variant (replace buildyourinfra.click inline before deploying)
+# EC2 — Let's Encrypt variant
 sudo cp ~/build-your-infra/modules/web-server/self-managed/configs/nginx/multi-lab-ec2.conf \
   /etc/nginx/sites-available/multi-lab.conf
 

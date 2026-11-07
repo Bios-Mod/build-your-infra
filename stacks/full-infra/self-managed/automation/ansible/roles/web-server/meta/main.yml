@@ -1,0 +1,36 @@
+# Deploy to:   local Ansible controller (metadata only)
+# Apply:       read by Ansible Galaxy and dependency resolver
+# Module:      web-server
+# Requires:    none
+#
+# Role metadata and platform compatibility definitions for the web-server role.
+# Why:         Declares author, license, supported OS distributions, and dependencies for the role.
+# Doc ref:     modules/web-server/self-managed/web-server-self-managed.md
+# Targets:     both
+
+---
+galaxy_info:
+  role_name: web_server
+  author: Bios-Mod
+  description: Nginx HTTPS web server and reverse proxy role with TLS certificates, UFW rules, and AIDE monitoring.
+  company: build-your-infra
+  license: MIT
+  min_ansible_version: "2.16"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+  galaxy_tags:
+    - web
+    - nginx
+    - reverseproxy
+    - tls
+    - letsencrypt
+    - ufw
+    - aide
+    - security
+    - ubuntu
+
+dependencies: []

@@ -1,0 +1,19 @@
+# Deploy to:   vm:ec2
+# Apply:       included automatically when role 'web-server' is invoked
+# Module:      web-server
+# Requires:    none
+#
+# Default variable definitions for the web-server role.
+# Why:         Provides baseline defaults for source config paths, index HTML source, and hardening pre-flight verification.
+# Doc ref:     modules/web-server/self-managed/web-server-self-managed.md
+# Targets:     both
+
+---
+# Root directory containing the source-of-truth web-server configs
+web_server_configs_dir: "{{ configs_root }}/web-server/self-managed/configs"
+
+# Path to the source-of-truth index.html page deployed to the document root
+web_server_html_src: "{{ configs_root }}/web-server/html/index.html"
+
+# Hardened OpenSSH daemon port configured by the hardening baseline
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"

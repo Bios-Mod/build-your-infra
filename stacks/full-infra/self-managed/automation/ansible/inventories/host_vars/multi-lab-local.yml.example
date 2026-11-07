@@ -69,3 +69,9 @@ hardening_auditd_immutable_mode: false
 
 # Dedicated Ed25519 public key file for SFTP user (file-transfer module)
 file_transfer_sftp_public_key_file: "~/.ssh/CHANGE_ME_sftp_key.pub"
+
+# TLS certificate generation mode for web-server ('self_signed' for local VM)
+tls_mode: "self_signed"
+
+# Local port where internal upstream service is listening (simulated reverse proxy target)
+web_server_upstream_port: 8080

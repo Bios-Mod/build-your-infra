@@ -1,0 +1,502 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/web-server.yml [--tags <tag>] [--check --diff] --ask-become-pass
+# Module:      web-server
+# Requires:    playbooks/hardening.yml executed
+#
+# Task orchestration entry point for the web-server role.
+# Why:         Installs Nginx, provisions TLS (self-signed on VM, Let's Encrypt on EC2), configures virtual host, UFW rules, and AIDE integrity.
+# Doc ref:     modules/web-server/self-managed/web-server-self-managed.md — Steps 1, 2, 3, 6
+# Targets:     both
+
+---
+# ==============================================================================
+# Pre-flight Checks (Prerequisites)
+# ==============================================================================
+
+# Queries active OpenSSH daemon configuration to verify hardening baseline port is active (Hardening prerequisite)
+- name: Query active OpenSSH daemon configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -T
+  register: web_server_sshd_config_query
+  check_mode: false
+  changed_when: false
+  tags:
+    - web-server
+
+# Asserts that the hardening baseline is applied by checking the active SSH port matches hardening_ssh_port
+- name: Assert hardening baseline is applied
+  ansible.builtin.assert:
+    that:
+      - ("port " ~ (hardening_ssh_port | string)) in web_server_sshd_config_query.stdout_lines
+    fail_msg: >-
+      Hardening baseline prerequisite not met: active OpenSSH port is not {{ hardening_ssh_port }}.
+      Ensure role 'hardening' is fully deployed on the target before deploying 'web-server'.
+  tags:
+    - web-server
+
+# Validates that tls_mode variable is defined and set to a recognized certificate mode (Prerequisites)
+- name: Assert tls_mode variable is valid
+  ansible.builtin.assert:
+    that:
+      - tls_mode is defined
+      - tls_mode in ['self_signed', 'letsencrypt']
+    fail_msg: >-
+      Variable 'tls_mode' must be defined in host_vars and set to either 'self_signed' (local VM) or 'letsencrypt' (EC2).
+  tags:
+    - web-server
+
+# Asserts that letsencrypt TLS mode is only targeted at cloud EC2 hosts (Prerequisites)
+- name: Assert letsencrypt mode target is an EC2 host
+  ansible.builtin.assert:
+    that:
+      - "'ec2' in group_names"
+    fail_msg: >-
+      tls_mode 'letsencrypt' is only supported for EC2 instances in group 'ec2' with public IP and DNS resolution.
+  when: tls_mode == 'letsencrypt'
+  tags:
+    - web-server
+
+# Validates that upstream backend service port variable is defined and in valid port range (Prerequisites)
+- name: Assert web_server_upstream_port variable is valid
+  ansible.builtin.assert:
+    that:
+      - web_server_upstream_port is defined
+      - (web_server_upstream_port | int) > 0
+      - (web_server_upstream_port | int) <= 65535
+    fail_msg: >-
+      Variable 'web_server_upstream_port' must be defined in host_vars as a valid TCP port (1-65535).
+  tags:
+    - web-server
+
+# Validates required Let's Encrypt parameters when tls_mode is set to letsencrypt (Prerequisites)
+- name: Assert Let's Encrypt required variables are defined
+  ansible.builtin.assert:
+    that:
+      - web_server_domain is defined
+      - web_server_domain | length > 0
+      - web_server_certbot_email is defined
+      - web_server_certbot_email | length > 0
+      - web_server_certbot_staging is defined
+      - web_server_certbot_staging is boolean
+    fail_msg: >-
+      When tls_mode is 'letsencrypt', variables 'web_server_domain', 'web_server_certbot_email', and
+      'web_server_certbot_staging' (boolean) must be explicitly defined in host_vars.
+  when: tls_mode == 'letsencrypt'
+  tags:
+    - web-server
+
+# Checks if index.html source file exists on the local control node (Prerequisites)
+- name: Check index.html source file exists on control node
+  ansible.builtin.stat:
+    path: "{{ web_server_html_src }}"
+  delegate_to: localhost
+  become: false
+  check_mode: false
+  register: web_server_stat_html_src
+  tags:
+    - web-server
+
+# Asserts that index.html source file exists on the control node before proceeding (Prerequisites)
+- name: Assert index.html source file exists on control node
+  ansible.builtin.assert:
+    that:
+      - web_server_stat_html_src.stat.exists
+    fail_msg: >-
+      Source HTML file '{{ web_server_html_src }}' was not found on the control node.
+  tags:
+    - web-server
+
+# ==============================================================================
+# Step 1 — Install Nginx and Open Firewall
+# ==============================================================================
+
+# Installs Nginx web server package from Ubuntu repositories (Step 1)
+- name: Install Nginx package
+  ansible.builtin.apt:
+    name: nginx
+    state: present
+    lock_timeout: 600
+  tags:
+    - web-server
+
+# Enables and starts Nginx systemd service (Step 1)
+- name: Enable and start Nginx service
+  ansible.builtin.systemd_service:
+    name: nginx
+    state: started
+    enabled: true
+  tags:
+    - web-server
+
+# Configures UFW firewall rule to allow inbound HTTP and HTTPS traffic using Nginx Full profile (Step 1)
+- name: Allow Nginx Full traffic in UFW
+  community.general.ufw:
+    rule: allow
+    name: "Nginx Full"
+  tags:
+    - web-server
+
+# ==============================================================================
+# Step 2 — TLS Certificate: Self-Signed (VM Only)
+# ==============================================================================
+
+# Creates dedicated directory for Nginx TLS certificates and keys (Step 2 - VM)
+# VM only
+- name: Create Nginx SSL directory
+  ansible.builtin.file:
+    path: /etc/nginx/ssl
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: tls_mode == 'self_signed'
+  tags:
+    - web-server
+
+# Generates self-signed TLS certificate valid for 397 days matching browser acceptance limits (Step 2 - VM)
+# Uses command instead of extra Ansible cryptography collections to reproduce the exact manual command and parameters
+# VM only
+- name: Generate self-signed TLS certificate
+  ansible.builtin.command:
+    cmd: >-
+      openssl req -x509 -nodes -days 397 -newkey rsa:2048
+      -keyout /etc/nginx/ssl/nginx-selfsigned.key
+      -out /etc/nginx/ssl/nginx-selfsigned.crt
+      -subj "/CN=multi-lab-local/O=multi-lab/C=ES"
+    creates: /etc/nginx/ssl/nginx-selfsigned.crt
+  when: tls_mode == 'self_signed'
+  tags:
+    - web-server
+
+# Enforces restrictive permissions on self-signed TLS private key (Step 2 - VM)
+# VM only
+- name: Set permissions on self-signed TLS private key
+  ansible.builtin.file:
+    path: /etc/nginx/ssl/nginx-selfsigned.key
+    owner: root
+    group: root
+    mode: "0600"
+  when: tls_mode == 'self_signed'
+  tags:
+    - web-server
+
+# Enforces read permissions on self-signed TLS certificate (Step 2 - VM)
+# VM only
+- name: Set permissions on self-signed TLS certificate
+  ansible.builtin.file:
+    path: /etc/nginx/ssl/nginx-selfsigned.crt
+    owner: root
+    group: root
+    mode: "0644"
+  when: tls_mode == 'self_signed'
+  tags:
+    - web-server
+
+# ==============================================================================
+# Step 2 — TLS Certificate: Let's Encrypt via Certbot (EC2 Only)
+# ==============================================================================
+
+# Installs Certbot and Nginx authenticator plugin packages (Step 2 - EC2)
+# EC2 only
+- name: Install Certbot and python3-certbot-nginx packages
+  ansible.builtin.apt:
+    name:
+      - certbot
+      - python3-certbot-nginx
+    state: present
+    lock_timeout: 600
+  when: tls_mode == 'letsencrypt'
+  tags:
+    - web-server
+
+# Queries system name resolution for the configured domain name before attempting certificate issuance (Step 2 - EC2)
+# EC2 only
+- name: Pre-flight DNS resolution query for domain
+  ansible.builtin.command:
+    cmd: "getent hosts {{ web_server_domain }}"
+  register: web_server_dns_check
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - tls_mode == 'letsencrypt'
+    - not ansible_check_mode
+  tags:
+    - web-server
+
+# Asserts domain resolves to an IP address before running Certbot ACME challenge (Step 2 - EC2)
+# EC2 only
+- name: Assert domain resolves via DNS
+  ansible.builtin.assert:
+    that:
+      - web_server_dns_check.rc == 0
+      - web_server_dns_check.stdout | length > 0
+    fail_msg: >-
+      Pre-flight DNS check failed: '{{ web_server_domain }}' does not resolve to an IP address.
+      Create the A record to the Elastic IP first before attempting Let's Encrypt certificate issuance.
+  when:
+    - tls_mode == 'letsencrypt'
+    - not ansible_check_mode
+  tags:
+    - web-server
+
+# Checks if a renewal configuration lineage already exists for the domain (Step 2 - EC2)
+# EC2 only
+- name: Stat existing Let's Encrypt renewal configuration
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/renewal/{{ web_server_domain }}.conf"
+  register: web_server_renewal_stat
+  check_mode: false
+  when: tls_mode == 'letsencrypt'
+  tags:
+    - web-server
+
+# Reads existing renewal configuration to inspect whether certificate is from staging or production (Step 2 - EC2)
+# EC2 only
+- name: Slurp existing Let's Encrypt renewal configuration
+  ansible.builtin.slurp:
+    src: "/etc/letsencrypt/renewal/{{ web_server_domain }}.conf"
+  register: web_server_renewal_slurp
+  check_mode: false
+  when:
+    - tls_mode == 'letsencrypt'
+    - web_server_renewal_stat.stat.exists
+  tags:
+    - web-server
+
+# Prevents downgrading an existing production certificate to staging environment (Step 2 - EC2)
+# EC2 only
+- name: Assert certificate is not downgraded from production to staging
+  ansible.builtin.assert:
+    that:
+      - not (web_server_renewal_stat.stat.exists and ('acme-staging' not in (web_server_renewal_slurp.content | b64decode)) and web_server_certbot_staging)
+    fail_msg: >-
+      Existing Let's Encrypt certificate for '{{ web_server_domain }}' was issued by the production CA.
+      Refusing to downgrade active lineage to staging environment. Set 'web_server_certbot_staging: false' in host_vars.
+  when:
+    - tls_mode == 'letsencrypt'
+    - web_server_renewal_stat.stat.exists
+  tags:
+    - web-server
+
+# Issues initial Let's Encrypt certificate using certonly with Nginx plugin while default site is active (Step 2 - EC2)
+# EC2 only
+- name: Issue Let's Encrypt certificate via Certbot
+  ansible.builtin.command:
+    cmd: >-
+      certbot certonly --nginx
+      -d {{ web_server_domain }}
+      --non-interactive
+      --agree-tos
+      -m {{ web_server_certbot_email }}
+      --deploy-hook 'systemctl reload nginx'
+      {{ '--staging' if web_server_certbot_staging else '' }}
+    creates: "/etc/letsencrypt/live/{{ web_server_domain }}/fullchain.pem"
+  when:
+    - tls_mode == 'letsencrypt'
+    - not web_server_renewal_stat.stat.exists
+  tags:
+    - web-server
+
+# Promotes existing staging certificate to production CA using --force-renewal without deleting lineage (Step 2 - EC2)
+# EC2 only
+- name: Promote staging Let's Encrypt certificate to production
+  ansible.builtin.command:
+    cmd: >-
+      certbot certonly --nginx
+      --cert-name {{ web_server_domain }}
+      -d {{ web_server_domain }}
+      --force-renewal
+      --non-interactive
+      --agree-tos
+      -m {{ web_server_certbot_email }}
+      --deploy-hook 'systemctl reload nginx'
+  register: web_server_certbot_promote
+  changed_when: >-
+    'Successfully received certificate' in web_server_certbot_promote.stdout or
+    'Certificate not yet due for renewal' not in web_server_certbot_promote.stdout
+  when:
+    - tls_mode == 'letsencrypt'
+    - web_server_renewal_stat.stat.exists
+    - "'acme-staging' in (web_server_renewal_slurp.content | b64decode)"
+    - not web_server_certbot_staging
+  tags:
+    - web-server
+
+# Enables and starts Certbot automated certificate renewal systemd timer (Step 2 - EC2)
+# EC2 only
+- name: Enable and start certbot.timer
+  ansible.builtin.systemd_service:
+    name: certbot.timer
+    state: started
+    enabled: true
+  when: tls_mode == 'letsencrypt'
+  tags:
+    - web-server
+
+# ==============================================================================
+# Step 3 — Nginx HTTPS Virtual Host
+# ==============================================================================
+
+# Disables default Nginx website symlink to remove default greeting page (Step 3)
+- name: Remove default Nginx site symlink
+  ansible.builtin.file:
+    path: /etc/nginx/sites-enabled/default
+    state: absent
+  notify:
+    - Reload nginx (web-server)
+  tags:
+    - web-server
+
+# Deploys Nginx virtual host configuration for self-signed TLS environment (Step 3)
+# VM only
+- name: Deploy Nginx self-signed virtual host configuration
+  vars:
+    web_server_vm_raw: "{{ lookup('file', web_server_configs_dir ~ '/nginx/multi-lab-vm.conf') }}"
+    web_server_nl: "\n"
+  ansible.builtin.copy:
+    content: >-
+      {{
+        (web_server_vm_raw |
+         replace('<upstream_port>', web_server_upstream_port | string)) ~ web_server_nl
+      }}
+    dest: /etc/nginx/sites-available/multi-lab.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload nginx (web-server)
+  when: tls_mode == 'self_signed'
+  tags:
+    - web-server
+
+# Deploys Nginx virtual host configuration for Let's Encrypt TLS environment (Step 3)
+# EC2 only
+- name: Deploy Nginx Let's Encrypt virtual host configuration
+  vars:
+    web_server_ec2_raw: "{{ lookup('file', web_server_configs_dir ~ '/nginx/multi-lab-ec2.conf') }}"
+    web_server_nl: "\n"
+  ansible.builtin.copy:
+    content: >-
+      {{
+        (web_server_ec2_raw |
+         replace('buildyourinfra.click', web_server_domain) |
+         replace('<upstream_port>', web_server_upstream_port | string)) ~ web_server_nl
+      }}
+    dest: /etc/nginx/sites-available/multi-lab.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload nginx (web-server)
+  when: tls_mode == 'letsencrypt'
+  tags:
+    - web-server
+
+# Enables multi-lab virtual host configuration by creating symlink in sites-enabled (Step 3)
+- name: Enable multi-lab Nginx site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/multi-lab.conf
+    dest: /etc/nginx/sites-enabled/multi-lab.conf
+    state: link
+    owner: root
+    group: root
+  notify:
+    - Reload nginx (web-server)
+  tags:
+    - web-server
+
+# Validates complete Nginx configuration syntax before reloading daemon (Step 3)
+# Note: nginx -t cannot be executed via copy 'validate:' because multi-lab.conf is an included server block
+# rather than a standalone nginx.conf. Validating here with the symlink in place ensures invalid configs
+# fail the play before handlers run, preventing broken configurations from reaching the live service.
+- name: Validate Nginx configuration syntax
+  ansible.builtin.command:
+    cmd: /usr/sbin/nginx -t
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+  tags:
+    - web-server
+
+# ==============================================================================
+# Deploy Lab Index Page (Step 3)
+# ==============================================================================
+
+# Ensures document root directory exists for serving static assets (Step 3)
+- name: Ensure /var/www/html directory exists
+  ansible.builtin.file:
+    path: /var/www/html
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - web-server
+
+# Deploys default static lab index page to document root (Step 3)
+- name: Deploy lab index.html page
+  ansible.builtin.copy:
+    src: "{{ web_server_html_src }}"
+    dest: /var/www/html/index.html
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - web-server
+
+# ==============================================================================
+# Step 5 — auditd: Web Server Activity Rule (Excluded / Manual Step)
+# ==============================================================================
+# Note: Step 5 (auditd rule monitoring /etc/nginx and /etc/nginx/ssl) is an
+# accepted deviation. The hardening baseline locks auditd in immutable mode (-e 2)
+# and clears rules with -D, preventing drop-in audit rule additions without a kernel reboot.
+# This procedure is performed manually as documented in self-managed-automation.md.
+
+# ==============================================================================
+# Step 6 — AIDE: Extend Baseline for Web Server
+# ==============================================================================
+
+# Deploys AIDE integrity monitoring drop-in covering Nginx configuration and TLS paths (Step 6)
+# Named 99-zz-web-server to load after 99-hardening in alphabetical order because 99-hardening defines the CONTENTEX rule group
+- name: Deploy AIDE web-server integrity monitoring configuration
+  vars:
+    web_server_aide_raw: "{{ lookup('file', web_server_configs_dir ~ '/aide/99-hardening') }}"
+    web_server_nl: "\n"
+  ansible.builtin.copy:
+    content: "{{ web_server_aide_raw ~ web_server_nl }}"
+    dest: /etc/aide/aide.conf.d/99-zz-web-server
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Regenerate AIDE database (web-server)
+  tags:
+    - web-server
+
+# Validates AIDE configuration syntax before database regeneration (Step 6)
+- name: Validate AIDE configuration syntax
+  ansible.builtin.command:
+    cmd: /usr/bin/aide --config-check --config /etc/aide/aide.conf
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+  tags:
+    - web-server
+
+# ==============================================================================
+# Handler Flushing & Verification
+# ==============================================================================
+
+# Flushes notified handlers (nginx reload and AIDE database regeneration) before verification tasks
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - web-server
+
+# Executes verification assertions for the web-server module
+- name: Verify web-server deployment
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - web-server
+    - web-server_verify

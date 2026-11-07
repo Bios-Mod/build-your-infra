@@ -858,3 +858,241 @@ dig @172.16.0.1 vps.lab.internal +short
 dig google.com +short
 # → <valid IP>
 ```
+
+---
+
+## Web Server — Nginx HTTPS Service
+
+**Starting point:** hardening and DNS are finished, EC2 uses `connection_mode: "wg"` in `inventories/host_vars/multi-lab-vps.yml`, and the WireGuard tunnel is up on the Mac. Nothing else has to be prepared before this section.
+
+It automates [`web-server-self-managed.md`](../../../../modules/web-server/self-managed/web-server-self-managed.md): an Nginx web server terminating HTTPS and reverse proxying upstream traffic, deployed on both targets with environment-specific TLS strategies (self-signed certificate on the local VM, Let's Encrypt automated certificate on EC2).
+
+### Step 1 — Apply (Tag `web-server`)
+
+#### What was done
+
+The `web-server` role reproduces on both targets the state that the manual module leaves behind: Nginx installed and enabled, UFW application profile `Nginx Full` (ports 80 and 443) allowed, TLS certificates provisioned (397-day self-signed certificate on VM; Certbot Let's Encrypt certificate and `certbot.timer` auto-renewal on EC2), default site removed from `sites-enabled/`, dedicated virtual host `multi-lab.conf` deployed and validated with `nginx -t`, default lab `index.html` placed in `/var/www/html/`, and AIDE drop-in `/etc/aide/aide.conf.d/99-zz-web-server` validated with `aide --config-check`.
+
+Before running the playbook, complete the manual prerequisite steps outside Ansible:
+
+**Paso manual 1 — DNS (Control node (Mac)):**
+
+The domain `buildyourinfra.click` is registered in Route 53 under the same AWS account. The account may contain other hosted zones that must not be touched; all commands filter strictly by the exact zone name. Route 53 is presented as a reference implementation (any authoritative DNS provider is valid; the prerequisite is an A record pointing to the instance Elastic IP). Execute these commands in order from your control workstation:
+
+(1.1) Create the public hosted zone (one time; the zone has a small monthly cost and persists after the lab as it is the DNS zone of the registered domain):
+
+```bash
+aws route53 create-hosted-zone --name buildyourinfra.click --caller-reference "multi-lab-$(date +%s)" --profile multi-lab-admin --query 'HostedZone.Id' --output text
+# → /hostedzone/<ZONE_ID>
+```
+
+(1.2) Point the registered domain to the new zone's nameservers (one time):
+
+```bash
+ZONE_ID=$(aws route53 list-hosted-zones --profile multi-lab-admin --query "HostedZones[?Name=='buildyourinfra.click.'].Id | [0]" --output text | awk -F'/' '{print $NF}')
+N1=$(aws route53 get-hosted-zone --id "$ZONE_ID" --profile multi-lab-admin --query 'DelegationSet.NameServers[0]' --output text)
+N2=$(aws route53 get-hosted-zone --id "$ZONE_ID" --profile multi-lab-admin --query 'DelegationSet.NameServers[1]' --output text)
+N3=$(aws route53 get-hosted-zone --id "$ZONE_ID" --profile multi-lab-admin --query 'DelegationSet.NameServers[2]' --output text)
+N4=$(aws route53 get-hosted-zone --id "$ZONE_ID" --profile multi-lab-admin --query 'DelegationSet.NameServers[3]' --output text)
+aws route53domains update-domain-nameservers --domain-name buildyourinfra.click --region us-east-1 --profile multi-lab-admin --nameservers Name=$N1 Name=$N2 Name=$N3 Name=$N4
+aws route53domains list-operations --region us-east-1 --profile multi-lab-admin --query 'Operations[0].[Type,Status]' --output text
+# → UPDATE_NAMESERVER  SUCCESSFUL
+dig +short NS buildyourinfra.click @1.1.1.1
+# → the four nameservers of the new zone (propagation may take a while)
+```
+
+(1.3) Create the A record to the Elastic IP (repeat after rebuilding EC2, the Elastic IP changes):
+
+```bash
+EIP=$(aws ec2 describe-addresses --region eu-west-1 --profile multi-lab-admin --filters Name=tag:Name,Values=multi-lab-eip --query 'Addresses[0].PublicIp' --output text)
+[ "$(aws route53 get-hosted-zone --id "$ZONE_ID" --profile multi-lab-admin --query 'HostedZone.Name' --output text)" = "buildyourinfra.click." ] && aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" --profile multi-lab-admin --change-batch "{\"Changes\":[{\"Action\":\"UPSERT\",\"ResourceRecordSet\":{\"Name\":\"buildyourinfra.click\",\"Type\":\"A\",\"TTL\":300,\"ResourceRecords\":[{\"Value\":\"$EIP\"}]}}]}"
+# → "Status": "PENDING"
+dig +short A buildyourinfra.click @1.1.1.1
+# → <ELASTIC_IP>
+```
+
+(1.4) Cleanup at lab close, after terraform destroy (avoids a record pointing to a released Elastic IP). Same command as 1.3 with "Action":"DELETE" and the same values; since the Elastic IP tag no longer exists after destroy, take the value from `dig +short A buildyourinfra.click @1.1.1.1` before destroying. The hosted zone is kept:
+
+```bash
+EIP=$(dig +short A buildyourinfra.click @1.1.1.1)
+[ -n "$EIP" ] && aws route53 change-resource-record-sets --hosted-zone-id "$ZONE_ID" --profile multi-lab-admin --change-batch "{\"Changes\":[{\"Action\":\"DELETE\",\"ResourceRecordSet\":{\"Name\":\"buildyourinfra.click\",\"Type\":\"A\",\"TTL\":300,\"ResourceRecords\":[{\"Value\":\"$EIP\"}]}}]}"
+# → "Status": "PENDING"
+```
+
+**Paso manual 3 — EC2 Security Group Verification (Control node (Mac)):**
+
+Verify that inbound HTTP (port 80) and HTTPS (port 443) from `0.0.0.0/0` are open in `multi-lab-sg` (defined in Terraform):
+
+```bash
+aws ec2 describe-security-groups --region eu-west-1 --profile multi-lab-admin --group-names multi-lab-sg \
+  --query 'SecurityGroups[0].IpPermissions[?ToPort==`80` || ToPort==`443`].[FromPort,ToPort,IpRanges[0].CidrIp]' --output text
+# → 80   80   0.0.0.0/0
+# → 443  443  0.0.0.0/0
+```
+
+**Configure Host Variables:**
+
+Add the required variables to `inventories/host_vars/multi-lab-local.yml`:
+
+```yaml
+tls_mode: "self_signed"
+web_server_upstream_port: 8080
+```
+
+Add the required variables to `inventories/host_vars/multi-lab-vps.yml` (initiating rehearsal with staging mode enabled):
+
+```yaml
+tls_mode: "letsencrypt"
+web_server_domain: "buildyourinfra.click"
+web_server_upstream_port: 8080
+web_server_certbot_email: "<your-email>"
+web_server_certbot_staging: true
+```
+
+**Paso manual 4 — Staging Rehearsal & Production Issuance (Control node (Mac)):**
+
+Run the rehearsal on EC2 with staging mode enabled to validate ACME challenge completion without consuming Let's Encrypt rate limits:
+
+```bash
+ansible-playbook playbooks/web-server.yml --limit multi-lab-vps --check --diff --ask-become-pass
+ansible-playbook playbooks/web-server.yml --limit multi-lab-vps --ask-become-pass
+ansible-playbook playbooks/web-server.yml --limit multi-lab-vps --ask-become-pass
+# → second run: changed=0
+```
+
+Once staging issuance succeeds, switch to the production CA by editing `inventories/host_vars/multi-lab-vps.yml`:
+
+```yaml
+web_server_certbot_staging: false
+```
+
+Execute the playbook to promote the certificate to production CA, then verify automated renewal dry run:
+
+```bash
+ansible-playbook playbooks/web-server.yml --limit multi-lab-vps --ask-become-pass
+```
+
+**EC2 · multi-lab-vps:**
+
+Verify renewal test against the ACME endpoint:
+
+```bash
+sudo certbot renew --dry-run
+# → Congratulations, all simulated renewals succeeded:
+# →   /etc/letsencrypt/live/buildyourinfra.click/fullchain.pem (success)
+```
+
+**Apply on Local VM (Control node (Mac)):**
+
+Deploy the web server on the local VM using self-signed TLS:
+
+```bash
+ansible-playbook playbooks/web-server.yml --limit multi-lab-local --check --diff --ask-become-pass
+ansible-playbook playbooks/web-server.yml --limit multi-lab-local --ask-become-pass
+ansible-playbook playbooks/web-server.yml --limit multi-lab-local --ask-become-pass
+# → second run: changed=0
+```
+
+**Paso manual 2 — EC2 Auditd Rule (EC2 · multi-lab-vps):**
+
+Append the auditd monitoring rule for Nginx configuration and TLS paths (manual Step 5):
+
+```bash
+sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/web-server/self-managed/configs/audit/99-hardening.rules
+sudo systemctl restart auditd
+sudo augenrules --load
+```
+
+> Hardening locks auditd in immutable mode (`-e 2`) and clears rules with `-D`. If auditd fails to restart due to immutable mode, reboot the EC2 instance (`sudo reboot now`) to load the new rule. Note that this rule lives in `99-hardening.rules`, owned by hardening: if Step 10 of hardening is re-run, the file is restored and the `nginx_config` rule disappears, so it must be added again.
+
+#### Why
+
+- **Configs as single source of truth:** the role copies files directly from `modules/web-server/self-managed/configs/` without altering repo configs or manual documentation text.
+- **Environment-tailored TLS strategy:** self-signed certificates are appropriate for the local VM where there is no public validation path, while Let's Encrypt provides automated, trusted TLS for the public-facing EC2 instance.
+- **Certbot `certonly --nginx` vs `--nginx` installer:** the manual guide runs `certbot --nginx`, which alters virtual host configuration files dynamically. To keep configuration management declarative in Ansible, the role runs `certbot certonly --nginx` with `--deploy-hook 'systemctl reload nginx'`. This provisions certificates cleanly while allowing Ansible to own and manage `/etc/nginx/sites-available/multi-lab.conf` via `copy` with content substitution.
+- **Vhost validation pattern:** `validate:` on `ansible.builtin.copy` cannot validate `multi-lab.conf` standalone with `nginx -t -c %s` because it is an included `server { ... }` block that requires the enclosing `http` directive from `nginx.conf`. The role deploys the file, creates the symlink in `sites-enabled/`, and immediately executes `nginx -t`. If syntax is invalid, the task aborts the run before handlers execute, ensuring broken configurations never reload the running daemon.
+- **Staging promotion without deleting lineage:** when promoting from staging to production, Certbot runs with `--cert-name <domain> --force-renewal` against the production CA. This preserves renewal configurations and file paths without requiring manual deletion of the staging lineage.
+- **Dedicated AIDE drop-in and syntax check:** hardening owns `/etc/aide/aide.conf.d/99-hardening`. The role deploys `/etc/aide/aide.conf.d/99-zz-web-server` (ordered after `99-hardening`, which defines the `CONTENTEX` group) as an independent drop-in, validates configuration syntax with `aide --config-check` before flushing handlers, and regenerates the database only if the drop-in changes.
+- **Manual DNS record prerequisite:** Let's Encrypt requires domain name resolution to complete ACME HTTP-01 challenges. Public DNS records cannot be configured within the OS configuration management layer and are provisioned beforehand.
+- **Manual auditd rule:** `-D` (flush rules) and `-e 2` (immutable mode) in `99-hardening.rules` prevent dynamic drop-in rule insertion at runtime without a kernel restart. The manually added audit rule lives in `99-hardening.rules`, owned by hardening: if Step 10 of hardening is re-run, the file is restored and the `nginx_config` rule disappears, so it must be added again.
+- **Simulated reverse proxy target:** no backend service is running on `<upstream_port>` (8080). Nginx returns `502 Bad Gateway`, which is verified as expected behavior until backend workloads are deployed.
+
+#### Verification
+
+**EC2 · multi-lab-vps · Run on control node:**
+
+```bash
+ansible-playbook playbooks/web-server.yml --limit multi-lab-vps --tags web-server_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/web-server.yml --limit multi-lab-local --tags web-server_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+Verify service and certificates directly on the target hosts:
+
+**EC2 · multi-lab-vps:**
+
+```bash
+sudo systemctl is-active nginx
+# → active
+
+sudo certbot certificates
+# → Certificate Name: buildyourinfra.click
+# → Expiry Date: <date> (VALID: 89 days)
+# → Certificate Path: /etc/letsencrypt/live/buildyourinfra.click/fullchain.pem
+```
+
+**VM · multi-lab-local:**
+
+```bash
+sudo systemctl is-active nginx
+# → active
+
+openssl x509 -in /etc/nginx/ssl/nginx-selfsigned.crt -noout -subject -dates
+# → subject=CN=multi-lab-local, O=multi-lab, C=ES
+# → notAfter=<date ~397 days from now>
+```
+
+---
+
+### Step 2 — Verify (Tag `web-server_verify`)
+
+#### What was done
+
+Run the role assertions without re-applying anything to validate service state, firewall rules, virtual host routing, TLS certificates, and AIDE drop-in integrity across both targets.
+
+**EC2 · multi-lab-vps · Run on control node:**
+
+```bash
+ansible-playbook playbooks/web-server.yml --limit multi-lab-vps --tags web-server_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/web-server.yml --limit multi-lab-local --tags web-server_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+What the assertions check on each target:
+
+| Check | Expected | Manual verification |
+| --- | --- | --- |
+| `nginx` daemon | Active and running | [Step 1](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-1--install-nginx-and-open-firewall) |
+| UFW firewall | `Nginx Full` ALLOW IN rule present | [Step 1](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-1--install-nginx-and-open-firewall) |
+| Self-signed TLS (VM) | Certificate (0644) and key (0600) present; subject CN=multi-lab-local | [Step 2](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-2--tls-certificate) |
+| Let's Encrypt TLS (EC2) | Live lineage present; `certbot.timer` active | [Step 2](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-2--tls-certificate) |
+| Nginx configuration | `nginx -t` test successful | [Step 3](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-3--nginx-https-virtual-host) |
+| Virtual host symlink | `sites-enabled/default` absent; `sites-enabled/multi-lab.conf` active symlink | [Step 3](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-3--nginx-https-virtual-host) |
+| Reverse proxy port | `nginx -T` contains `proxy_pass http://127.0.0.1:8080/;` without placeholder | [Step 3](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-3--nginx-https-virtual-host) |
+| Index page | `/var/www/html/index.html` present with mode 0644 | [Step 3](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-3--nginx-https-virtual-host) |
+| HTTP redirect | `curl http://localhost` returns 301 redirect to `https://` | [Step 4](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-4--http--https-redirect) |
+| HTTPS reverse proxy | `curl -k https://localhost` returns 502 Bad Gateway (or 200 OK if backend up) | [Reverse Proxy](../../../../modules/web-server/self-managed/web-server-self-managed.md#reverse-proxy) |
+| AIDE integrity | Drop-in `99-zz-web-server` present (0644); `aide --config-check` returns exit code 0 | [Step 6](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-6--aide-extend-baseline) |
+

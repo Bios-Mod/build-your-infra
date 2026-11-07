@@ -1,0 +1,43 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/web-server.yml --limit <host> [options] --ask-become-pass
+# Module:      web-server
+# Requires:    playbooks/hardening.yml executed (SSH on port 22222, WireGuard active)
+#
+# Master playbook for deploying Nginx HTTPS virtual host and reverse proxy.
+# Why:         Configures TLS termination, UFW rules, reverse proxy, index page, and AIDE integrity monitoring.
+# Doc ref:     modules/web-server/self-managed/web-server-self-managed.md
+# Targets:     both
+
+---
+- name: Apply web-server service
+  hosts: vm:ec2
+  become: true
+  gather_facts: true
+
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: 600
+
+  pre_tasks:
+    # Validates control node toolchain environment against requirements.txt before running web-server tasks
+    - name: Assert control node toolchain environment # noqa: run-once[task]
+      run_once: true
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full == controller_ansible_core_version
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.12', '>=')
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.15', '<')
+        fail_msg: >-
+          Control node environment mismatch. Activate the project virtualenv
+          (source .venv/bin/activate) and install pinned dependencies (pip install -r requirements.txt).
+          Expected ansible-core {{ controller_ansible_core_version }} and Python 3.12-3.14.
+          Running ansible-core {{ ansible_version.full }} on Python
+          {{ (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] }} ({{ ansible_playbook_python }}).
+
+  roles:
+    - role: web-server
+      tags:
+        - web-server
