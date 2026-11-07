@@ -1,0 +1,550 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/web-server.yml --tags web-server_verify [--check --diff] --ask-become-pass
+# Module:      web-server
+# Requires:    web-server applied
+#
+# Verification tasks and assertions for the web-server role.
+# Why:         Validates Nginx syntax, daemon state, UFW firewall rules, virtual host routing, TLS certificates, and AIDE integrity.
+# Doc ref:     modules/web-server/self-managed/web-server-self-managed.md — Verification sections
+# Targets:     both
+
+---
+# ==============================================================================
+# Prerequisites & Binary Stat (Guards check_mode)
+# ==============================================================================
+
+# Checks if nginx binary exists on target to guard check_mode runs on unprovisioned hosts (Prerequisite Verification)
+- name: Stat nginx binary for verification guards
+  ansible.builtin.stat:
+    path: /usr/sbin/nginx
+  register: web_server_stat_nginx
+  check_mode: false
+  tags:
+    - web-server
+    - web-server_verify
+
+# Checks if auditctl binary exists on target to guard check_mode runs on unprovisioned hosts (Step 5 Verification)
+- name: Stat auditctl binary for verification guards
+  ansible.builtin.stat:
+    path: /sbin/auditctl
+  register: web_server_stat_auditctl
+  check_mode: false
+  tags:
+    - web-server
+    - web-server_verify
+
+# ==============================================================================
+# Step 1 Verification — Service Active & UFW Rule
+# ==============================================================================
+
+# Queries Nginx systemd service state (Step 1 Verification)
+- name: Query Nginx service status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active nginx
+  register: web_server_nginx_status
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts Nginx service is active (Step 1 Verification)
+- name: Assert Nginx service is active
+  ansible.builtin.assert:
+    that:
+      - web_server_nginx_status.rc == 0
+      - web_server_nginx_status.stdout.strip() == 'active'
+    fail_msg: >-
+      Nginx service is not active (status: '{{ web_server_nginx_status.stdout | default("unknown") }}').
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Queries active UFW firewall rules (Step 1 Verification)
+- name: Query UFW status
+  ansible.builtin.command:
+    cmd: ufw status
+  register: web_server_ufw_status
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts UFW allows incoming traffic for Nginx Full profile (Step 1 Verification)
+- name: Assert UFW rule for Nginx Full exists
+  vars:
+    web_server_ufw_lines: "{{ web_server_ufw_status.stdout_lines | default([]) }}"
+  ansible.builtin.assert:
+    that:
+      - web_server_ufw_lines | select('search', 'Nginx Full') | select('search', 'ALLOW') | list | length > 0
+    fail_msg: >-
+      UFW status does not contain ALLOW rule for 'Nginx Full':
+      {{ web_server_ufw_status.stdout | default('') }}
+  when: not ansible_check_mode
+  tags:
+    - web-server
+    - web-server_verify
+
+# ==============================================================================
+# Step 2 Verification — TLS Certificates (Self-Signed & Let's Encrypt)
+# ==============================================================================
+
+# Checks presence of self-signed certificate and private key on disk (Step 2 Verification - VM)
+# VM only
+- name: Check self-signed certificate and key files
+  ansible.builtin.stat:
+    path: "{{ item.path }}"
+  register: web_server_stat_self_signed
+  loop:
+    - { path: /etc/nginx/ssl/nginx-selfsigned.crt, mode: '0644' }
+    - { path: /etc/nginx/ssl/nginx-selfsigned.key, mode: '0600' }
+  check_mode: false
+  when:
+    - tls_mode == 'self_signed'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts self-signed certificate and private key exist with required restrictive permissions (Step 2 Verification - VM)
+# VM only
+- name: Assert self-signed certificate files and modes
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.mode == item.item.mode
+    fail_msg: >-
+      Self-signed file '{{ item.item.path }}' is missing or has incorrect mode (expected {{ item.item.mode }}, got {{ item.stat.mode | default('absent') }}).
+  loop: "{{ web_server_stat_self_signed.results | default([]) }}"
+  when:
+    - tls_mode == 'self_signed'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Queries self-signed certificate subject DN via OpenSSL (Step 2 Verification - VM)
+# VM only
+- name: Query self-signed certificate subject
+  ansible.builtin.command:
+    cmd: openssl x509 -in /etc/nginx/ssl/nginx-selfsigned.crt -noout -subject
+  register: web_server_openssl_subject
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - tls_mode == 'self_signed'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts self-signed certificate subject matches multi-lab-local CN (Step 2 Verification - VM)
+# VM only
+- name: Assert self-signed certificate subject contains CN=multi-lab-local
+  ansible.builtin.assert:
+    that:
+      - web_server_openssl_subject.rc == 0
+      - web_server_openssl_subject.stdout is search('CN[ ]*=[ ]*multi-lab-local')
+    fail_msg: >-
+      Self-signed certificate subject does not contain CN=multi-lab-local:
+      {{ web_server_openssl_subject.stdout }}
+  when:
+    - tls_mode == 'self_signed'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Checks presence of Let's Encrypt live certificate lineage fullchain.pem on disk (Step 2 Verification - EC2)
+# EC2 only
+- name: Check Let's Encrypt live certificate lineage
+  ansible.builtin.stat:
+    path: "/etc/letsencrypt/live/{{ web_server_domain }}/fullchain.pem"
+  register: web_server_stat_letsencrypt_cert
+  check_mode: false
+  when:
+    - tls_mode == 'letsencrypt'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts Let's Encrypt live certificate lineage exists (Step 2 Verification - EC2)
+# EC2 only
+- name: Assert Let's Encrypt live certificate lineage exists
+  ansible.builtin.assert:
+    that:
+      - web_server_stat_letsencrypt_cert.stat.exists
+    fail_msg: >-
+      Let's Encrypt certificate file '/etc/letsencrypt/live/{{ web_server_domain }}/fullchain.pem' does not exist.
+  when:
+    - tls_mode == 'letsencrypt'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Queries certbot.timer systemd timer status (Step 2 Verification - EC2)
+# EC2 only
+- name: Query certbot.timer service status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active certbot.timer
+  register: web_server_certbot_timer_status
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - tls_mode == 'letsencrypt'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts certbot.timer systemd timer is active (Step 2 Verification - EC2)
+# EC2 only
+- name: Assert certbot.timer is active
+  ansible.builtin.assert:
+    that:
+      - web_server_certbot_timer_status.rc == 0
+      - web_server_certbot_timer_status.stdout.strip() == 'active'
+    fail_msg: >-
+      certbot.timer is not active (status: '{{ web_server_certbot_timer_status.stdout | default("unknown") }}').
+  when:
+    - tls_mode == 'letsencrypt'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Executes dry-run certificate renewal simulation when opt-in variable is enabled (Step 2 Verification - EC2)
+# EC2 only
+- name: Execute Certbot renewal dry-run simulation
+  ansible.builtin.command:
+    cmd: certbot renew --dry-run
+  register: web_server_certbot_renew_dry_run
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - tls_mode == 'letsencrypt'
+    - web_server_verify_renewal | default(false)
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts Certbot renewal dry-run completed successfully (Step 2 Verification - EC2)
+# EC2 only
+- name: Assert Certbot renewal dry-run succeeded
+  ansible.builtin.assert:
+    that:
+      - web_server_certbot_renew_dry_run.rc == 0
+      - "'all simulated renewals succeeded' in ((web_server_certbot_renew_dry_run.stdout ~ web_server_certbot_renew_dry_run.stderr) | lower)"
+    fail_msg: >-
+      Certbot renewal dry-run simulation failed:
+      {{ web_server_certbot_renew_dry_run.stdout }}
+      {{ web_server_certbot_renew_dry_run.stderr }}
+  when:
+    - tls_mode == 'letsencrypt'
+    - web_server_verify_renewal | default(false)
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# ==============================================================================
+# Step 3 Verification — Nginx Configuration & Virtual Host
+# ==============================================================================
+
+# Executes nginx -t to validate entire daemon configuration syntax (Step 3 Verification)
+- name: Query Nginx configuration syntax test
+  ansible.builtin.command:
+    cmd: /usr/sbin/nginx -t
+  register: web_server_nginx_test
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts nginx -t succeeds with valid configuration syntax (Step 3 Verification)
+- name: Assert Nginx configuration test is successful
+  ansible.builtin.assert:
+    that:
+      - web_server_nginx_test.rc == 0
+      - "'syntax is ok' in (web_server_nginx_test.stderr ~ web_server_nginx_test.stdout)"
+      - "'test is successful' in (web_server_nginx_test.stderr ~ web_server_nginx_test.stdout)"
+    fail_msg: >-
+      Nginx configuration test failed:
+      {{ web_server_nginx_test.stderr | default(web_server_nginx_test.stdout) }}
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Checks that default site symlink in sites-enabled is removed (Step 3 Verification)
+- name: Check /etc/nginx/sites-enabled/default is absent
+  ansible.builtin.stat:
+    path: /etc/nginx/sites-enabled/default
+  register: web_server_stat_default_site
+  check_mode: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts default site symlink is absent (Step 3 Verification)
+- name: Assert /etc/nginx/sites-enabled/default is absent
+  ansible.builtin.assert:
+    that:
+      - not web_server_stat_default_site.stat.exists
+    fail_msg: >-
+      Default Nginx site symlink /etc/nginx/sites-enabled/default is still present.
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Checks that multi-lab.conf exists in sites-enabled as an active symbolic link (Step 3 Verification)
+- name: Check /etc/nginx/sites-enabled/multi-lab.conf is active symlink
+  ansible.builtin.stat:
+    path: /etc/nginx/sites-enabled/multi-lab.conf
+  register: web_server_stat_multilab_site
+  check_mode: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts multi-lab.conf is an active symlink pointing to sites-available (Step 3 Verification)
+- name: Assert /etc/nginx/sites-enabled/multi-lab.conf is active symlink
+  ansible.builtin.assert:
+    that:
+      - web_server_stat_multilab_site.stat.exists
+      - web_server_stat_multilab_site.stat.islnk
+      - web_server_stat_multilab_site.stat.lnk_target == '/etc/nginx/sites-available/multi-lab.conf'
+    fail_msg: >-
+      /etc/nginx/sites-enabled/multi-lab.conf is not an active symlink pointing to /etc/nginx/sites-available/multi-lab.conf.
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Dumps active Nginx configuration using nginx -T to verify in-memory directive parsing (Step 3 Verification)
+- name: Query active Nginx configuration dump via nginx -T
+  ansible.builtin.command:
+    cmd: /usr/sbin/nginx -T
+  register: web_server_nginx_dump
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts proxy_pass contains configured upstream port and no unreplaced placeholder (Step 3 Verification)
+- name: Assert proxy_pass with upstream port is present in active configuration
+  ansible.builtin.assert:
+    that:
+      - web_server_nginx_dump.stdout is search('proxy_pass[ ]+http://127[.]0[.]0[.]1:' ~ (web_server_upstream_port | string) ~ '/;')
+      - "'<upstream_port>' not in web_server_nginx_dump.stdout"
+    fail_msg: >-
+      Active Nginx configuration dump does not contain expected proxy_pass directive
+      for upstream port {{ web_server_upstream_port }} or still contains '<upstream_port>'.
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Checks that lab index page is deployed in document root (Step 3 Verification)
+- name: Check /var/www/html/index.html is deployed
+  ansible.builtin.stat:
+    path: /var/www/html/index.html
+  register: web_server_stat_index_html
+  check_mode: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts /var/www/html/index.html exists with mode 0644 (Step 3 Verification)
+- name: Assert /var/www/html/index.html exists with mode 0644
+  ansible.builtin.assert:
+    that:
+      - web_server_stat_index_html.stat.exists
+      - web_server_stat_index_html.stat.mode == '0644'
+    fail_msg: >-
+      Document root index page /var/www/html/index.html is missing or has incorrect permissions.
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# ==============================================================================
+# Step 4 Verification — HTTP to HTTPS Redirect & Loopback HTTPS
+# ==============================================================================
+
+# Queries HTTP endpoint on loopback to verify 301 upgrade redirect (Step 4 Verification)
+- name: Query HTTP to HTTPS redirect on loopback # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: curl -s -I http://localhost
+  register: web_server_http_curl
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts HTTP request returns 301 Moved Permanently redirect to HTTPS (Step 4 Verification)
+- name: Assert HTTP request returns 301 redirect to HTTPS
+  ansible.builtin.assert:
+    that:
+      - web_server_http_curl.rc == 0
+      - web_server_http_curl.stdout is search('HTTP/(1[.]1|2)[ ]+301')
+      - web_server_http_curl.stdout is search('(?i)location:[ ]*https://')
+    fail_msg: >-
+      HTTP request to http://localhost did not return expected 301 redirect to https:
+      {{ web_server_http_curl.stdout }}
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Queries HTTPS endpoint on loopback using curl -k (Reverse Proxy Verification)
+- name: Query HTTPS response on loopback # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: curl -k -s -I https://localhost
+  register: web_server_https_curl
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts HTTPS response status code is either 502 (no backend listening) or 200 (backend listening) (Reverse Proxy Verification)
+- name: Assert HTTPS response returns 502 or 200
+  ansible.builtin.assert:
+    that:
+      - web_server_https_curl.rc == 0
+      - web_server_https_curl.stdout is search('HTTP/(1[.]1|2)[ ]+(502|200)')
+    fail_msg: >-
+      HTTPS request to https://localhost did not return expected status code (502 Bad Gateway or 200 OK):
+      {{ web_server_https_curl.stdout }}
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# ==============================================================================
+# Step 5 Verification — auditd Web Server Rule
+# ==============================================================================
+
+# Queries active auditd rules from the kernel using auditctl -l (Step 5 Verification)
+- name: Query active auditd rules via auditctl -l
+  ansible.builtin.command:
+    cmd: /sbin/auditctl -l
+  register: web_server_auditctl_list
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or web_server_stat_auditctl.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Displays notice when audit rule is staged in immutable mode awaiting manual reboot (Step 5 Verification)
+- name: Display notice for staged auditd rules awaiting reboot
+  ansible.builtin.debug:
+    msg: "audit rule staged; reboot required to load into kernel"
+  when:
+    - (web_server_audit_rules_deploy.changed | default(false))
+    - hardening_auditd_immutable_mode
+    - not (web_server_auditd_reboot | default(false))
+    - not ansible_check_mode or web_server_stat_auditctl.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts active auditd rules contain nginx_config key when rules are loaded (Step 5 Verification)
+- name: Assert auditd rules monitor Nginx configuration
+  ansible.builtin.assert:
+    that:
+      - web_server_auditctl_list.rc == 0
+      - web_server_auditctl_list.stdout is search('-w /etc/nginx/? -p wa -k nginx_config')
+    fail_msg: >-
+      Active auditd rules do not contain expected watch for '/etc/nginx' with key 'nginx_config'.
+      Auditctl output: {{ web_server_auditctl_list.stdout | default('') }}
+  when:
+    - not ansible_check_mode or web_server_stat_auditctl.stat.exists
+    - not ((web_server_audit_rules_deploy.changed | default(false)) and
+           hardening_auditd_immutable_mode and
+           not (web_server_auditd_reboot | default(false)))
+  tags:
+    - web-server
+    - web-server_verify
+
+# ==============================================================================
+# Step 6 Verification — AIDE Baseline Drop-in & Syntax
+# ==============================================================================
+
+# Checks presence and permissions of AIDE web-server drop-in configuration (Step 6 Verification)
+- name: Check AIDE drop-in 99-zz-web-server exists
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d/99-zz-web-server
+  register: web_server_stat_aide_dropin
+  check_mode: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts AIDE drop-in 99-zz-web-server exists with mode 0644 (Step 6 Verification)
+- name: Assert AIDE drop-in 99-zz-web-server exists with mode 0644
+  ansible.builtin.assert:
+    that:
+      - web_server_stat_aide_dropin.stat.exists
+      - web_server_stat_aide_dropin.stat.mode == '0644'
+    fail_msg: >-
+      AIDE drop-in /etc/aide/aide.conf.d/99-zz-web-server does not exist or has incorrect permissions.
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Checks AIDE configuration syntax with aide --config-check (Step 6 Verification)
+- name: Check AIDE configuration syntax
+  ansible.builtin.command:
+    cmd: /usr/bin/aide --config-check --config /etc/aide/aide.conf
+  register: web_server_aide_check
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify
+
+# Asserts AIDE configuration check returns exit code 0 (Step 6 Verification)
+- name: Assert AIDE configuration syntax is valid
+  ansible.builtin.assert:
+    that:
+      - web_server_aide_check.rc == 0
+    fail_msg: >-
+      AIDE configuration check failed:
+      {{ web_server_aide_check.stderr | default(web_server_aide_check.stdout) }}
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
+  tags:
+    - web-server
+    - web-server_verify

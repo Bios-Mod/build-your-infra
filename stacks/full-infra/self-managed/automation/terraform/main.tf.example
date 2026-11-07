@@ -198,3 +198,19 @@ resource "aws_eip_association" "main" {
   instance_id   = aws_instance.main.id
   allocation_id = aws_eip.main.id
 }
+
+data "aws_route53_zone" "lab" {
+  count        = var.route53_zone_name != "" ? 1 : 0
+  name         = var.route53_zone_name
+  private_zone = false
+}
+
+resource "aws_route53_record" "lab_a" {
+  count           = var.route53_zone_name != "" ? 1 : 0
+  zone_id         = data.aws_route53_zone.lab[0].zone_id
+  name            = var.route53_zone_name
+  type            = "A"
+  ttl             = 300
+  records         = [aws_eip.main.public_ip]
+  allow_overwrite = true
+}

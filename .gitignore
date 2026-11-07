@@ -44,3 +44,5 @@ stacks/full-infra/self-managed/automation/ansible/inventories/host_vars/*.yml
 venv/
 *.retry
 .ansible/
+
+.agents/

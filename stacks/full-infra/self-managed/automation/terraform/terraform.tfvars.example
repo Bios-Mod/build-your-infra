@@ -15,3 +15,6 @@ key_name      = "multi-lab-key"
 # Optional temporary SSH access (normally passed via CLI during terraform apply, e.g. -var "ssh_bootstrap_cidr=$(curl -s ifconfig.me)/32")
 # ssh_bootstrap_cidr = ""
 # ssh_hardened_cidr  = ""
+
+# Public Route 53 zone name for the lab web-server A record pointing to the Elastic IP
+route53_zone_name = "buildyourinfra.click"
