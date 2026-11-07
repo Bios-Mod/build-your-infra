@@ -150,7 +150,7 @@
   ansible.builtin.assert:
     that:
       - web_server_openssl_subject.rc == 0
-      - "'CN = multi-lab-local' in web_server_openssl_subject.stdout or 'CN=multi-lab-local' in web_server_openssl_subject.stdout"
+      - web_server_openssl_subject.stdout is search('CN[ ]*=[ ]*multi-lab-local')
     fail_msg: >-
       Self-signed certificate subject does not contain CN=multi-lab-local:
       {{ web_server_openssl_subject.stdout }}
@@ -245,7 +245,7 @@
   ansible.builtin.assert:
     that:
       - web_server_certbot_renew_dry_run.rc == 0
-      - "'all simulated renewals succeeded' in (web_server_certbot_renew_dry_run.stdout | lower)"
+      - "'all simulated renewals succeeded' in ((web_server_certbot_renew_dry_run.stdout ~ web_server_certbot_renew_dry_run.stderr) | lower)"
     fail_msg: >-
       Certbot renewal dry-run simulation failed:
       {{ web_server_certbot_renew_dry_run.stdout }}
@@ -280,11 +280,11 @@
   ansible.builtin.assert:
     that:
       - web_server_nginx_test.rc == 0
-      - "'syntax is ok' in web_server_nginx_test.stderr"
-      - "'test is successful' in web_server_nginx_test.stderr"
+      - "'syntax is ok' in (web_server_nginx_test.stderr ~ web_server_nginx_test.stdout)"
+      - "'test is successful' in (web_server_nginx_test.stderr ~ web_server_nginx_test.stdout)"
     fail_msg: >-
       Nginx configuration test failed:
-      {{ web_server_nginx_test.stderr }}
+      {{ web_server_nginx_test.stderr | default(web_server_nginx_test.stdout) }}
   when: not ansible_check_mode or web_server_stat_nginx.stat.exists
   tags:
     - web-server
@@ -354,11 +354,11 @@
 - name: Assert proxy_pass with upstream port is present in active configuration
   ansible.builtin.assert:
     that:
-      - ("proxy_pass http://127.0.0.1:" ~ (web_server_upstream_port | string) ~ "/;") in web_server_nginx_dump.stdout
+      - web_server_nginx_dump.stdout is search('proxy_pass[ ]+http://127[.]0[.]0[.]1:' ~ (web_server_upstream_port | string) ~ '/;')
       - "'<upstream_port>' not in web_server_nginx_dump.stdout"
     fail_msg: >-
       Active Nginx configuration dump does not contain expected proxy_pass directive
-      'proxy_pass http://127.0.0.1:{{ web_server_upstream_port }}/;' or still contains '<upstream_port>'.
+      for upstream port {{ web_server_upstream_port }} or still contains '<upstream_port>'.
   when: not ansible_check_mode or web_server_stat_nginx.stat.exists
   tags:
     - web-server
@@ -410,8 +410,8 @@
   ansible.builtin.assert:
     that:
       - web_server_http_curl.rc == 0
-      - "'301 Moved Permanently' in web_server_http_curl.stdout or '301' in (web_server_http_curl.stdout_lines | first | default(''))"
-      - "'location: https://' in (web_server_http_curl.stdout | lower)"
+      - web_server_http_curl.stdout is search('HTTP/(1[.]1|2)[ ]+301')
+      - web_server_http_curl.stdout is search('(?i)location:[ ]*https://')
     fail_msg: >-
       HTTP request to http://localhost did not return expected 301 redirect to https:
       {{ web_server_http_curl.stdout }}
@@ -438,7 +438,7 @@
   ansible.builtin.assert:
     that:
       - web_server_https_curl.rc == 0
-      - "'502' in web_server_https_curl.stdout or '200' in web_server_https_curl.stdout"
+      - web_server_https_curl.stdout is search('HTTP/(1[.]1|2)[ ]+(502|200)')
     fail_msg: >-
       HTTPS request to https://localhost did not return expected status code (502 Bad Gateway or 200 OK):
       {{ web_server_https_curl.stdout }}
@@ -482,9 +482,9 @@
   ansible.builtin.assert:
     that:
       - web_server_auditctl_list.rc == 0
-      - "'nginx_config' in web_server_auditctl_list.stdout"
+      - web_server_auditctl_list.stdout is search('-w /etc/nginx/? -p wa -k nginx_config')
     fail_msg: >-
-      Active auditd rules do not contain key 'nginx_config'.
+      Active auditd rules do not contain expected watch for '/etc/nginx' with key 'nginx_config'.
       Auditctl output: {{ web_server_auditctl_list.stdout | default('') }}
   when:
     - not ansible_check_mode or web_server_stat_auditctl.stat.exists

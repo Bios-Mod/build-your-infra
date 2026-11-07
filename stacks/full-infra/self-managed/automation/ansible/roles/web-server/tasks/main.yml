@@ -120,6 +120,88 @@
     - web-server
 
 # ==============================================================================
+# Pre-flight Binary & Directory Stat (Guards check_mode on clean hosts)
+# ==============================================================================
+
+# Checks if Nginx binary exists on target to allow dry-run (--check) on unprovisioned hosts (Step 1)
+- name: Stat nginx binary
+  ansible.builtin.stat:
+    path: /usr/sbin/nginx
+  register: web_server_stat_nginx
+  check_mode: false
+  tags:
+    - web-server
+
+# Checks if Nginx UFW application profile exists to allow dry-run (--check) on unprovisioned hosts (Step 1)
+- name: Stat Nginx UFW application profile
+  ansible.builtin.stat:
+    path: /etc/ufw/applications.d/nginx
+  register: web_server_stat_ufw_nginx
+  check_mode: false
+  tags:
+    - web-server
+
+# Checks if self-signed TLS private key exists to allow dry-run (--check) on unprovisioned hosts (Step 2 - VM)
+# VM only
+- name: Stat self-signed TLS private key
+  ansible.builtin.stat:
+    path: /etc/nginx/ssl/nginx-selfsigned.key
+  register: web_server_stat_self_signed_key
+  check_mode: false
+  when: tls_mode == 'self_signed'
+  tags:
+    - web-server
+
+# Checks if self-signed TLS certificate exists to allow dry-run (--check) on unprovisioned hosts (Step 2 - VM)
+# VM only
+- name: Stat self-signed TLS certificate
+  ansible.builtin.stat:
+    path: /etc/nginx/ssl/nginx-selfsigned.crt
+  register: web_server_stat_self_signed_cert
+  check_mode: false
+  when: tls_mode == 'self_signed'
+  tags:
+    - web-server
+
+# Checks if certbot.timer systemd unit exists to allow dry-run (--check) on unprovisioned hosts (Step 2 - EC2)
+# EC2 only
+- name: Stat certbot.timer systemd unit
+  ansible.builtin.stat:
+    path: /usr/lib/systemd/system/certbot.timer
+  register: web_server_stat_certbot_timer
+  check_mode: false
+  when: tls_mode == 'letsencrypt'
+  tags:
+    - web-server
+
+# Checks if Nginx sites-enabled directory exists to allow dry-run (--check) on unprovisioned hosts (Step 3)
+- name: Stat /etc/nginx/sites-enabled directory
+  ansible.builtin.stat:
+    path: /etc/nginx/sites-enabled
+  register: web_server_stat_sites_enabled
+  check_mode: false
+  tags:
+    - web-server
+
+# Checks if /var/www/html document root exists to allow dry-run (--check) on unprovisioned hosts (Step 3)
+- name: Stat /var/www/html directory
+  ansible.builtin.stat:
+    path: /var/www/html
+  register: web_server_stat_www_dir
+  check_mode: false
+  tags:
+    - web-server
+
+# Checks if auditd rules directory exists to allow dry-run (--check) on unprovisioned hosts (Step 5)
+- name: Stat auditd rules directory
+  ansible.builtin.stat:
+    path: /etc/audit/rules.d
+  register: web_server_stat_audit_rules_dir
+  check_mode: false
+  tags:
+    - web-server
+
+# ==============================================================================
 # Step 1 — Install Nginx and Open Firewall
 # ==============================================================================
 
@@ -138,6 +220,7 @@
     name: nginx
     state: started
     enabled: true
+  when: not ansible_check_mode or web_server_stat_nginx.stat.exists
   tags:
     - web-server
 
@@ -146,6 +229,7 @@
   community.general.ufw:
     rule: allow
     name: "Nginx Full"
+  when: not ansible_check_mode or web_server_stat_ufw_nginx.stat.exists
   tags:
     - web-server
 
@@ -162,7 +246,9 @@
     owner: root
     group: root
     mode: "0755"
-  when: tls_mode == 'self_signed'
+  when:
+    - tls_mode == 'self_signed'
+    - not ansible_check_mode or web_server_stat_nginx.stat.exists
   tags:
     - web-server
 
@@ -189,7 +275,9 @@
     owner: root
     group: root
     mode: "0600"
-  when: tls_mode == 'self_signed'
+  when:
+    - tls_mode == 'self_signed'
+    - not ansible_check_mode or web_server_stat_self_signed_key.stat.exists
   tags:
     - web-server
 
@@ -201,7 +289,9 @@
     owner: root
     group: root
     mode: "0644"
-  when: tls_mode == 'self_signed'
+  when:
+    - tls_mode == 'self_signed'
+    - not ansible_check_mode or web_server_stat_self_signed_cert.stat.exists
   tags:
     - web-server
 
@@ -344,7 +434,9 @@
     name: certbot.timer
     state: started
     enabled: true
-  when: tls_mode == 'letsencrypt'
+  when:
+    - tls_mode == 'letsencrypt'
+    - not ansible_check_mode or web_server_stat_certbot_timer.stat.exists
   tags:
     - web-server
 
@@ -359,6 +451,7 @@
     state: absent
   notify:
     - Reload nginx (web-server)
+  when: not ansible_check_mode or web_server_stat_sites_enabled.stat.exists
   tags:
     - web-server
 
@@ -380,7 +473,9 @@
     mode: "0644"
   notify:
     - Reload nginx (web-server)
-  when: tls_mode == 'self_signed'
+  when:
+    - tls_mode == 'self_signed'
+    - not ansible_check_mode or web_server_stat_sites_enabled.stat.exists
   tags:
     - web-server
 
@@ -403,7 +498,9 @@
     mode: "0644"
   notify:
     - Reload nginx (web-server)
-  when: tls_mode == 'letsencrypt'
+  when:
+    - tls_mode == 'letsencrypt'
+    - not ansible_check_mode or web_server_stat_sites_enabled.stat.exists
   tags:
     - web-server
 
@@ -417,6 +514,7 @@
     group: root
   notify:
     - Reload nginx (web-server)
+  when: not ansible_check_mode or web_server_stat_sites_enabled.stat.exists
   tags:
     - web-server
 
@@ -456,6 +554,7 @@
     owner: root
     group: root
     mode: "0644"
+  when: not ansible_check_mode or web_server_stat_www_dir.stat.exists
   tags:
     - web-server
 
@@ -476,8 +575,8 @@
       {{
         web_server_audit_header ~ web_server_nl ~
         ((web_server_audit_raw.splitlines() |
-          reject('match', '^[ \t]*#') |
           map('trim') |
+          reject('match', '^#') |
           reject('equalto', '')) |
          join(web_server_nl)) ~ web_server_nl
       }}
@@ -488,6 +587,7 @@
   register: web_server_audit_rules_deploy
   notify:
     - Load auditd rules (web-server)
+  when: not ansible_check_mode or web_server_stat_audit_rules_dir.stat.exists
   tags:
     - web-server
 
