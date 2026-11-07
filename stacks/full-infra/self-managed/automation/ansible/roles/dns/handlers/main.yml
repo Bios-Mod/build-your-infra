@@ -1,0 +1,61 @@
+# Deploy to:   dns_servers
+# Apply:       triggered via notify from dns tasks
+# Module:      dns
+# Requires:    none
+#
+# Service handlers for the dns role.
+# Why:         Ensures affected daemons (named), AIDE integrity baseline, and network routing (Netplan) absorb changes idempotently.
+# Doc ref:     modules/dns/self-managed/dns-self-managed.md — Steps 2, 3, 6, 7
+# Targets:     ec2
+
+---
+# Reloads BIND9 DNS daemon to apply updated configuration or zone files (Steps 2, 3)
+- name: Reload named (dns)
+  ansible.builtin.systemd_service:
+    name: named
+    state: reloaded
+
+# Initializes updated AIDE database baseline for BIND9 configs and zone files (Step 6)
+- name: Initialize AIDE database (dns)
+  ansible.builtin.command:
+    cmd: aide --init --config /etc/aide/aide.conf
+  register: dns_aide_init
+  failed_when: dns_aide_init.rc not in [0, 17]
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (dns)
+
+# Activates the newly initialized AIDE database baseline (Step 6)
+- name: Activate AIDE database (dns)
+  ansible.builtin.command:
+    cmd: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (dns)
+
+# Generates backend network configuration files from Netplan definition (Step 7)
+- name: Generate netplan configuration (dns)
+  ansible.builtin.command:
+    cmd: netplan generate
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Apply netplan (dns)
+
+# Applies Netplan configuration to update running network daemons and systemd-resolved (Step 7)
+- name: Apply netplan configuration (dns)
+  ansible.builtin.command:
+    cmd: netplan apply
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Apply netplan (dns)
+
+# Restarts systemd-resolved to ensure 127.0.0.1 is selected as the current DNS server (Step 7)
+# With 127.0.0.1 and 10.0.0.2 on the same interface, systemd-resolved retains the current server and only falls over on failure.
+# If 127.0.0.1 was not responding at apply time, resolved stays with VPC resolver 10.0.0.2 (which returns NXDOMAIN for lab.internal).
+# Restarting systemd-resolved with named active resets selection to the primary server (127.0.0.1).
+- name: Restart systemd-resolved (dns)
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: restarted
+  when: not ansible_check_mode
+  listen: Apply netplan (dns)

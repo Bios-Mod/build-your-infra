@@ -20,7 +20,7 @@ This document automates the self-managed stack in two decoupled phases:
 │ Configuration Layer (Ansible)                                          │
 │ • Control node toolchain: pinned ansible-core, venv, collections       │
 │ • Hardening: baseline (Steps 0–2) · access chain (3–6) · system (7–12) │
-│ • Modules, one after another: file-transfer, ...                       │
+│ • Modules, one after another: file-transfer, dns, ...                  │
 └────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -716,4 +716,145 @@ Clean up the client:
 
 ```bash
 rm /tmp/sftp_test.txt
+```
+
+---
+
+## DNS — BIND9 Authoritative Service
+
+**Starting point:** hardening is finished on both targets, EC2 uses `connection_mode: "wg"` in `inventories/host_vars/multi-lab-vps.yml`, and the WireGuard tunnel is up on the Mac. Nothing else has to be prepared before this section.
+
+It automates [`dns-self-managed.md`](../../../../modules/dns/self-managed/dns-self-managed.md): an internal authoritative BIND9 DNS server for `lab.internal` and reverse lookup zone `0.16.172.in-addr.arpa`, deployed exclusively on the EC2 hub (`172.16.0.1`).
+
+### Step 1 — Apply (Tag `dns`)
+
+#### What was done
+
+The `dns` role reproduces on EC2 (`dns_servers`) the state that the manual module leaves behind: BIND9 packages and checking utilities installed, `named.conf.options` restricting recursion and queries to `lab-net`, forward and reverse zone database files in `/etc/bind/zones/`, `named.conf.local` referencing the zones, full configuration checked with `named-checkconf -z`, `named` service enabled and started, UFW rules allowing UDP and TCP port 53 on `wg0`, AIDE drop-in `/etc/aide/aide.conf.d/99-zz-dns` validated with `aide --config-check`, and Netplan overlay `/etc/netplan/51-dns-lab.yaml` pointing the system resolver to `127.0.0.1` with the VPC resolver (`10.0.0.2`) as fallback (restarting `systemd-resolved` to lock resolution to loopback).
+
+Ensure `connection_mode: "wg"` is set in `inventories/host_vars/multi-lab-vps.yml`. With the WireGuard tunnel up, run the three commands in order on the EC2 hub: a dry run to review the diff, the real apply, and a second apply that must report `changed=0`.
+
+**Control node (Mac):**
+
+```bash
+ansible-playbook playbooks/dns.yml --limit multi-lab-vps --check --diff --ask-become-pass
+ansible-playbook playbooks/dns.yml --limit multi-lab-vps --ask-become-pass
+ansible-playbook playbooks/dns.yml --limit multi-lab-vps --ask-become-pass
+# → second run: changed=0
+```
+
+Following the playbook run, complete the manual steps outside Ansible:
+
+**EC2 · multi-lab-vps:**
+
+Append the auditd monitoring rule for BIND9 configuration and zone directories (manual Step 5):
+
+```bash
+sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/dns/self-managed/configs/audit/99-hardening.rules
+sudo augenrules --load
+sudo systemctl restart auditd
+```
+
+> Hardening locks auditd in immutable mode (`-e 2`) and clears rules with `-D`. If auditd fails to restart due to immutable mode, reboot the EC2 instance (`sudo reboot now`) to load the new rule.
+
+**VM · multi-lab-local:**
+
+Configure WireGuard client DNS resolution to point to the EC2 DNS server (`172.16.0.1`):
+
+> [!WARNING]
+> Execute these commands over the local VM LAN connection, not through the WireGuard tunnel itself. Restarting `wg-quick@wg0` temporarily drops tunnel traffic. If the hardening Step 5 task is subsequently re-run on the VM, it restores the default Quad9 DNS in `wg0.conf`, requiring this manual step to be repeated.
+
+```bash
+sudo sed -i 's/^DNS\s*=.*/DNS = 172.16.0.1/' /etc/wireguard/wg0.conf
+sudo systemctl restart wg-quick@wg0
+```
+
+**Control node (Mac):**
+
+For macOS WireGuard DNS behavior and optional fallback configuration, follow [manual Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9).
+
+#### Why
+
+- **Configs as single source of truth:** the role copies files directly from `modules/dns/self-managed/configs/` without altering repo configs or manual documentation text. The configuration files take precedence over descriptive documentation.
+- **Ordering (named before Netplan):** Netplan overlay `51-dns-lab.yaml` configures systemd-resolved to prioritize `127.0.0.1`. BIND9 must be fully running and validated (`named-checkconf -z`) before Netplan is applied to prevent local resolution failures.
+- **Dedicated AIDE drop-in and syntax check:** hardening owns `/etc/aide/aide.conf.d/99-hardening`. The role deploys `/etc/aide/aide.conf.d/99-zz-dns` (ordered after `99-hardening`, which defines the `CONTENTEX` group) as an independent drop-in, validates configuration syntax with `aide --config-check` before flushing handlers, and regenerates the database only if the drop-in changes.
+- **Restarting systemd-resolved:** with `127.0.0.1` and `10.0.0.2` on the same interface (`ens5`), `systemd-resolved` retains its current server and only falls over on failure. If `127.0.0.1` was not responding at apply time, resolved stays with the VPC resolver (`10.0.0.2`), which returns NXDOMAIN for `lab.internal`. Restarting `systemd-resolved` after Netplan application while BIND9 is active resets query routing to the primary server (`127.0.0.1`).
+- **VPC domain forwarding and DNSSEC exception:** queries for internal VPC names (e.g. `*.compute.internal`) and reverse lookups for the host VPC IP (e.g. `141.1.0.10.in-addr.arpa` in `10.in-addr.arpa`) fail DNSSEC validation in Quad9 forwarders (`broken trust chain`), returning SERVFAIL. As a result, `systemd-resolved` marks `127.0.0.1` defective and permanently falls back to the VPC resolver (`10.0.0.2`), which returns NXDOMAIN for `lab.internal`. The role adds `validate-except { "compute.internal"; "10.in-addr.arpa"; };` in `named.conf.options` and two forward-only zones (`compute.internal` and `10.in-addr.arpa`) pointing to `10.0.0.2` in `named.conf.local` without modifying manual configs.
+- **Manual auditd rule:** `-D` (flush rules) and `-e 2` (immutable mode) in `99-hardening.rules` prevent dynamic drop-in rule insertion at runtime without a kernel restart. The manually added audit rule lives in `99-hardening.rules`, owned by hardening: if Step 10 of hardening is re-run, the file is restored and the `dns_config` rule disappears, so it must be added again.
+- **Manual peer DNS configuration:** the `hardening` role owns `/etc/wireguard/wg0.conf` on peers and would overwrite external changes during subsequent hardening runs.
+- **Exclusion of Step 8:** pre-AMI sanitization of `/etc/resolv.conf` is omitted because the automated provisioning architecture is greenfield (Terraform and Ansible build clean environments), removing dependencies on golden AMIs.
+
+#### Verification
+
+**EC2 · multi-lab-vps · Run on control node:**
+
+```bash
+ansible-playbook playbooks/dns.yml --limit multi-lab-vps --tags dns_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+Verify service status and config syntax directly on the EC2 host:
+
+**EC2 · multi-lab-vps:**
+
+```bash
+sudo named-checkconf
+# → (no output)
+
+sudo systemctl is-active named
+# → active
+```
+
+---
+
+### Step 2 — Verify (Tag `dns_verify`)
+
+#### What was done
+
+Run the role assertions without re-applying anything, and test DNS resolution across the WireGuard tunnel from the local VM client.
+
+**EC2 · multi-lab-vps · Run on control node:**
+
+```bash
+ansible-playbook playbooks/dns.yml --limit multi-lab-vps --tags dns_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+What the assertions check on EC2 (`multi-lab-vps`):
+
+| Check | Expected | Manual verification |
+| --- | --- | --- |
+| `named` daemon | Active and running | [Step 1](../../../../modules/dns/self-managed/dns-self-managed.md#step-1--install-bind9) |
+| BIND9 configuration | Syntax clean, forward and reverse zones loaded (`named-checkconf -z`) | [Step 2 & 3](../../../../modules/dns/self-managed/dns-self-managed.md#step-2--configure-namedconfoptions) |
+| Socket listener | UDP port 53 listening on `127.0.0.1` and `172.16.0.1` (`ss -ulnH`) | [Step 2](../../../../modules/dns/self-managed/dns-self-managed.md#step-2--configure-namedconfoptions) |
+| Forward resolution | `ns1.lab.internal` and `vps.lab.internal` resolve to `172.16.0.1` | [Step 3](../../../../modules/dns/self-managed/dns-self-managed.md#step-3--zone-configuration-forward--reverse) |
+| Reverse resolution | `172.16.0.1` resolves to `ns1.lab.internal.` and `vps.lab.internal.` | [Step 3](../../../../modules/dns/self-managed/dns-self-managed.md#step-3--zone-configuration-forward--reverse) |
+| External recursion | `google.com` resolves via forwarders | [Step 2](../../../../modules/dns/self-managed/dns-self-managed.md#step-2--configure-namedconfoptions) |
+| UFW rules | Incoming `53/udp` and `53/tcp` allowed on `wg0` (`ALLOW IN`) | [Step 4](../../../../modules/dns/self-managed/dns-self-managed.md#step-4--ufw-allow-dns) |
+| Netplan resolver | `ens5` configured with `127.0.0.1`, `10.0.0.2` and domain `lab.internal` | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
+| System resolution | Local system resolver resolves `ns1.lab.internal` to `172.16.0.1` | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
+| PTR of the VPC host IP via BIND | NOERROR | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
+| Active DNS server | Current DNS Server: 127.0.0.1 (no fallback to VPC resolver) | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
+| AIDE integrity | Drop-in `99-zz-dns` monitors `/etc/bind` and excludes `/var/cache/bind` | [Step 6](../../../../modules/dns/self-managed/dns-self-managed.md#step-6--aide-extend-baseline) |
+
+After rebooting the host, if `resolvectl status ens5` shows `Current DNS Server: 10.0.0.2`, restart `systemd-resolved` to switch back to the local resolver (the role only restarts it when applying the Netplan overlay). This recovery command must also be executed once if the role is applied on a host where `systemd-resolved` has already fallen back to `10.0.0.2`:
+
+**EC2 · multi-lab-vps:**
+
+```bash
+sudo systemctl restart systemd-resolved
+resolvectl status ens5 | grep "Current DNS Server"
+# → Current DNS Server: 127.0.0.1
+```
+
+Test resolution from the WireGuard peer over the tunnel:
+
+**VM · multi-lab-local:**
+
+```bash
+dig @172.16.0.1 vps.lab.internal +short
+# → 172.16.0.1
+
+dig google.com +short
+# → <valid IP>
 ```
