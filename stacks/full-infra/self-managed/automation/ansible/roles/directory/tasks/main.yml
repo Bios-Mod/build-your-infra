@@ -1,0 +1,524 @@
+# Deploy to:   directory_servers
+# Apply:       ansible-playbook playbooks/directory.yml [--tags <tag>] [--check --diff] --ask-become-pass
+# Module:      directory
+# Requires:    playbooks/hardening.yml, playbooks/dns.yml executed
+#
+# Task orchestration entry point for the directory role.
+# Why:         Provisions Samba 4 AD DC with internal DNS, Kerberos realm, UFW perimeter rules, auditd and AIDE integrity monitoring.
+# Doc ref:     modules/directory/self-managed/directory-self-managed.md — Steps 1, 2, 3, 4, 5, 6, 7, 9, 10
+# Targets:     ec2
+
+---
+# ==============================================================================
+# Pre-flight Checks (Prerequisites)
+# ==============================================================================
+
+# Queries active OpenSSH daemon configuration to verify hardening baseline port is active (Hardening prerequisite)
+- name: Query active OpenSSH daemon configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -T
+  register: directory_sshd_config_query
+  check_mode: false
+  changed_when: false
+  tags:
+    - directory
+
+# Asserts that the hardening baseline is applied by checking the active SSH port matches hardening_ssh_port
+- name: Assert hardening baseline is applied
+  ansible.builtin.assert:
+    that:
+      - ("port " ~ (hardening_ssh_port | string)) in directory_sshd_config_query.stdout_lines
+    fail_msg: >-
+      Hardening baseline prerequisite not met: active OpenSSH port is not {{ hardening_ssh_port }}.
+      Ensure role 'hardening' is fully deployed on the target before deploying 'directory'.
+  tags:
+    - directory
+
+# Asserts directory_dc_ip is defined, matches IPv4 address format, and equals default_ipv4 address
+- name: Assert directory_dc_ip matches host network configuration
+  ansible.builtin.assert:
+    that:
+      - directory_dc_ip is defined
+      - directory_dc_ip | length > 0
+      - "'CHANGE_ME' not in directory_dc_ip"
+      - directory_dc_ip is match('^[0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}[.][0-9]{1,3}$')
+      - directory_dc_ip == ansible_facts['default_ipv4']['address']
+    fail_msg: >-
+      Invalid directory_dc_ip '{{ directory_dc_ip | default("undefined") }}'.
+      Must be a valid IPv4 address matching the primary host IP {{ ansible_facts['default_ipv4']['address'] }}
+      without placeholder values. Set in host_vars/multi-lab-vps.yml.
+  tags:
+    - directory
+
+# Asserts directory_auditd_reboot is defined as a boolean when auditd immutable mode (-e 2) is active
+- name: Assert auditd reboot configuration for immutable kernel mode
+  ansible.builtin.assert:
+    that:
+      - directory_auditd_reboot is defined
+      - directory_auditd_reboot is boolean
+    fail_msg: >-
+      Variable 'directory_auditd_reboot' must be defined as a boolean in host_vars when hardening
+      immutable auditd mode (-e 2) is active. Set 'directory_auditd_reboot: true' in host_vars/multi-lab-vps.yml.
+  when: hardening_auditd_immutable_mode
+  tags:
+    - directory
+
+# Asserts administrator password is provided from vars_prompt and satisfies minimum length requirement
+- name: Assert Administrator password provided and meets length requirement
+  no_log: true
+  ansible.builtin.assert:
+    that:
+      - directory_admin_password is defined
+      - directory_admin_password | length >= 8
+    fail_msg: "Administrator password must not be empty and must be at least 8 characters long."
+  tags:
+    - directory
+
+# Queries active UDP and TCP port 53 listening sockets using ss (Step 4 Coexistence Prerequisite)
+- name: Query active UDP and TCP port 53 listening sockets
+  ansible.builtin.command:
+    cmd: "ss -H -lunpt 'sport = :53'"
+  register: directory_port53_query
+  check_mode: false
+  changed_when: false
+  tags:
+    - directory
+
+# Asserts named is not listening on directory_dc_ip:53 to prevent port conflict with Samba internal DNS
+- name: Assert named is not listening on directory_dc_ip:53
+  vars:
+    port53_lines: "{{ directory_port53_query.stdout_lines | default([]) }}"
+    target_socket: "{{ directory_dc_ip ~ ':53' }}"
+    conflicting_listeners: >-
+      {{
+        port53_lines |
+        select('search', target_socket) |
+        select('search', 'named') |
+        list
+      }}
+  ansible.builtin.assert:
+    that:
+      - conflicting_listeners | length == 0
+    fail_msg: >-
+      ejecuta playbooks/dns.yml con dns_listen_on antes de directory.
+      named is currently listening on {{ target_socket }}: {{ conflicting_listeners }}.
+  tags:
+    - directory
+
+# Checks if samba-tool binary exists to allow dry-run (--check) on unprovisioned hosts
+- name: Stat samba-tool binary
+  ansible.builtin.stat:
+    path: /usr/bin/samba-tool
+  register: directory_stat_sambatool
+  check_mode: false
+  tags:
+    - directory
+
+# Checks if sam.ldb Active Directory database exists to prevent accidental re-provisioning
+- name: Stat sam.ldb Active Directory database
+  ansible.builtin.stat:
+    path: /var/lib/samba/private/sam.ldb
+  register: directory_stat_samldb
+  check_mode: false
+  tags:
+    - directory
+
+# Checks if private krb5.conf exists in Samba private directory
+- name: Stat private krb5.conf
+  ansible.builtin.stat:
+    path: /var/lib/samba/private/krb5.conf
+  register: directory_stat_priv_krb5
+  check_mode: false
+  tags:
+    - directory
+
+# Checks if BIND DLZ keytab exists (absent in SAMBA_INTERNAL mode)
+- name: Stat bind-dns dns.keytab
+  ansible.builtin.stat:
+    path: /var/lib/samba/bind-dns/dns.keytab
+  register: directory_stat_dns_keytab
+  check_mode: false
+  tags:
+    - directory
+
+# Checks if /etc/audit/rules.d directory exists for auditd drop-in placement
+- name: Stat /etc/audit/rules.d directory
+  ansible.builtin.stat:
+    path: /etc/audit/rules.d
+  register: directory_stat_audit_dir
+  check_mode: false
+  tags:
+    - directory
+
+# Checks if /etc/aide/aide.conf.d directory exists for AIDE drop-in placement
+- name: Stat /etc/aide/aide.conf.d directory
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d
+  register: directory_stat_aide_dir
+  check_mode: false
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 1 — Pre-Provision: System Preparation (Hostname and /etc/hosts)
+# ==============================================================================
+
+# Sets static DC FQDN hostname (Step 1)
+- name: Set system hostname to DC FQDN
+  ansible.builtin.hostname:
+    name: "{{ directory_hostname }}.{{ directory_domain }}"
+  tags:
+    - directory
+
+# Ensures local /etc/hosts mapping exists for DC FQDN and short hostname (Step 1)
+# Note: systemd-resolved and /etc/resolv.conf are not modified; chattr is not used
+- name: Configure /etc/hosts entry for DC FQDN
+  ansible.builtin.lineinfile:
+    path: /etc/hosts
+    regexp: >-
+      {{
+        '^[0-9.]+[ \t]+.*' ~ (directory_hostname ~ '[.]' ~ directory_domain | regex_escape) ~ '([ \t]+.*|$)'
+      }}
+    line: "{{ directory_dc_ip }}   {{ directory_hostname }}.{{ directory_domain }} {{ directory_hostname }}"
+    state: present
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 2 — Install Samba and Dependencies
+# ==============================================================================
+
+# Installs Samba 4, winbind, Kerberos client, SMB client, and ldb utilities (Step 2)
+# Note: bind9-dnsutils is used instead of legacy dnsutils package on Ubuntu 24.04
+- name: Install Samba 4 and Active Directory packages
+  ansible.builtin.apt:
+    name:
+      - samba
+      - winbind
+      - krb5-user
+      - smbclient
+      - ldb-tools
+      - bind9-dnsutils
+    state: present
+  environment:
+    DEBIAN_FRONTEND: noninteractive
+  tags:
+    - directory
+
+# Stops standalone member server daemons to prevent port conflicts with DC mode (Step 2)
+- name: Stop standalone Samba daemons
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    state: stopped
+  loop:
+    - smbd
+    - nmbd
+    - winbind
+  when: not ansible_check_mode or directory_stat_sambatool.stat.exists
+  tags:
+    - directory
+
+# Disables standalone member server daemons (Step 2)
+- name: Disable standalone Samba daemons
+  ansible.builtin.systemd_service:
+    name: "{{ item }}"
+    enabled: false
+  loop:
+    - smbd
+    - nmbd
+    - winbind
+  when: not ansible_check_mode or directory_stat_sambatool.stat.exists
+  tags:
+    - directory
+
+# Unmasks samba-ad-dc systemd service unit to allow DC service activation (Step 2)
+- name: Unmask samba-ad-dc service
+  ansible.builtin.systemd_service:
+    name: samba-ad-dc
+    masked: false
+  when: not ansible_check_mode or directory_stat_sambatool.stat.exists
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 3 — Domain Provisioning
+# ==============================================================================
+
+# Removes default distribution smb.conf before provision if AD database does not exist (Step 3)
+- name: Remove default smb.conf before initial domain provision
+  ansible.builtin.file:
+    path: /etc/samba/smb.conf
+    state: absent
+  when: not directory_stat_samldb.stat.exists
+  tags:
+    - directory
+
+# Provisions Samba 4 Active Directory Domain Controller with internal DNS and RFC2307 schema (Step 3)
+# Note: Samba 4.19 defaults to 2008_R2. Both --function-level=2016 and --option="ad dc functional level = 2016"
+# are required so that forest, domain, and lowest DC functional levels are set to Windows Server 2016 as documented
+- name: Provision Active Directory Domain Controller
+  ansible.builtin.command:
+    argv:
+      - /usr/bin/samba-tool
+      - domain
+      - provision
+      - --use-rfc2307
+      - "--realm={{ directory_realm }}"
+      - "--domain={{ directory_netbios }}"
+      - --server-role=dc
+      - --dns-backend=SAMBA_INTERNAL
+      - --function-level=2016
+      - --option=ad dc functional level = 2016
+      - "--adminpass={{ directory_admin_password }}"
+    creates: /var/lib/samba/private/sam.ldb
+  no_log: true
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 4 — Configure smb.conf Global Parameters
+# ==============================================================================
+
+# Configures interfaces parameter in [global] section to bind only to the DC private IP (Step 4)
+- name: Configure smb.conf interfaces binding
+  community.general.ini_file:
+    path: /etc/samba/smb.conf
+    section: global
+    option: interfaces
+    value: "{{ directory_dc_ip }}"
+    mode: "0644"
+  notify:
+    - Restart samba-ad-dc (directory)
+  when: not ansible_check_mode or directory_stat_samldb.stat.exists
+  tags:
+    - directory
+
+# Configures bind interfaces only parameter in [global] section to restrict listener sockets (Step 4)
+- name: Configure smb.conf bind interfaces only
+  community.general.ini_file:
+    path: /etc/samba/smb.conf
+    section: global
+    option: "bind interfaces only"
+    value: "yes"
+    mode: "0644"
+  notify:
+    - Restart samba-ad-dc (directory)
+  when: not ansible_check_mode or directory_stat_samldb.stat.exists
+  tags:
+    - directory
+
+# Configures dns forwarder parameter in [global] section pointing to local BIND9 resolver (Step 4)
+- name: Configure smb.conf dns forwarder
+  community.general.ini_file:
+    path: /etc/samba/smb.conf
+    section: global
+    option: "dns forwarder"
+    value: "{{ directory_dns_forwarder }}"
+    mode: "0644"
+  notify:
+    - Restart samba-ad-dc (directory)
+  when: not ansible_check_mode or directory_stat_samldb.stat.exists
+  tags:
+    - directory
+
+# Validates smb.conf syntax using testparm utility (Step 4)
+- name: Validate Samba configuration with testparm
+  ansible.builtin.command:
+    cmd: testparm -s
+  changed_when: false
+  when: not ansible_check_mode or directory_stat_samldb.stat.exists
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 5 — Kerberos Configuration
+# ==============================================================================
+
+# Deploys static reference Kerberos client configuration from repo configs (Step 5)
+# Note: as decided, the repo static config configs/krb5/krb5.conf is deployed rather than copying the generated file
+- name: Deploy Kerberos client configuration
+  ansible.builtin.copy:
+    src: "{{ directory_configs_dir }}/krb5/krb5.conf"
+    dest: /etc/krb5.conf
+    owner: root
+    group: root
+    mode: "0644"
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 6 — Start and Enable Samba AD DC Service
+# ==============================================================================
+
+# Enables and starts Samba Active Directory Domain Controller daemon (Step 6)
+- name: Enable and start samba-ad-dc service
+  ansible.builtin.systemd_service:
+    name: samba-ad-dc
+    enabled: true
+    state: started
+  when: not ansible_check_mode or directory_stat_samldb.stat.exists
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 7 — UFW Firewall Rules
+# ==============================================================================
+
+# Allows inbound Active Directory Kerberos TCP traffic from WireGuard overlay network (Step 7)
+- name: Allow inbound AD Kerberos TCP traffic in UFW
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "88"
+    from_ip: "{{ directory_ufw_source }}"
+    comment: "AD Kerberos TCP"
+  tags:
+    - directory
+
+# Allows inbound Active Directory Kerberos UDP traffic from WireGuard overlay network (Step 7)
+- name: Allow inbound AD Kerberos UDP traffic in UFW
+  community.general.ufw:
+    rule: allow
+    proto: udp
+    port: "88"
+    from_ip: "{{ directory_ufw_source }}"
+    comment: "AD Kerberos UDP"
+  tags:
+    - directory
+
+# Allows inbound Active Directory LDAP traffic from WireGuard overlay network (Step 7)
+- name: Allow inbound AD LDAP traffic in UFW
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "389"
+    from_ip: "{{ directory_ufw_source }}"
+    comment: "AD LDAP"
+  tags:
+    - directory
+
+# Allows inbound Active Directory LDAPS traffic from WireGuard overlay network (Step 7)
+- name: Allow inbound AD LDAPS traffic in UFW
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "636"
+    from_ip: "{{ directory_ufw_source }}"
+    comment: "AD LDAPS"
+  tags:
+    - directory
+
+# Allows inbound Active Directory SMB / NetLogon traffic from WireGuard overlay network (Step 7)
+- name: Allow inbound AD SMB/NetLogon traffic in UFW
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "445"
+    from_ip: "{{ directory_ufw_source }}"
+    comment: "AD SMB/NetLogon"
+  tags:
+    - directory
+
+# Allows inbound Active Directory RPC endpoint mapper traffic from WireGuard overlay network (Step 7)
+- name: Allow inbound AD RPC endpoint traffic in UFW
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "135"
+    from_ip: "{{ directory_ufw_source }}"
+    comment: "AD RPC endpoint"
+  tags:
+    - directory
+
+# Allows inbound Active Directory Global Catalog traffic from WireGuard overlay network (Step 7)
+- name: Allow inbound AD Global Catalog traffic in UFW
+  community.general.ufw:
+    rule: allow
+    proto: tcp
+    port: "3268"
+    from_ip: "{{ directory_ufw_source }}"
+    comment: "AD Global Catalog"
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 8 — auditd: Directory Service Activity Rule Drop-in (Step 9 in manual doc)
+# ==============================================================================
+
+# Deploys auditd drop-in configuration for monitoring Samba AD DC configuration and database paths (Step 9)
+# Strips comments and empty lines, includes ASCII header, and rejects dns.keytab rule if keytab file does not exist
+- name: Deploy directory auditd monitoring rules
+  vars:
+    directory_audit_raw: "{{ lookup('file', directory_configs_dir ~ '/audit/99-hardening.rules') }}"
+    directory_nl: "\n"
+    directory_audit_header: "# directory audit rules (managed by Ansible)"
+    directory_active_rules: >-
+      {{
+        directory_audit_raw.splitlines() |
+        map('trim') |
+        reject('match', '^#') |
+        reject('equalto', '') |
+        reject('search', 'dns[.]keytab' if not directory_stat_dns_keytab.stat.exists else '^$') |
+        list
+      }}
+  ansible.builtin.copy:
+    content: "{{ directory_audit_header ~ directory_nl ~ (directory_active_rules | join(directory_nl)) ~ directory_nl }}"
+    dest: /etc/audit/rules.d/99-zz-directory.rules
+    owner: root
+    group: root
+    mode: "0640"
+  register: directory_audit_rules_deploy
+  notify:
+    - Load auditd rules (directory)
+  when: not ansible_check_mode or directory_stat_audit_dir.stat.exists
+  tags:
+    - directory
+
+# ==============================================================================
+# Step 9 — AIDE: Extend Baseline for Directory Service (Step 10 in manual doc)
+# ==============================================================================
+
+# Deploys AIDE integrity monitoring drop-in covering Samba configuration, private database, and bind-dns paths (Step 10)
+# Named 99-zz-directory to load after 99-hardening in alphabetical order because 99-hardening defines the CONTENTEX rule group
+- name: Deploy AIDE directory integrity monitoring configuration
+  vars:
+    directory_aide_raw: "{{ lookup('file', directory_configs_dir ~ '/aide/99-hardening') }}"
+    directory_nl: "\n"
+  ansible.builtin.copy:
+    content: "{{ directory_aide_raw ~ directory_nl }}"
+    dest: /etc/aide/aide.conf.d/99-zz-directory
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Regenerate AIDE database (directory)
+  when: not ansible_check_mode or directory_stat_aide_dir.stat.exists
+  tags:
+    - directory
+
+# Validates AIDE configuration syntax before database regeneration (Step 10)
+- name: Validate AIDE configuration syntax
+  ansible.builtin.command:
+    cmd: /usr/bin/aide --config-check --config /etc/aide/aide.conf
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+  tags:
+    - directory
+
+# ==============================================================================
+# Handler Flushing & Verification
+# ==============================================================================
+
+# Flushes notified handlers (samba-ad-dc restart, AIDE database regeneration, auditd rule reload) before verification tasks
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - directory
+
+# Executes verification assertions for the directory module
+- name: Verify directory deployment
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - directory
+    - directory_verify

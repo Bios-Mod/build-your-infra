@@ -1,0 +1,641 @@
+# Deploy to:   directory_servers
+# Apply:       ansible-playbook playbooks/directory.yml --tags directory_verify [--check --diff] --ask-become-pass
+# Module:      directory
+# Requires:    directory applied
+#
+# Verification tasks and assertions for the directory role.
+# Why:         Validates service state, domain functional levels, socket listeners, DNS resolution, Kerberos authentication, firewall rules, and AIDE drop-in.
+# Doc ref:     modules/directory/self-managed/directory-self-managed.md — Verification sections
+# Targets:     ec2
+
+---
+# ==============================================================================
+# Prerequisites & Binary Stat (Guards check_mode)
+# ==============================================================================
+
+# Checks if samba-tool binary exists on target to guard check_mode runs (Prerequisite Verification)
+- name: Stat samba-tool binary for verification
+  ansible.builtin.stat:
+    path: /usr/bin/samba-tool
+  register: directory_verify_stat_sambatool
+  check_mode: false
+  tags:
+    - directory
+    - directory_verify
+
+# Checks if sam.ldb database exists on target to guard check_mode runs (Prerequisite Verification)
+- name: Stat sam.ldb database for verification
+  ansible.builtin.stat:
+    path: /var/lib/samba/private/sam.ldb
+  register: directory_verify_stat_samldb
+  check_mode: false
+  tags:
+    - directory
+    - directory_verify
+
+# Checks if bind-dns dns.keytab exists on target for conditional auditd rule assertion
+- name: Stat dns.keytab for verification
+  ansible.builtin.stat:
+    path: /var/lib/samba/bind-dns/dns.keytab
+  register: directory_verify_stat_dns_keytab
+  check_mode: false
+  tags:
+    - directory
+    - directory_verify
+
+# Checks if auditctl binary exists on target for auditd rule inspection
+- name: Stat auditctl binary for verification
+  ansible.builtin.stat:
+    path: /sbin/auditctl
+  register: directory_verify_stat_auditctl
+  check_mode: false
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 1 Verification — System Hostname and Local Resolution
+# ==============================================================================
+
+# Queries system FQDN using hostname -f (Step 1 Verification)
+- name: Query system FQDN
+  ansible.builtin.command:
+    cmd: hostname -f
+  register: directory_hostname_query
+  check_mode: false
+  changed_when: false
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts hostname -f matches expected DC FQDN (Step 1 Verification)
+- name: Assert system FQDN matches expected DC FQDN
+  ansible.builtin.assert:
+    that:
+      - directory_hostname_query.stdout.strip() == (directory_hostname ~ '.' ~ directory_domain)
+    fail_msg: >-
+      System FQDN '{{ directory_hostname_query.stdout.strip() }}' does not match
+      expected '{{ directory_hostname }}.{{ directory_domain }}'.
+  tags:
+    - directory
+    - directory_verify
+
+# Queries local host resolution for DC FQDN via getent hosts (Step 1 Verification)
+- name: Query getent hosts for DC FQDN
+  ansible.builtin.command:
+    cmd: "getent hosts {{ directory_hostname }}.{{ directory_domain }}"
+  register: directory_getent_hosts
+  check_mode: false
+  changed_when: false
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts getent hosts resolves DC FQDN to directory_dc_ip (Step 1 Verification)
+- name: Assert getent hosts resolves DC FQDN to directory_dc_ip
+  ansible.builtin.assert:
+    that:
+      - directory_dc_ip in directory_getent_hosts.stdout
+    fail_msg: >-
+      getent hosts for '{{ directory_hostname }}.{{ directory_domain }}' does not contain
+      expected DC IP '{{ directory_dc_ip }}'. Output: {{ directory_getent_hosts.stdout }}
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 2 Verification — Standalone Daemons Disabled & Inactive
+# ==============================================================================
+
+# Queries service status for standalone Samba daemons (Step 2 Verification)
+- name: Query standalone Samba daemons state # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: "systemctl is-active {{ item }}"
+  register: directory_daemon_active
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  loop:
+    - smbd
+    - nmbd
+    - winbind
+  tags:
+    - directory
+    - directory_verify
+
+# Queries enablement for standalone Samba daemons (Step 2 Verification)
+- name: Query standalone Samba daemons enablement # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: "systemctl is-enabled {{ item }}"
+  register: directory_daemon_enabled
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  loop:
+    - smbd
+    - nmbd
+    - winbind
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts standalone Samba daemons are disabled and inactive (Step 2 Verification)
+- name: Assert standalone Samba daemons are disabled and inactive
+  ansible.builtin.assert:
+    that:
+      - item.stdout.strip() in ['inactive', 'failed', 'unknown']
+    fail_msg: "Daemon {{ item.item }} is not inactive (state: {{ item.stdout.strip() }})."
+  loop: "{{ directory_daemon_active.results }}"
+  when: not ansible_check_mode or directory_verify_stat_sambatool.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts standalone Samba daemons are disabled (Step 2 Verification)
+- name: Assert standalone Samba daemons are disabled
+  ansible.builtin.assert:
+    that:
+      - item.stdout.strip() in ['disabled', 'masked', 'static']
+    fail_msg: "Daemon {{ item.item }} is not disabled (enablement: {{ item.stdout.strip() }})."
+  loop: "{{ directory_daemon_enabled.results }}"
+  when: not ansible_check_mode or directory_verify_stat_sambatool.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 3 & 4 Verification — Samba AD DC Service and Configuration
+# ==============================================================================
+
+# Queries samba-ad-dc service status and enablement (Step 6 Verification)
+- name: Query samba-ad-dc service active state # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active samba-ad-dc
+  register: directory_samba_active
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Queries samba-ad-dc service enablement (Step 6 Verification)
+- name: Query samba-ad-dc service enabled state # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-enabled samba-ad-dc
+  register: directory_samba_enabled
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts samba-ad-dc is active and enabled (Step 6 Verification)
+- name: Assert samba-ad-dc is active and enabled
+  ansible.builtin.assert:
+    that:
+      - directory_samba_active.rc == 0
+      - directory_samba_active.stdout.strip() == 'active'
+      - directory_samba_enabled.rc == 0
+      - directory_samba_enabled.stdout.strip() == 'enabled'
+    fail_msg: >-
+      samba-ad-dc service is not active and enabled.
+      Active: {{ directory_samba_active.stdout | default('unknown') }},
+      Enabled: {{ directory_samba_enabled.stdout | default('unknown') }}.
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Queries dns backend parameter using testparm (Step 3/4 Verification)
+- name: Query dns backend parameter via testparm
+  ansible.builtin.command:
+    cmd: testparm -s --parameter-name="dns backend"
+  register: directory_testparm_dns_backend
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Reads smb.conf content to verify global configuration parameters (Step 4 Verification)
+- name: Slurp /etc/samba/smb.conf
+  ansible.builtin.slurp:
+    path: /etc/samba/smb.conf
+  register: directory_smb_conf_slurp
+  check_mode: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts testparm dns backend is SAMBA_INTERNAL and smb.conf parameters match (Step 4 Verification)
+- name: Assert smb.conf parameters match expected Active Directory configuration
+  vars:
+    smb_conf_text: >-
+      {{
+        (directory_smb_conf_slurp.content | b64decode)
+        if (directory_smb_conf_slurp is defined and 'content' in directory_smb_conf_slurp)
+        else ''
+      }}
+  ansible.builtin.assert:
+    that:
+      - directory_testparm_dns_backend.stdout.strip() is search('(?i)samba_internal')
+      - smb_conf_text is search('(?i)realm[ ]*=[ ]*' ~ (directory_realm | regex_escape))
+      - smb_conf_text is search('interfaces[ ]*=[ ]*' ~ (directory_dc_ip | regex_escape))
+      - smb_conf_text is search('(?i)bind[ ]+interfaces[ ]+only[ ]*=[ ]*(yes|true|1)')
+      - smb_conf_text is search('dns[ ]+forwarder[ ]*=[ ]*' ~ (directory_dns_forwarder | regex_escape))
+    fail_msg: >-
+      smb.conf verification failed.
+      testparm dns backend: '{{ directory_testparm_dns_backend.stdout | default("") }}'.
+      Expected realm: {{ directory_realm }}, interfaces: {{ directory_dc_ip }},
+      bind interfaces only: yes, dns forwarder: {{ directory_dns_forwarder }}.
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 6 Verification — Socket Listeners and Process Bindings
+# ==============================================================================
+
+# Queries listening TCP sockets with process names (Step 6 Verification)
+- name: Query active TCP listening sockets with processes
+  ansible.builtin.command:
+    cmd: ss -lntpH
+  register: directory_ss_tcp
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Queries listening UDP sockets with process names (Step 6 Verification)
+- name: Query active UDP listening sockets with processes
+  ansible.builtin.command:
+    cmd: ss -lunpH
+  register: directory_ss_udp
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts ports 88, 389, 445 on dc_ip are bound by samba, and port 53 udp on dc_ip (samba) and 127.0.0.1 (named) (Step 6 Verification)
+- name: Assert directory socket listeners and processes
+  vars:
+    tcp_lines: "{{ directory_ss_tcp.stdout_lines | default([]) }}"
+    udp_lines: "{{ directory_ss_udp.stdout_lines | default([]) }}"
+    dc_88: "{{ directory_dc_ip ~ ':88' }}"
+    dc_389: "{{ directory_dc_ip ~ ':389' }}"
+    dc_445: "{{ directory_dc_ip ~ ':445' }}"
+    dc_53: "{{ directory_dc_ip ~ ':53' }}"
+  ansible.builtin.assert:
+    that:
+      - tcp_lines | select('search', dc_88) | select('search', 'samba') | list | length > 0
+      - tcp_lines | select('search', dc_389) | select('search', 'samba') | list | length > 0
+      - tcp_lines | select('search', dc_445) | select('search', 'samba') | list | length > 0
+      - udp_lines | select('search', dc_53) | select('search', 'samba') | list | length > 0
+      - udp_lines | select('search', '127[.]0[.]0[.]1:53') | select('search', 'named') | list | length > 0
+    fail_msg: >-
+      Socket listener assertion failed.
+      TCP listeners for 88/389/445 on {{ directory_dc_ip }}: {{ tcp_lines }}.
+      UDP listeners for 53 on {{ directory_dc_ip }} (samba) and 127.0.0.1 (named): {{ udp_lines }}.
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 7 Verification — UFW Firewall Rules
+# ==============================================================================
+
+# Queries active UFW status verbose (Step 7 Verification)
+- name: Query UFW status verbose for directory rules
+  ansible.builtin.command:
+    cmd: ufw status verbose
+  register: directory_ufw_status
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts UFW status contains all 7 required AD DS rules scoped to directory_ufw_source (Step 7 Verification)
+- name: Assert UFW rules for Active Directory DS exist
+  vars:
+    ufw_out: "{{ directory_ufw_status.stdout | default('') }}"
+    ufw_src_esc: "{{ directory_ufw_source | regex_escape }}"
+  ansible.builtin.assert:
+    that:
+      - ufw_out is search('88/tcp[ ]+ALLOW IN[ ]+' ~ ufw_src_esc)
+      - ufw_out is search('88/udp[ ]+ALLOW IN[ ]+' ~ ufw_src_esc)
+      - ufw_out is search('389/tcp[ ]+ALLOW IN[ ]+' ~ ufw_src_esc)
+      - ufw_out is search('636/tcp[ ]+ALLOW IN[ ]+' ~ ufw_src_esc)
+      - ufw_out is search('445/tcp[ ]+ALLOW IN[ ]+' ~ ufw_src_esc)
+      - ufw_out is search('135/tcp[ ]+ALLOW IN[ ]+' ~ ufw_src_esc)
+      - ufw_out is search('3268/tcp[ ]+ALLOW IN[ ]+' ~ ufw_src_esc)
+    fail_msg: >-
+      UFW rules missing for Active Directory DS. Expected 88, 389, 636, 445, 135, 3268 from {{ directory_ufw_source }}.
+      UFW output: {{ ufw_out }}
+  when: not ansible_check_mode
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 8 Verification — Domain Functional Level & DNS Records
+# ==============================================================================
+
+# Queries domain and forest functional level (Step 6/8 Verification)
+- name: Query Samba domain functional level
+  ansible.builtin.command:
+    cmd: samba-tool domain level show
+  register: directory_domain_level
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts forest, domain, and lowest functional level are Windows Server 2016 (Step 6/8 Verification)
+- name: Assert functional level is 2016 for forest, domain, and lowest DC
+  ansible.builtin.assert:
+    that:
+      - directory_domain_level.stdout is search('(?i)Forest[ ]+function[ ]+level:.*2016')
+      - directory_domain_level.stdout is search('(?i)Domain[ ]+function[ ]+level:.*2016')
+      - directory_domain_level.stdout is search('(?i)Lowest[ ]+function[ ]+level[ ]+of[ ]+a[ ]+DC:.*2016')
+    fail_msg: >-
+      Samba domain functional level is not 2016. Output:
+      {{ directory_domain_level.stdout }}
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Queries _ldap._tcp SRV record via Samba internal DNS on dc_ip (Step 4/8 Verification)
+- name: Query _ldap._tcp SRV record via Samba internal DNS
+  ansible.builtin.command:
+    cmd: "dig +short @{{ directory_dc_ip }} _ldap._tcp.{{ directory_domain }} SRV"
+  register: directory_dig_ldap_srv
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Queries _kerberos._tcp SRV record via Samba internal DNS on dc_ip (Step 4/8 Verification)
+- name: Query _kerberos._tcp SRV record via Samba internal DNS
+  ansible.builtin.command:
+    cmd: "dig +short @{{ directory_dc_ip }} _kerberos._tcp.{{ directory_domain }} SRV"
+  register: directory_dig_krb_srv
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts SRV records contain the DC FQDN (Step 4/8 Verification)
+- name: Assert _ldap and _kerberos SRV records contain DC FQDN
+  vars:
+    expected_fqdn: "{{ directory_hostname ~ '.' ~ directory_domain }}"
+  ansible.builtin.assert:
+    that:
+      - expected_fqdn in directory_dig_ldap_srv.stdout
+      - expected_fqdn in directory_dig_krb_srv.stdout
+    fail_msg: >-
+      Samba DNS SRV resolution failed.
+      _ldap._tcp.{{ directory_domain }} returned: '{{ directory_dig_ldap_srv.stdout }}',
+      _kerberos._tcp.{{ directory_domain }} returned: '{{ directory_dig_krb_srv.stdout }}'.
+      Expected DC FQDN '{{ expected_fqdn }}'.
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Queries domain SOA record via Samba internal DNS on dc_ip (Step 4/8 Verification)
+- name: Query domain SOA record via Samba internal DNS
+  ansible.builtin.command:
+    cmd: "dig @{{ directory_dc_ip }} {{ directory_domain }} SOA"
+  register: directory_dig_soa
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts SOA query returns NOERROR and contains SOA answer (Step 4/8 Verification)
+- name: Assert domain SOA record query succeeds with NOERROR
+  ansible.builtin.assert:
+    that:
+      - "'status: NOERROR' in directory_dig_soa.stdout"
+      - directory_dig_soa.stdout is search('IN[ \t]+SOA')
+    fail_msg: >-
+      SOA query for {{ directory_domain }} failed or status is not NOERROR.
+      Output: {{ directory_dig_soa.stdout }}
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 5 Verification — Kerberos Client Config and Authentication
+# ==============================================================================
+
+# Reads /etc/krb5.conf to verify default_realm and kdc settings (Step 5 Verification)
+- name: Slurp /etc/krb5.conf
+  ansible.builtin.slurp:
+    path: /etc/krb5.conf
+  register: directory_krb5_slurp
+  check_mode: false
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts /etc/krb5.conf contains expected default_realm and kdc (Step 5 Verification)
+- name: Assert /etc/krb5.conf contains expected realm and kdc
+  vars:
+    krb5_text: "{{ (directory_krb5_slurp.content | b64decode) if (directory_krb5_slurp is defined and 'content' in directory_krb5_slurp) else '' }}"
+    expected_kdc: "{{ directory_hostname ~ '.' ~ directory_domain }}"
+  ansible.builtin.assert:
+    that:
+      - krb5_text is search('(?i)default_realm[ ]*=[ ]*' ~ (directory_realm | regex_escape))
+      - krb5_text is search('(?i)kdc[ ]*=[ ]*' ~ (expected_kdc | regex_escape))
+    fail_msg: >-
+      /etc/krb5.conf does not contain expected default_realm ({{ directory_realm }}) or kdc ({{ expected_kdc }}).
+  tags:
+    - directory
+    - directory_verify
+
+# Obtains Kerberos TGT ticket for Administrator via stdin into temporary credentials cache (Step 5/8 Verification)
+- name: Obtain Kerberos ticket for Administrator
+  ansible.builtin.command:
+    cmd: "kinit Administrator@{{ directory_realm }}"
+    stdin: "{{ directory_admin_password }}"
+  environment:
+    KRB5CCNAME: "FILE:/tmp/krb5cc_ansible_directory_verify"
+  register: directory_kinit_result
+  no_log: true
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Inspects active Kerberos credentials cache with klist (Step 5/8 Verification)
+- name: Inspect Kerberos credentials cache with klist
+  ansible.builtin.command:
+    cmd: klist
+  environment:
+    KRB5CCNAME: "FILE:/tmp/krb5cc_ansible_directory_verify"
+  register: directory_klist_result
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts Administrator Kerberos principal is authenticated in credentials cache (Step 5/8 Verification)
+- name: Assert Administrator Kerberos ticket is present
+  ansible.builtin.assert:
+    that:
+      - directory_klist_result.rc == 0
+      - directory_klist_result.stdout is search('(?i)Administrator@' ~ (directory_realm | regex_escape))
+    fail_msg: >-
+      klist did not show active ticket for Administrator@{{ directory_realm }}.
+      Output: {{ directory_klist_result.stdout | default('') }}
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Destroys temporary Kerberos credentials cache (Step 5/8 Verification)
+- name: Destroy temporary Kerberos credentials cache
+  ansible.builtin.command:
+    cmd: kdestroy
+  environment:
+    KRB5CCNAME: "FILE:/tmp/krb5cc_ansible_directory_verify"
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 9 Verification — auditd Directory Service Rules
+# ==============================================================================
+
+# Queries active auditd rules from the kernel using auditctl -l (Step 9 Verification)
+- name: Query active auditd rules via auditctl -l
+  ansible.builtin.command:
+    cmd: /sbin/auditctl -l
+  register: directory_auditctl_list
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or directory_verify_stat_auditctl.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Displays notice when audit rule is staged in immutable mode awaiting manual reboot (Step 9 Verification)
+- name: Display notice for staged auditd rules awaiting reboot
+  ansible.builtin.debug:
+    msg: "audit rule staged; reboot required to load into kernel"
+  when:
+    - (directory_audit_rules_deploy.changed | default(false))
+    - hardening_auditd_immutable_mode
+    - not (directory_auditd_reboot | default(false))
+    - not ansible_check_mode or directory_verify_stat_auditctl.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts active auditd rules contain samba_config and samba_db, and samba_keytab only if dns.keytab exists (Step 9 Verification)
+- name: Assert auditd rules monitor Samba configuration and databases
+  ansible.builtin.assert:
+    that:
+      - directory_auditctl_list.rc == 0
+      - directory_auditctl_list.stdout is search('-w /etc/samba/? -p wa -k samba_config')
+      - directory_auditctl_list.stdout is search('-w /var/lib/samba/private/? -p wa -k samba_db')
+      - >-
+        (not directory_verify_stat_dns_keytab.stat.exists) or
+        (directory_auditctl_list.stdout is search('-w /var/lib/samba/bind-dns/dns[.]keytab -p rwa -k samba_keytab'))
+    fail_msg: >-
+      Active auditd rules do not contain expected watches for Samba paths.
+      Auditctl output: {{ directory_auditctl_list.stdout | default('') }}
+  when:
+    - not ansible_check_mode or directory_verify_stat_auditctl.stat.exists
+    - not ((directory_audit_rules_deploy.changed | default(false)) and
+           hardening_auditd_immutable_mode and
+           not (directory_auditd_reboot | default(false)))
+  tags:
+    - directory
+    - directory_verify
+
+# ==============================================================================
+# Step 10 Verification — AIDE Baseline Drop-in & Syntax
+# ==============================================================================
+
+# Checks presence and permissions of AIDE directory drop-in configuration (Step 10 Verification)
+- name: Check AIDE drop-in 99-zz-directory exists
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d/99-zz-directory
+  register: directory_stat_aide_dropin
+  check_mode: false
+  when: not ansible_check_mode or directory_verify_stat_sambatool.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts AIDE drop-in 99-zz-directory exists with mode 0644 (Step 10 Verification)
+- name: Assert AIDE drop-in 99-zz-directory exists with mode 0644
+  ansible.builtin.assert:
+    that:
+      - directory_stat_aide_dropin.stat.exists
+      - directory_stat_aide_dropin.stat.mode == '0644'
+    fail_msg: >-
+      AIDE drop-in /etc/aide/aide.conf.d/99-zz-directory does not exist or has incorrect permissions.
+  when: not ansible_check_mode or directory_verify_stat_sambatool.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Checks AIDE configuration syntax with aide --config-check (Step 10 Verification)
+- name: Check AIDE configuration syntax
+  ansible.builtin.command:
+    cmd: /usr/bin/aide --config-check --config /etc/aide/aide.conf
+  register: directory_aide_check
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts AIDE configuration check returns exit code 0 (Step 10 Verification)
+- name: Assert AIDE configuration syntax is valid
+  ansible.builtin.assert:
+    that:
+      - directory_aide_check.rc == 0
+    fail_msg: >-
+      AIDE configuration check failed:
+      {{ directory_aide_check.stderr | default(directory_aide_check.stdout) }}
+  when: not ansible_check_mode
+  tags:
+    - directory
+    - directory_verify

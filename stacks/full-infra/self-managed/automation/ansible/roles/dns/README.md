@@ -27,6 +27,7 @@ None required. All network ranges and baseline paths are inherited from `group_v
 | `dns_vpc_domain` | `compute.internal` | Internal AWS VPC DNS domain forwarded to VPC resolver and excluded from DNSSEC validation. |
 | `dns_vpc_reverse_domain` | `10.in-addr.arpa` | Reverse lookup zone for 10.0.0.0/16 VPC network forwarded to VPC resolver and excluded from DNSSEC validation. |
 | `dns_vpc_resolver` | `10.0.0.2` | Amazon VPC DNS resolver IP used as upstream forwarder for internal VPC queries. |
+| `dns_listen_on` | `any;` | Semicolon-terminated list of IPv4 listen-on addresses for BIND9 (set to `127.0.0.1; 172.16.0.1;` on EC2 to free the private IP for Samba 4 AD DC). |
 
 ---
 

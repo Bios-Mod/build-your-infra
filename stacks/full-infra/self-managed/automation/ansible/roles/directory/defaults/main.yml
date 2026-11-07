@@ -1,0 +1,37 @@
+# Deploy to:   directory_servers
+# Apply:       included automatically when role 'directory' is invoked
+# Module:      directory
+# Requires:    none
+#
+# Default variable definitions for the directory role.
+# Why:         Provides baseline defaults for Samba 4 AD DC domain parameters, internal DNS forwarder, and hardening pre-flight verification.
+# Doc ref:     modules/directory/self-managed/directory-self-managed.md
+# Targets:     ec2
+
+---
+# Root directory containing the source-of-truth directory configs
+directory_configs_dir: "{{ configs_root }}/directory/self-managed/configs"
+
+# Active Directory DNS domain name (lowercase)
+directory_domain: "multilab.internal"
+
+# Active Directory Kerberos realm name (uppercase)
+directory_realm: "MULTILAB.INTERNAL"
+
+# Active Directory NetBIOS domain / workgroup name (uppercase)
+directory_netbios: "MULTILAB"
+
+# Domain controller host name (short hostname)
+directory_hostname: "dc01"
+
+# Source subnet permitted to access Active Directory DS ports via UFW (WireGuard overlay network)
+directory_ufw_source: "172.16.0.0/24"
+
+# Upstream DNS forwarder address configured in smb.conf for external domain resolution (points to BIND9 loopback)
+directory_dns_forwarder: "127.0.0.1"
+
+# Hardened OpenSSH daemon port configured by the hardening baseline
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"  # noqa: var-naming[no-role-prefix]
+
+# Mirrors the hardening role default so the audit drop-in logic is correct on hosts that do not override it
+hardening_auditd_immutable_mode: true  # noqa: var-naming[no-role-prefix]

@@ -68,3 +68,13 @@ web_server_certbot_staging: true
 # Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
 # Set to true to automatically reboot the EC2 host when the web-server audit drop-in rule is deployed.
 web_server_auditd_reboot: true
+
+# Semicolon-terminated list of IPv4 addresses on which BIND9 listens; frees EC2 private IP on port 53 for Samba 4 AD DC
+dns_listen_on: "127.0.0.1; 172.16.0.1;"
+
+# Primary private IPv4 address of the Active Directory Domain Controller (must match default_ipv4 address)
+directory_dc_ip: "CHANGE_ME_dc_ip"
+
+# Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
+# Set to true to automatically reboot the EC2 host when the directory audit drop-in rule is deployed.
+directory_auditd_reboot: true

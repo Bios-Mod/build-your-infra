@@ -42,10 +42,11 @@
   ansible.builtin.assert:
     that:
       - dns_source_options.count('dnssec-validation auto;') == 1
+      - dns_source_options.count('listen-on { any; };') == 1
       - dns_source_local.strip().endswith('};')
     fail_msg: >-
       Source BIND9 configuration files mismatch. Expected '{{ dns_configs_dir }}/bind/named.conf.options'
-      to contain exactly one 'dnssec-validation auto;' directive and '{{ dns_configs_dir }}/bind/named.conf.local'
+      to contain exactly one 'dnssec-validation auto;' directive and 'listen-on { any; };', and '{{ dns_configs_dir }}/bind/named.conf.local'
       to terminate with '};'.
   tags:
     - dns
@@ -81,6 +82,7 @@
 
 # Deploys global BIND9 options restricting listeners and recursion to lab-net ACL (Step 2)
 # Adds validate-except for VPC forward and reverse domains to prevent DNSSEC validation failure (SERVFAIL) on internal VPC queries
+# Replaces listen-on directive dynamically using dns_listen_on to support coexistence with Samba 4 AD DC
 - name: Deploy named.conf.options configuration
   vars:
     dns_options_raw: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.options') }}"
@@ -93,7 +95,8 @@
           'dnssec-validation auto;',
           'dnssec-validation auto;' ~ dns_options_newline ~
           '    validate-except { "' ~ dns_vpc_domain ~ '"; "' ~ dns_vpc_reverse_domain ~ '"; };'
-        )
+        ) |
+        replace('listen-on { any; };', 'listen-on { ' ~ dns_listen_on ~ ' };')
       }}
     dest: /etc/bind/named.conf.options
     owner: root

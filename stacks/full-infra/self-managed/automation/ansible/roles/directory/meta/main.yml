@@ -1,0 +1,37 @@
+# Deploy to:   local Ansible controller (metadata only)
+# Apply:       read by Ansible Galaxy and dependency resolver
+# Module:      directory
+# Requires:    none
+#
+# Role metadata and platform compatibility definitions for the directory role.
+# Why:         Declares author, license, supported OS distributions, and dependencies for the role.
+# Doc ref:     modules/directory/self-managed/directory-self-managed.md
+# Targets:     ec2
+
+---
+galaxy_info:
+  role_name: directory
+  author: Bios-Mod
+  description: Samba 4 Active Directory Domain Controller role with internal DNS, Kerberos realm, UFW rules, and AIDE monitoring.
+  company: build-your-infra
+  license: MIT
+  min_ansible_version: "2.16"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+  galaxy_tags:
+    - activedirectory
+    - samba
+    - domaincontroller
+    - kerberos
+    - ldap
+    - ufw
+    - aide
+    - auditd
+    - security
+    - ubuntu
+
+dependencies: []
