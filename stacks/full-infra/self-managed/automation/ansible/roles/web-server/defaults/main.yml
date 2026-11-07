@@ -17,3 +17,4 @@ web_server_html_src: "{{ configs_root }}/web-server/html/index.html"
 
 # Hardened OpenSSH daemon port configured by the hardening baseline
 hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"
+
