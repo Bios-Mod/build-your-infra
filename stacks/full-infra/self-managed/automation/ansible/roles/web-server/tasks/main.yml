@@ -94,7 +94,7 @@
     fail_msg: >-
       Variable 'web_server_auditd_reboot' (boolean) must be defined in host_vars when
       hardening_auditd_immutable_mode is active.
-  when: hardening_auditd_immutable_mode | default(false)
+  when: hardening_auditd_immutable_mode
   tags:
     - web-server
 

@@ -48,7 +48,7 @@
   changed_when: true
   when:
     - not ansible_check_mode
-    - not (hardening_auditd_immutable_mode | default(false))
+    - not hardening_auditd_immutable_mode
   listen: Load auditd rules (web-server)
 
 # WARNING: Rebooting the host terminates the active WireGuard tunnel. Re-establish the tunnel before reconnecting.
@@ -59,7 +59,7 @@
     reboot_timeout: 600
   when:
     - not ansible_check_mode
-    - hardening_auditd_immutable_mode | default(false)
+    - hardening_auditd_immutable_mode
     - web_server_auditd_reboot | default(false)
   listen: Load auditd rules (web-server)
 
@@ -71,6 +71,6 @@
       mode (-e 2) and 'web_server_auditd_reboot' is false. A manual reboot is required to load the new audit rules.
   when:
     - not ansible_check_mode
-    - hardening_auditd_immutable_mode | default(false)
+    - hardening_auditd_immutable_mode
     - not (web_server_auditd_reboot | default(false))
   listen: Load auditd rules (web-server)

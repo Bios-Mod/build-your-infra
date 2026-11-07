@@ -470,7 +470,7 @@
     msg: "audit rule staged; reboot required to load into kernel"
   when:
     - (web_server_audit_rules_deploy.changed | default(false))
-    - (hardening_auditd_immutable_mode | default(false))
+    - hardening_auditd_immutable_mode
     - not (web_server_auditd_reboot | default(false))
     - not ansible_check_mode or web_server_stat_auditctl.stat.exists
   tags:
@@ -489,7 +489,7 @@
   when:
     - not ansible_check_mode or web_server_stat_auditctl.stat.exists
     - not ((web_server_audit_rules_deploy.changed | default(false)) and
-           (hardening_auditd_immutable_mode | default(false)) and
+           hardening_auditd_immutable_mode and
            not (web_server_auditd_reboot | default(false)))
   tags:
     - web-server

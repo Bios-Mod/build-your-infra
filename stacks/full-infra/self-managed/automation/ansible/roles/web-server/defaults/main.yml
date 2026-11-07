@@ -18,5 +18,8 @@ web_server_html_src: "{{ configs_root }}/web-server/html/index.html"
 # Hardened OpenSSH daemon port configured by the hardening baseline
 hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"  # noqa: var-naming[no-role-prefix]
 
+# Mirrors the hardening role default so the audit drop-in logic is correct on hosts that do not override it; VM overrides it to false in group_vars/vm.yml
+hardening_auditd_immutable_mode: true  # noqa: var-naming[no-role-prefix]
+
 # Opt-in flag to run live certbot renewal dry-run test during verify tasks (pass -e web_server_verify_renewal=true)
 web_server_verify_renewal: false

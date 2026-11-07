@@ -37,6 +37,7 @@ Defined in `inventories/host_vars/multi-lab-local.yml` and `multi-lab-vps.yml`:
 | `web_server_configs_dir` | `{{ configs_root }}/web-server/self-managed/configs` | Path to static web-server source configuration files. |
 | `web_server_html_src` | `{{ configs_root }}/web-server/html/index.html` | Path to static index page deployed to document root. |
 | `hardening_ssh_port` | `{{ ssh_hardened_port \| default(22222) }}` | Hardened OpenSSH listening port verified in pre-flight assertions. |
+| `hardening_auditd_immutable_mode` | `true` | Enforces immutable kernel audit rules (`-e 2`) mirroring the hardening role default so the audit drop-in logic is correct on hosts that do not override it; the local VM overrides this to `false` in `inventories/group_vars/vm.yml`. |
 | `web_server_verify_renewal` | `false` | Opt-in boolean flag enabling live Certbot renewal dry-run test in verify tasks. |
 
 ---

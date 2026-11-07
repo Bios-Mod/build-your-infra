@@ -912,7 +912,7 @@ The root DNS A record pointing to the EC2 Elastic IP is provisioned declarativel
 
 ##### Staging vs Production (EC2 ACME Issuance)
 
-Let's Encrypt production rate limits (5 failed validations per account per hour, 50 duplicate certificates per week) can lock out automated deployments if DNS propagation or firewall rules fail. EC2 issuance is therefore executed in two sequential stages:
+Let's Encrypt limits include 5 failed validations per account, per hostname, per hour, and 5 duplicate certificates (same set of hostnames) per 7 days; the 50-per-week limit applies per registered domain. These limits can lock out automated deployments if DNS propagation or firewall rules fail. EC2 issuance is therefore executed in two sequential stages:
 
 1. **Staging rehearsal (`web_server_certbot_staging: true`):** Validates the complete ACME HTTP-01 challenge against Let's Encrypt staging environment without consuming production quotas.
 2. **Production issuance (`web_server_certbot_staging: false`):** Promotes the existing lineage to the production ACME endpoint (`--server https://acme-v02.api.letsencrypt.org/directory --force-renewal --cert-name`) without deleting certificate files or renewal configurations.
@@ -923,17 +923,15 @@ Provision the Route 53 A record pointing to the EC2 Elastic IP:
 
 ```bash
 cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
-terraform plan \
-  -var "ssh_bootstrap_cidr=$(curl -s ifconfig.me)/32" \
-  -var "ssh_hardened_cidr=$(curl -s ifconfig.me)/32"
+terraform plan
+# → Plan: 1 to add, 0 to change, 0 to destroy.
 
-terraform apply \
-  -var "ssh_bootstrap_cidr=$(curl -s ifconfig.me)/32" \
-  -var "ssh_hardened_cidr=$(curl -s ifconfig.me)/32"
-
+terraform apply
 dig +short A buildyourinfra.click @1.1.1.1
 # → <EC2_ELASTIC_IP>
 ```
+
+> If the plan shows changes to the security group or the instance, do not apply and review the diff; the `ssh_bootstrap_cidr` and `ssh_hardened_cidr` values must remain empty after hardening.
 
 **Control node (Mac):**
 
@@ -971,8 +969,7 @@ ansible-playbook playbooks/web-server.yml --limit multi-lab-local --ask-become-p
 
 Run ACME staging rehearsal on EC2 (`web_server_certbot_staging: true`):
 
-> [!WARNING]
-> Because `hardening_auditd_immutable_mode` is enabled (`-e 2`) and `web_server_auditd_reboot` is `true`, the initial deployment will reboot the EC2 instance to load `/etc/audit/rules.d/99-zz-web-server.rules`. This terminates the active WireGuard tunnel. Re-establish the WireGuard connection before running subsequent commands, and verify DNS resolution via `resolvectl status` if necessary.
+> **Warning:** Because `hardening_auditd_immutable_mode` is enabled (`-e 2`) and `web_server_auditd_reboot` is `true`, the initial deployment will reboot the EC2 instance to load `/etc/audit/rules.d/99-zz-web-server.rules`. This terminates the active WireGuard tunnel. Re-establish the WireGuard connection before running subsequent commands, and verify DNS resolution via `resolvectl status` if necessary.
 
 ```bash
 ansible-playbook playbooks/web-server.yml --limit multi-lab-vps --check --diff --ask-become-pass
