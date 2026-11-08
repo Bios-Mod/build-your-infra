@@ -50,6 +50,10 @@ hardening_lynis_min_score: 90
 # Dedicated Ed25519 public key file for SFTP user (file-transfer module)
 file_transfer_sftp_public_key_file: "~/.ssh/CHANGE_ME_sftp_key.pub"
 
+# Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
+# Set to true to automatically reboot the EC2 host when the file-transfer audit drop-in rule is deployed (reboots EC2 on first pass).
+file_transfer_auditd_reboot: true
+
 # TLS certificate generation mode for web-server ('letsencrypt' for EC2)
 tls_mode: "letsencrypt"
 
@@ -71,6 +75,10 @@ web_server_auditd_reboot: true
 
 # Semicolon-terminated list of IPv4 addresses on which BIND9 listens; frees EC2 private IP on port 53 for Samba 4 AD DC
 dns_listen_on: "127.0.0.1; 172.16.0.1;"
+
+# Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
+# Set to true to automatically reboot the EC2 host when the dns audit drop-in rule is deployed (reboots EC2 on first pass).
+dns_auditd_reboot: true
 
 # Primary private IPv4 address of the Active Directory Domain Controller (must match default_ipv4 address)
 directory_dc_ip: "CHANGE_ME_dc_ip"

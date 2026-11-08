@@ -27,3 +27,9 @@ dns_vpc_resolver: "10.0.0.2"
 # Semicolon-terminated list of IPv4 listen-on addresses for BIND9; default 'any;' matches manual configuration
 # Set to '127.0.0.1; 172.16.0.1;' in host_vars when coexisting with Samba 4 AD DC to free the EC2 private IP on port 53
 dns_listen_on: "any;"
+
+# Mirrors the hardening role default so the audit drop-in logic is correct on hosts that do not override it; VM overrides it to false in group_vars/vm.yml
+hardening_auditd_immutable_mode: true  # noqa: var-naming[no-role-prefix]
+
+# Note: dns_auditd_reboot has NO default value by design when hardening_auditd_immutable_mode is true.
+# It must be defined explicitly in host_vars (e.g. inventories/host_vars/multi-lab-vps.yml).

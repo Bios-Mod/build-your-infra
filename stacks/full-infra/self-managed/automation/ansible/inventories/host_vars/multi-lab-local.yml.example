@@ -60,6 +60,13 @@ wireguard_hub_public_key: "CHANGE_ME_HUB_WIREGUARD_PUBLIC_KEY"
 # WireGuard hub endpoint: EC2 public IP (ec2_eip) and port; required; never the VM's own address (e.g. 203.0.113.10:51820; do NOT use internal tunnel IP 172.16.0.1)
 wireguard_endpoint: "CHANGE_ME_EC2_PUBLIC_IP:51820"
 
+# WireGuard client DNS server IP address configured in wg0.conf (defaults to Quad9 "9.9.9.9").
+# In the local VM, wg-quick registers the DNS server with a routing domain '~.' on wg0, routing
+# all DNS queries through the tunnel. Because AllowedIPs is restricted to 172.16.0.0/24, Quad9
+# is unreachable over the tunnel and DNS resolution fails. After deploying the BIND9 DNS module
+# on EC2 (hub 172.16.0.1), set this variable to "172.16.0.1" and re-apply Step 5:
+# hardening_wg_client_dns: "172.16.0.1"
+
 # Target minimum Lynis Hardening Index threshold for local VM (Step 12)
 hardening_lynis_min_score: 88
 
@@ -69,6 +76,10 @@ hardening_auditd_immutable_mode: false
 
 # Dedicated Ed25519 public key file for SFTP user (file-transfer module)
 file_transfer_sftp_public_key_file: "~/.ssh/CHANGE_ME_sftp_key.pub"
+
+# Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
+# Not triggered on local VM because hardening_auditd_immutable_mode is false.
+file_transfer_auditd_reboot: false
 
 # TLS certificate generation mode for web-server ('self_signed' for local VM)
 tls_mode: "self_signed"

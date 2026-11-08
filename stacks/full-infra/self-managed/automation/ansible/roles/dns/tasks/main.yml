@@ -4,8 +4,8 @@
 # Requires:    playbooks/hardening.yml executed
 #
 # Task orchestration entry point for the dns role.
-# Why:         Installs BIND9, configures authoritative zones, UFW perimeter rules, AIDE integrity, and Netplan resolver.
-# Doc ref:     modules/dns/self-managed/dns-self-managed.md — Steps 1, 2, 3, 4, 6, 7
+# Why:         Installs BIND9, configures authoritative zones, UFW perimeter rules, auditd drop-in, AIDE integrity, and Netplan resolver.
+# Doc ref:     modules/dns/self-managed/dns-self-managed.md — Steps 1, 2, 3, 4, 5, 6, 7
 # Targets:     ec2
 
 ---
@@ -48,6 +48,19 @@
       Source BIND9 configuration files mismatch. Expected '{{ dns_configs_dir }}/bind/named.conf.options'
       to contain exactly one 'dnssec-validation auto;' directive and 'listen-on { any; };', and '{{ dns_configs_dir }}/bind/named.conf.local'
       to terminate with '};'.
+  tags:
+    - dns
+
+# Asserts dns_auditd_reboot is defined as boolean when auditd immutable mode is active (Prerequisites)
+- name: Assert dns_auditd_reboot is defined for immutable auditd hosts
+  ansible.builtin.assert:
+    that:
+      - dns_auditd_reboot is defined
+      - dns_auditd_reboot is boolean
+    fail_msg: >-
+      Variable 'dns_auditd_reboot' (boolean) must be defined in host_vars when
+      hardening_auditd_immutable_mode is active.
+  when: hardening_auditd_immutable_mode
   tags:
     - dns
 
@@ -273,11 +286,66 @@
     - dns
 
 # ==============================================================================
-# Step 5 — auditd: Zone File Monitoring (Manual / Non-Automated)
+# Step 5 — auditd: Zone File Monitoring Rule Drop-in
 # ==============================================================================
-# Note: Step 5 (auditd dns_config rule) is excluded from Ansible automation as an
-# accepted deviation. The hardening baseline locks auditd in immutable mode (-e 2)
-# and clears rules with -D, preventing drop-in audit rule additions without a kernel reboot.
+
+# Checks if /etc/bind directory exists before deploying audit rules (Step 5)
+- name: Stat /etc/bind directory for audit rule prerequisite
+  ansible.builtin.stat:
+    path: /etc/bind
+  register: dns_stat_etc_bind
+  check_mode: false
+  tags:
+    - dns
+
+# Checks if /var/lib/bind directory exists before deploying audit rules (Step 5)
+- name: Stat /var/lib/bind directory for audit rule prerequisite
+  ansible.builtin.stat:
+    path: /var/lib/bind
+  register: dns_stat_var_lib_bind
+  check_mode: false
+  tags:
+    - dns
+
+# Asserts /etc/bind and /var/lib/bind directories exist before deploying auditd drop-in rules (Step 5)
+- name: Assert BIND directories exist before deploying auditd rules
+  ansible.builtin.assert:
+    that:
+      - dns_stat_etc_bind.stat.exists
+      - dns_stat_var_lib_bind.stat.exists
+    fail_msg: >-
+      Directories /etc/bind and /var/lib/bind must exist before deploying auditd watch rules.
+  when: not ansible_check_mode
+  tags:
+    - dns
+
+# Deploys auditd drop-in configuration for monitoring BIND9 configuration and zone paths (Step 5)
+# Preserves only active rule definitions from configs/audit/99-hardening.rules stripping non-ASCII comments
+# to prevent auditd parser aborts, adding an ASCII header
+- name: Deploy DNS auditd monitoring rules
+  vars:
+    dns_audit_raw: "{{ lookup('file', dns_configs_dir ~ '/audit/99-hardening.rules') }}"
+    dns_nl: "\n"
+    dns_audit_header: "# dns audit rules (managed by Ansible)"
+  ansible.builtin.copy:
+    content: >-
+      {{
+        dns_audit_header ~ dns_nl ~
+        ((dns_audit_raw.splitlines() |
+          map('trim') |
+          reject('match', '^#') |
+          reject('equalto', '')) |
+         join(dns_nl)) ~ dns_nl
+      }}
+    dest: /etc/audit/rules.d/99-zz-dns.rules
+    owner: root
+    group: root
+    mode: "0640"
+  register: dns_audit_rules_deploy
+  notify:
+    - Load auditd rules (dns)
+  tags:
+    - dns
 
 # ==============================================================================
 # Step 6 — AIDE: Extend Baseline for BIND9

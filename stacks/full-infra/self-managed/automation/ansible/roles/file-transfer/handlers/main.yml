@@ -4,8 +4,8 @@
 # Requires:    none
 #
 # Service handlers for the file-transfer role.
-# Why:         Ensures affected daemons (sshd) and integrity baselines (AIDE) absorb configuration changes idempotently.
-# Doc ref:     modules/file-transfer/self-managed/file-transfer-self-managed.md — Steps 4, 6
+# Why:         Ensures affected daemons (sshd), integrity baselines (AIDE), and audit rules absorb configuration changes idempotently.
+# Doc ref:     modules/file-transfer/self-managed/file-transfer-self-managed.md — Steps 4, 5, 6
 # Targets:     both
 
 ---
@@ -32,3 +32,36 @@
   changed_when: true
   when: not ansible_check_mode
   listen: Regenerate AIDE database (file-transfer)
+
+# Loads auditd rules directly when host is not in immutable mode (Step 5)
+- name: Load auditd rules with augenrules (file-transfer)
+  ansible.builtin.command:
+    cmd: augenrules --load
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - not hardening_auditd_immutable_mode
+  listen: Load auditd rules (file-transfer)
+
+# WARNING: Rebooting the host terminates the active WireGuard tunnel. Re-establish the tunnel before reconnecting.
+# Reboots host to load updated auditd rules when kernel is running in immutable mode (-e 2) (Step 5)
+- name: Reboot host to apply immutable auditd rules (file-transfer)
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when:
+    - not ansible_check_mode
+    - hardening_auditd_immutable_mode
+    - file_transfer_auditd_reboot | default(false)
+  listen: Load auditd rules (file-transfer)
+
+# Emits warning notification when audit rules changed in immutable mode but automated reboot is disabled (Step 5)
+- name: Warn reboot required for immutable auditd rules (file-transfer)
+  ansible.builtin.debug:
+    msg: >-
+      Auditd rules in /etc/audit/rules.d/99-zz-file-transfer.rules were updated, but the kernel is in immutable
+      mode (-e 2) and 'file_transfer_auditd_reboot' is false. A manual reboot is required to load the new audit rules.
+  when:
+    - not ansible_check_mode
+    - hardening_auditd_immutable_mode
+    - not (file_transfer_auditd_reboot | default(false))
+  listen: Load auditd rules (file-transfer)

@@ -11,12 +11,14 @@ Hosts need to find each other by name without hardcoded IPs or public resolvers.
 | self-managed | BIND9 (authoritative + recursive resolver) | [dns-self-managed.md](self-managed/dns-self-managed.md) |
 | aws-native | Route 53 Private Hosted Zone | [dns-aws-native.md](aws-native/dns-aws-native.md) |
 
+**Automation (self-managed):** Ansible role [`dns`](../../stacks/full-infra/self-managed/automation/self-managed-automation.md#dns--bind9-authoritative-service)
+
 > **Deployment scope — self-managed:** BIND9 is deployed exclusively on the
 > EC2 instance, which acts as the WireGuard hub. All other lab hosts (local VM,
 > additional peers) consume DNS over the WireGuard tunnel — no DNS server is
 > installed on client nodes.
 
-> **Directory dependency:** Samba 4 AD DC includes its own internal DNS server that can > replace or integrate with BIND9. Review this module and its zone structure before
+> **Directory dependency:** Samba 4 AD DC includes its own internal DNS server that can replace or integrate with BIND9. Review this module and its zone structure before
 > provisioning the directory module — zone delegation or full BIND9 replacement may be
 > required.
 
