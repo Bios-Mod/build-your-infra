@@ -73,4 +73,3 @@
     - hardening_auditd_immutable_mode
     - not (dhcp_auditd_reboot | default(false))
   listen: Load auditd rules (dhcp)
-

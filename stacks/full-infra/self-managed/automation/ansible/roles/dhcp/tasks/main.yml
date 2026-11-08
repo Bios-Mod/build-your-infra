@@ -241,10 +241,20 @@
     owner: root
     group: root
     mode: "0644"
-    validate: "kea-dhcp4 -t %s"
   notify:
     - Restart kea-dhcp4-server (dhcp)
   when: not ansible_check_mode or (dhcp_kea_installed | bool)
+  tags:
+    - dhcp
+
+# Validates deployed Kea DHCPv4 configuration syntax before daemon restart (Step 2)
+# Fails the play before handlers run; copy 'validate:' is not viable because kea-dhcp4 only opens configs within /etc/kea
+- name: Validate deployed Kea DHCPv4 configuration
+  ansible.builtin.command:
+    cmd: kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
   tags:
     - dhcp
 
@@ -347,4 +357,3 @@
   tags:
     - dhcp
     - dhcp_verify
-

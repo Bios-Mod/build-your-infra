@@ -17,4 +17,3 @@ hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"  # noqa: var-nami
 
 # Mirrors the hardening role default so the audit drop-in logic is correct on hosts that do not override it
 hardening_auditd_immutable_mode: true  # noqa: var-naming[no-role-prefix]
-

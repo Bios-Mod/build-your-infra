@@ -58,4 +58,4 @@ Execution can be targeted via Ansible tags:
 2. **Raw Sockets & Absence of UFW Rules:** Kea DHCP utilizes raw sockets (`"dhcp-socket-type": "raw"`), bypassing the OS firewall stack. No UFW rules are added or required for DHCP operations.
 3. **Auditd Rule Deployment Ordering:** Kernel `auditctl` rejects file watches on paths that do not exist on the filesystem. The role enables and starts Kea first, waits for `/var/lib/kea/kea-leases4.csv` to be created, and only then deploys the auditd watch rule.
 4. **Hypervisor Snapshots:** Creating VM hypervisor snapshots remains a manual operational step outside Ansible.
-
+5. **Post-Deployment Configuration Validation:** Using Ansible's `copy` module `validate:` parameter is not viable because `kea-dhcp4 -t` restricts configuration file loading to `/etc/kea/` and rejects temporary files outside that directory (such as Ansible's temporary staging files in `/tmp` or `/home`) with `Unable to open file`. The role validates the deployed `/etc/kea/kea-dhcp4.conf` immediately after writing it and before handlers trigger a service restart, preventing broken configurations from reaching the running daemon.
