@@ -487,8 +487,21 @@
     KRB5CCNAME: "FILE:/tmp/krb5cc_ansible_directory_verify"
   register: directory_kinit_result
   check_mode: false
+  failed_when: false
   no_log: true
   changed_when: false
+  when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
+  tags:
+    - directory
+    - directory_verify
+
+# Asserts Administrator Kerberos authentication succeeded (Step 5/8 Verification)
+- name: Assert Administrator Kerberos authentication succeeded
+  ansible.builtin.assert:
+    that:
+      - directory_kinit_result.rc == 0
+    fail_msg: >-
+      kinit failed for Administrator@{{ directory_realm }}: wrong Administrator password (it must match the one used at provision) or KDC unreachable.
   when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
   tags:
     - directory

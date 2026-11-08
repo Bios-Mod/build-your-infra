@@ -346,6 +346,28 @@
   tags:
     - dns
 
+# Converges system resolver after reboot or fallback to VPC resolver (10.0.0.2); changed only if defective
+- name: Check system resolver status on primary interface
+  ansible.builtin.command:
+    cmd: resolvectl status ens5
+  register: dns_resolvectl_status
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode
+  tags:
+    - dns
+
+# Restarts systemd-resolved if 127.0.0.1 is not the current DNS server (converges to local loopback resolver)
+- name: Restart systemd-resolved if loopback resolver is not current
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: restarted
+  when:
+    - not ansible_check_mode
+    - "'Current DNS Server: 127.0.0.1' not in dns_resolvectl_status.stdout"
+  tags:
+    - dns
+
 # Executes verification assertions for the dns module
 - name: Verify dns deployment
   ansible.builtin.import_tasks: verify.yml

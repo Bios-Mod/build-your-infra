@@ -16,7 +16,7 @@
 
   vars_prompt:
     - name: directory_admin_password
-      prompt: "Enter Active Directory Administrator password"
+      prompt: "Enter Active Directory Administrator password (the one used at provision; min 8 chars, 3 of 4 classes: a-z, A-Z, 0-9, other)"
       private: true
 
   module_defaults:

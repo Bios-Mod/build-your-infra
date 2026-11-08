@@ -23,7 +23,7 @@ This role automates the deployment of Samba 4 as an Active Directory Domain Cont
 | `directory_dc_ip` | Primary private IPv4 address of the Domain Controller (must match `ansible_facts['default_ipv4']['address']`). |
 | `directory_auditd_reboot` | Boolean flag controlling automatic reboot when auditd rules are updated on immutable kernels (`-e 2`). Required when `hardening_auditd_immutable_mode` is true. |
 
-> **Note on Administrator Password:** The Active Directory Domain Administrator password is never stored in variables or inventory files. It is requested interactively at playbook runtime via `vars_prompt` in `playbooks/directory.yml` (`directory_admin_password`, minimum 8 characters, requiring characters from at least 3 of 4 classes: lowercase `[a-z]`, uppercase `[A-Z]`, digits `[0-9]`, and special characters `[^a-zA-Z0-9]`) and passed to tasks with `no_log: true`.
+> **Note on Administrator Password:** The Active Directory Domain Administrator password is never stored in variables or inventory files. It is requested interactively at playbook runtime via `vars_prompt` in `playbooks/directory.yml` (`directory_admin_password`, minimum 8 characters) and passed to tasks with `no_log: true`. Password complexity (at least 3 of 4 classes: lowercase `[a-z]`, uppercase `[A-Z]`, digits `[0-9]`, and special characters `[^a-zA-Z0-9]`) is only enforced during initial domain provisioning; with the domain already provisioned, an incorrect password fails during verification in `kinit` with a clear message.
 
 ### Role Defaults (`defaults/main.yml`)
 
