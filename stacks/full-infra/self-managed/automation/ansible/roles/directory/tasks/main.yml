@@ -63,14 +63,28 @@
   tags:
     - directory
 
-# Asserts administrator password is provided from vars_prompt and satisfies minimum length requirement
-- name: Assert Administrator password provided and meets length requirement
+# Asserts administrator password is provided from vars_prompt, satisfies minimum length (>= 8), and meets complexity (>= 3 of 4 classes)
+- name: Assert Administrator password meets length and complexity requirements
+  vars:
+    password_classes_count: >-
+      {{
+        [
+          directory_admin_password is search('[a-z]'),
+          directory_admin_password is search('[A-Z]'),
+          directory_admin_password is search('[0-9]'),
+          directory_admin_password is search('[^a-zA-Z0-9]')
+        ] | select | list | length
+      }}
   no_log: true
   ansible.builtin.assert:
     that:
       - directory_admin_password is defined
       - directory_admin_password | length >= 8
-    fail_msg: "Administrator password must not be empty and must be at least 8 characters long."
+      - (password_classes_count | int) >= 3
+    fail_msg: >-
+      Administrator password does not meet Active Directory complexity requirements.
+      It must be at least 8 characters long and contain characters from at least 3 of the 4 classes:
+      lowercase letters [a-z], uppercase letters [A-Z], digits [0-9], and special characters [^a-zA-Z0-9].
   tags:
     - directory
 
@@ -132,6 +146,17 @@
   tags:
     - directory
 
+# Asserts no partial Samba provisioning state exists (sam.ldb exists without private/krb5.conf)
+- name: Assert no partial Samba provisioning state exists
+  ansible.builtin.assert:
+    that:
+      - not (directory_stat_samldb.stat.exists and not directory_stat_priv_krb5.stat.exists)
+    fail_msg: >-
+      partial Samba provision detected; clean slate per the manual Step 3
+      (remove /etc/samba/smb.conf and /var/lib/samba/*) and rerun.
+  tags:
+    - directory
+
 # Checks if BIND DLZ keytab exists (absent in SAMBA_INTERNAL mode)
 - name: Stat bind-dns dns.keytab
   ansible.builtin.stat:
@@ -163,24 +188,21 @@
 # Step 1 — Pre-Provision: System Preparation (Hostname and /etc/hosts)
 # ==============================================================================
 
-# Sets static DC FQDN hostname (Step 1)
-- name: Set system hostname to DC FQDN
-  ansible.builtin.hostname:
-    name: "{{ directory_hostname }}.{{ directory_domain }}"
-  tags:
-    - directory
-
 # Ensures local /etc/hosts mapping exists for DC FQDN and short hostname (Step 1)
 # Note: systemd-resolved and /etc/resolv.conf are not modified; chattr is not used
 - name: Configure /etc/hosts entry for DC FQDN
   ansible.builtin.lineinfile:
     path: /etc/hosts
-    regexp: >-
-      {{
-        '^[0-9.]+[ \t]+.*' ~ (directory_hostname ~ '[.]' ~ directory_domain | regex_escape) ~ '([ \t]+.*|$)'
-      }}
+    regexp: "^[0-9.]+[ ]+.*{{ directory_hostname }}[.]{{ directory_domain }}([ ]+.*|$)"
     line: "{{ directory_dc_ip }}   {{ directory_hostname }}.{{ directory_domain }} {{ directory_hostname }}"
     state: present
+  tags:
+    - directory
+
+# Sets static DC FQDN hostname (Step 1)
+- name: Set system hostname to DC FQDN
+  ansible.builtin.hostname:
+    name: "{{ directory_hostname }}.{{ directory_domain }}"
   tags:
     - directory
 
@@ -270,7 +292,7 @@
       - --function-level=2016
       - --option=ad dc functional level = 2016
       - "--adminpass={{ directory_admin_password }}"
-    creates: /var/lib/samba/private/sam.ldb
+    creates: /var/lib/samba/private/krb5.conf
   no_log: true
   tags:
     - directory

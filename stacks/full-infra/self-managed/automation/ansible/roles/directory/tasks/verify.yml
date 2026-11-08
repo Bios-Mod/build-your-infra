@@ -210,11 +210,11 @@
     - directory
     - directory_verify
 
-# Queries dns backend parameter using testparm (Step 3/4 Verification)
-- name: Query dns backend parameter via testparm
+# Queries server role parameter using testparm (Step 3/4 Verification)
+- name: Query server role parameter via testparm
   ansible.builtin.command:
-    cmd: testparm -s --parameter-name="dns backend"
-  register: directory_testparm_dns_backend
+    cmd: testparm -s --parameter-name="server role"
+  register: directory_testparm_server_role
   check_mode: false
   changed_when: false
   when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
@@ -233,7 +233,7 @@
     - directory
     - directory_verify
 
-# Asserts testparm dns backend is SAMBA_INTERNAL and smb.conf parameters match (Step 4 Verification)
+# Asserts testparm server role is active directory domain controller and smb.conf parameters match (Step 4 Verification)
 - name: Assert smb.conf parameters match expected Active Directory configuration
   vars:
     smb_conf_text: >-
@@ -244,14 +244,14 @@
       }}
   ansible.builtin.assert:
     that:
-      - directory_testparm_dns_backend.stdout.strip() is search('(?i)samba_internal')
+      - directory_testparm_server_role.stdout.strip() is search('(?i)active[ ]+directory[ ]+domain[ ]+controller')
       - smb_conf_text is search('(?i)realm[ ]*=[ ]*' ~ (directory_realm | regex_escape))
       - smb_conf_text is search('interfaces[ ]*=[ ]*' ~ (directory_dc_ip | regex_escape))
       - smb_conf_text is search('(?i)bind[ ]+interfaces[ ]+only[ ]*=[ ]*(yes|true|1)')
       - smb_conf_text is search('dns[ ]+forwarder[ ]*=[ ]*' ~ (directory_dns_forwarder | regex_escape))
     fail_msg: >-
       smb.conf verification failed.
-      testparm dns backend: '{{ directory_testparm_dns_backend.stdout | default("") }}'.
+      testparm server role: '{{ directory_testparm_server_role.stdout | default("") }}'.
       Expected realm: {{ directory_realm }}, interfaces: {{ directory_dc_ip }},
       bind interfaces only: yes, dns forwarder: {{ directory_dns_forwarder }}.
   when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
@@ -486,6 +486,7 @@
   environment:
     KRB5CCNAME: "FILE:/tmp/krb5cc_ansible_directory_verify"
   register: directory_kinit_result
+  check_mode: false
   no_log: true
   changed_when: false
   when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
@@ -527,6 +528,7 @@
     cmd: kdestroy
   environment:
     KRB5CCNAME: "FILE:/tmp/krb5cc_ansible_directory_verify"
+  check_mode: false
   changed_when: false
   failed_when: false
   when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists

@@ -15,6 +15,14 @@
     name: named
     state: reloaded
 
+# Restarts systemd-resolved after named reload to ensure loopback resolver is re-selected (Steps 2, 3)
+- name: Restart systemd-resolved after named reload (dns)
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: restarted
+  when: not ansible_check_mode
+  listen: Reload named (dns)
+
 # Initializes updated AIDE database baseline for BIND9 configs and zone files (Step 6)
 - name: Initialize AIDE database (dns)
   ansible.builtin.command:

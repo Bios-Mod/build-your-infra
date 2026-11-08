@@ -42,6 +42,17 @@ Execution can be targeted via Ansible tags:
 
 ---
 
+## Handlers
+
+The role defines handlers triggered by configuration changes:
+
+- `Reload named (dns)`: Reloads the `named` systemd service when BIND9 options or zones change.
+- `Restart systemd-resolved after named reload (dns)`: Listens to `Reload named (dns)` and restarts `systemd-resolved` immediately following a `named` reload. On EC2 instances, `systemd-resolved` may temporarily fall back to the AWS VPC resolver (`10.0.0.2`) if a query occurs during the brief reload window; restarting `systemd-resolved` ensures that `127.0.0.1` is re-anchored as the active primary resolver.
+- `Regenerate AIDE database (dns)`: Initializes and activates an updated AIDE database baseline covering `/etc/bind`.
+- `Apply netplan (dns)`: Generates and applies Netplan network configurations and restarts `systemd-resolved`.
+
+---
+
 ## Shared Files Notice
 
 - **/etc/ufw/user.rules:** Managed via `community.general.ufw` module. Adds targeted rules for incoming port 53 UDP and TCP on `wg0` without modifying other firewall rules. Port 53 is never exposed on the public interface.
