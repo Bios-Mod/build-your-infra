@@ -70,3 +70,4 @@ Execution can be targeted via Ansible tags:
 5. **Conditional `samba_keytab` Audit Rule:** With `SAMBA_INTERNAL`, `/var/lib/samba/bind-dns/dns.keytab` is not created. Kernel `auditctl` rejects watches on non-existent files. The role dynamically excludes this rule unless the keytab file physically exists.
 6. **SMB2 Limitation:** SMB2 protocol verification is excluded from automated assertions due to a known Samba 4.19.5 defect on aarch64 architectures documented in the manual module.
 7. **Client Domain Join & Snapshots:** Joining client machines to the Active Directory domain and taking hypervisor/AMI snapshots remain manual operational steps.
+

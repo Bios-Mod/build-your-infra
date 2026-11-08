@@ -74,3 +74,4 @@
     - hardening_auditd_immutable_mode
     - not (directory_auditd_reboot | default(false))
   listen: Load auditd rules (directory)
+
