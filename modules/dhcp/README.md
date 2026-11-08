@@ -15,3 +15,5 @@ on the target environment before applying this module.
 | --- | --- | --- |
 | self-managed (local VM) | Kea DHCP | [dhcp-self-managed.md](self-managed/dhcp-self-managed.md) |
 | aws-native | N/A — VPC DHCP Options Sets | — |
+
+**Automation (self-managed):** Ansible role [`dhcp`](../../stacks/full-infra/self-managed/automation/self-managed-automation.md#dhcp--kea-dhcpv4-service) (local VM only)

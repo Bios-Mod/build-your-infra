@@ -11,4 +11,6 @@ Serving content over plain HTTP exposes traffic and offers no identity guarantee
 | self-managed | Nginx — HTTPS + reverse proxy (Let's Encrypt / self-signed) | [web-server-self-managed.md](self-managed/web-server-self-managed.md) |
 | aws-native | S3 · CloudFront · ACM | [web-server-aws-native.md](aws-native/web-server-aws-native.md) |
 
+**Automation (self-managed):** Ansible role [`web-server`](../../stacks/full-infra/self-managed/automation/self-managed-automation.md#web-server--nginx-https-service)
+
 **Docker equivalent:** Nginx official image — [`containerize-your-infra/modules/web-server`](https://github.com/Bios-Mod/containerize-your-infra/tree/main/modules/web-server)

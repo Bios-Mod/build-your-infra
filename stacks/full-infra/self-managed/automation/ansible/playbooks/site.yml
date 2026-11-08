@@ -1,0 +1,41 @@
+# Deploy to:   vm:ec2
+# Apply:       ansible-playbook playbooks/site.yml [--limit <host>] [--tags <tag>] [--check --diff] --ask-become-pass
+# Module:      stacks/full-infra/self-managed/automation/ansible
+# Requires:    playbooks/bootstrap.yml executed on targets (Step 0 verified, SSH on port 22222)
+#
+# Master orchestration playbook for the entire self-managed infrastructure stack.
+# Why:         Provides a unified entry point to execute all module playbooks in dependency order using module-scoped tags.
+# Doc ref:     stacks/full-infra/self-managed/automation/self-managed-automation.md — Full-Stack Orchestration (site.yml)
+# Targets:     both
+
+---
+- name: Orchestrate hardening baseline
+  import_playbook: hardening.yml
+  tags:
+    - hardening
+
+- name: Orchestrate file-transfer service
+  import_playbook: file-transfer.yml
+  tags:
+    - file-transfer
+    - file_transfer
+
+- name: Orchestrate dns service
+  import_playbook: dns.yml
+  tags:
+    - dns
+
+- name: Orchestrate web-server service
+  import_playbook: web-server.yml
+  tags:
+    - web-server
+
+- name: Orchestrate directory service
+  import_playbook: directory.yml
+  tags:
+    - directory
+
+- name: Orchestrate dhcp service
+  import_playbook: dhcp.yml
+  tags:
+    - dhcp

@@ -37,7 +37,7 @@ called as a Terraform `source` reference — configs stay in
 
 Provisions a clean EC2 instance (`multi-lab-aws`) running Ubuntu Server 24.04 LTS ARM64 from the canonical AMI, attaching an Elastic IP, configuring Security Groups with dynamic IP ingress, and attaching an IAM instance profile with SSM Session Manager access. Covers the infrastructure layer only: instance placement, network assignment, and Security Groups.
 
-The operating system configuration layer is automated with Ansible. The `hardening` role is fully automated and verified across both EC2 and local VM targets, establishing the baseline from scratch without relying on pre-baked AMI snapshots. Downstream service modules (SFTP, BIND9, Nginx, Samba AD DC) are in progress and build on top of this foundation.
+The operating system configuration layer is automated with Ansible. All six modules (hardening, file-transfer, dns, web-server, directory, and dhcp) are fully automated and orchestrated through [`playbooks/site.yml`](self-managed/automation/ansible/playbooks/site.yml), establishing the complete baseline from scratch without relying on pre-baked AMI snapshots.
 See [`self-managed-automation.md`](self-managed/automation/self-managed-automation.md) for the end-to-end automation guide.
 
 > This stack represents the correct boundary for Terraform in self-managed

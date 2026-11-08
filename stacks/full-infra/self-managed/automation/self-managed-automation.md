@@ -185,8 +185,7 @@ Fill in the real host variables:
 | `hardened` | 22222 | `admin_username` | LAN IP / Elastic IP | After the SSH hardening task has run |
 | `wg` | 22222 | `admin_username` | `172.16.0.1` (EC2) / `172.16.0.3` (VM) | After the tunnel is up on the Mac |
 
-> [!WARNING]
-> Never switch to `hardened` before `sshd` is running on port 22222. Never switch to `wg` before `ping 172.16.0.1` or `ssh -p 22222 <admin_username>@172.16.0.1` works from the Mac.
+> **Warning:** Never switch to `hardened` before `sshd` is running on port 22222. Never switch to `wg` before `ping 172.16.0.1` or `ssh -p 22222 <admin_username>@172.16.0.1` works from the Mac.
 
 📄 [`requirements.txt`](ansible/requirements.txt) · [`requirements.yml`](ansible/requirements.yml) · [`inventories/hosts.yml.example`](ansible/inventories/hosts.yml.example) · [`host_vars/multi-lab-local.yml.example`](ansible/inventories/host_vars/multi-lab-local.yml.example) · [`host_vars/multi-lab-vps.yml.example`](ansible/inventories/host_vars/multi-lab-vps.yml.example)
 
@@ -226,8 +225,7 @@ Automates [`hardening-self-managed.md`](../../../../modules/hardening/self-manag
 - Step 1: full APT upgrade, unattended-upgrades and weekly `debsums`.
 - Step 2 (**VM only**): static Netplan and the systemd-networkd `no-dhcp.conf` drop-in.
 
-> [!WARNING]
-> The admin account and its key must work before the SSH hardening step. If not, you are locked out once password login and the default user are disabled.
+> **Warning:** The admin account and its key must work before the SSH hardening step. If not, you are locked out once password login and the default user are disabled.
 
 On EC2, accept the host key first (`host_key_checking = True`):
 
@@ -745,7 +743,17 @@ The `dns` role reproduces on EC2 (`dns_servers`) the state that the manual modul
 
 > **Coexistence note (`dns_listen_on`):** To permit coexistence with Samba 4 Active Directory on EC2, set `dns_listen_on: "127.0.0.1; 172.16.0.1;"` in `inventories/host_vars/multi-lab-vps.yml` before applying the `directory` module. This restricts BIND9 listeners and frees the EC2 private IP on port 53 for Samba's internal DNS. Furthermore, an automated systemd drop-in for `named.service` (`10-restart-resolved.conf`) restarts `systemd-resolved` on every `named` startup, a handler restarts it after each reload, and `playbooks/dns.yml` automatically repairs the resolver on each run if it had already fallen back to `10.0.0.2`; verifying `resolvectl status ens5` (`Current DNS Server: 127.0.0.1`) remains the verification.
 
-Ensure `connection_mode: "wg"` is set in `inventories/host_vars/multi-lab-vps.yml`. With the WireGuard tunnel up, run the three commands in order on the EC2 hub: a dry run to review the diff, the real apply, and a second apply that must report `changed=0`.
+Ensure `connection_mode: "wg"` is set and configure BIND9 listeners and auditd reboot behavior in `inventories/host_vars/multi-lab-vps.yml`:
+
+```yaml
+# Semicolon-terminated list of IPv4 addresses on which BIND9 listens; frees EC2 private IP on port 53 for Samba 4 AD DC
+dns_listen_on: "127.0.0.1; 172.16.0.1;"
+
+# Controls automatic host reboot when auditd rules change in immutable mode (-e 2)
+dns_auditd_reboot: true
+```
+
+With the WireGuard tunnel up, run the three commands in order on the EC2 hub: a dry run to review the diff, the real apply, and a second apply that must report `changed=0`.
 
 **Control node (Mac):**
 
@@ -758,8 +766,7 @@ ansible-playbook playbooks/dns.yml --limit multi-lab-vps --ask-become-pass
 
 Following the playbook run, note that on EC2 the first run triggers an automated reboot to apply the new audit rules in immutable mode (`-e 2`):
 
-> [!WARNING]
-> Because the hardening baseline locks auditd in immutable mode (`-e 2`), loading the audit drop-in `/etc/audit/rules.d/99-zz-dns.rules` requires a kernel reboot. The role manages this via `dns_auditd_reboot: true` in `host_vars/multi-lab-vps.yml`, automatically rebooting EC2 on the first pass (terminating the active WireGuard tunnel; re-establish the tunnel once the host returns). Following reboot, the system resolver automatically converges back to loopback (`127.0.0.1`) thanks to the `named.service` drop-in (`10-restart-resolved.conf`) and the playbook's convergence check.
+> **Warning:** Because the hardening baseline locks auditd in immutable mode (`-e 2`), loading the audit drop-in `/etc/audit/rules.d/99-zz-dns.rules` requires a kernel reboot. The role manages this via `dns_auditd_reboot: true` in `host_vars/multi-lab-vps.yml`, automatically rebooting EC2 on the first pass (terminating the active WireGuard tunnel; re-establish the tunnel once the host returns). Following reboot, the system resolver automatically converges back to loopback (`127.0.0.1`) thanks to the `named.service` drop-in (`10-restart-resolved.conf`) and the playbook's convergence check.
 
 Then complete the manual step outside Ansible:
 
@@ -767,8 +774,7 @@ Then complete the manual step outside Ansible:
 
 Configure WireGuard client DNS resolution to point to the EC2 DNS server (`172.16.0.1`):
 
-> [!WARNING]
-> Execute these commands over the local VM LAN connection, not through the WireGuard tunnel itself. Restarting `wg-quick@wg0` temporarily drops tunnel traffic. If the hardening Step 5 task is subsequently re-run on the VM, it restores the default Quad9 DNS in `wg0.conf`, requiring this manual step to be repeated.
+> **Warning:** Execute these commands over the local VM LAN connection, not through the WireGuard tunnel itself. Restarting `wg-quick@wg0` temporarily drops tunnel traffic. If the hardening Step 5 task is subsequently re-run on the VM, it restores the default Quad9 DNS in `wg0.conf`, requiring this manual step to be repeated.
 
 ```bash
 sudo sed -i 's/^DNS\s*=.*/DNS = 172.16.0.1/' /etc/wireguard/wg0.conf
@@ -844,12 +850,11 @@ What the assertions check on EC2 (`multi-lab-vps`):
 | auditd rules | Active rules contain `-w /etc/bind/ -p wa -k dns_config` and `-w /var/lib/bind/ -p wa -k dns_config` | [Step 5](../../../../modules/dns/self-managed/dns-self-managed.md#step-5--auditd-zone-file-monitoring) |
 | AIDE integrity | Drop-in `99-zz-dns` monitors `/etc/bind` and excludes `/var/cache/bind` | [Step 6](../../../../modules/dns/self-managed/dns-self-managed.md#step-6--aide-extend-baseline) |
 
-After rebooting the host, if `resolvectl status ens5` shows `Current DNS Server: 10.0.0.2`, restart `systemd-resolved` to switch back to the local resolver (the role only restarts it when applying the Netplan overlay). This recovery command must also be executed once if the role is applied on a host where `systemd-resolved` has already fallen back to `10.0.0.2`:
+Verify that systemd-resolved is anchored to the local BIND9 resolver (`127.0.0.1`):
 
 **EC2 · multi-lab-vps:**
 
 ```bash
-sudo systemctl restart systemd-resolved
 resolvectl status ens5 | grep "Current DNS Server"
 # → Current DNS Server: 127.0.0.1
 ```
@@ -1309,3 +1314,260 @@ What the assertions check on the local VM:
 #### Why
 
 - **End-to-End Verification via `nmap` Script:** Simulating a DHCP client using `nmap --script broadcast-dhcp-discover -e {{ vm_interface }}` sends a DHCPDISCOVER broadcast and captures the DHCPOFFER response directly from the VM host. This validates the full operational configuration (pool, router, DNS, domain name, lease time) in a single command without requiring an external physical client on the LAN.
+
+---
+
+## Full-Stack Orchestration (site.yml)
+
+**Starting point:** The control node virtual environment is active, Ansible collections and toolchain dependencies are installed, and both target environments (EC2 and local VM) have completed the bootstrap phase (`playbooks/bootstrap.yml`) with dedicated administrator keys in place.
+
+[`playbooks/site.yml`](ansible/playbooks/site.yml) provides a unified top-level orchestration playbook that executes all downstream service modules in dependency order across target inventory groups.
+
+### Step 1 — Apply (Master Playbook Execution & Greenfield Runbook)
+
+#### What was done
+
+`playbooks/site.yml` composes the six automated modules in sequential dependency order using `import_playbook`:
+1. `hardening.yml` (groups `vm:ec2`, tag `hardening`) — System, access, and logging baseline.
+2. `file-transfer.yml` (groups `vm:ec2`, tags `file-transfer`, `file_transfer`) — Hardened SFTP chroot jail on port 22222.
+3. `dns.yml` (group `dns_servers` / EC2 hub, tag `dns`) — Authoritative BIND9 DNS server for `lab.internal`.
+4. `web-server.yml` (groups `vm:ec2`, tag `web-server`) — Nginx HTTPS reverse proxy with TLS certificates.
+5. `directory.yml` (group `directory_servers` / EC2 hub, tag `directory`) — Samba 4 Active Directory Domain Controller.
+6. `dhcp.yml` (group `dhcp_servers` / local VM, tag `dhcp`) — Kea DHCPv4 service for local LAN.
+
+Each playbook retains its specific group targeting, allowing execution to be scoped to a single target host with `--limit` or to specific modules using module-scoped tags (`--tags <module>`).
+
+To apply the complete stack or individual modules, run a dry-run first, execute the playbook, and run a second pass to confirm complete idempotence (`changed=0`):
+
+**Control node (Mac):**
+
+```bash
+# Execute dry-run across all modules on both targets
+ansible-playbook playbooks/site.yml --check --diff --ask-become-pass
+
+# Execute full-stack convergence across all modules
+ansible-playbook playbooks/site.yml --ask-become-pass
+
+# Execute second run to confirm convergence
+ansible-playbook playbooks/site.yml --ask-become-pass
+# → second run: changed=0
+```
+
+Targeting individual hosts or specific modules:
+
+**Control node (Mac):**
+
+```bash
+# Target only the EC2 hub host
+ansible-playbook playbooks/site.yml --limit multi-lab-vps --ask-become-pass
+
+# Target only the local VM peer
+ansible-playbook playbooks/site.yml --limit multi-lab-local --ask-become-pass
+
+# Target a specific module across applicable hosts
+ansible-playbook playbooks/site.yml --tags web-server --ask-become-pass
+```
+
+#### Greenfield Rebuild Runbook
+
+For a complete from-scratch deployment without assistance, follow the two rebuild paths in sequence: **EC2 first** (acting as the WireGuard hub), then the **local VM** (acting as the WireGuard peer).
+
+##### Path A — EC2 Hub Provisioning & Rebuild (`multi-lab-vps`)
+
+1. **Infrastructure Provisioning (Terraform):**
+   Follow [Terraform — Infrastructure Provisioning](#terraform--infrastructure-provisioning). Provision the EC2 instance, Elastic IP, and security groups:
+
+   **Control node (Mac):**
+
+   ```bash
+   cd stacks/full-infra/self-managed/automation/terraform
+   terraform init
+   terraform apply
+   ```
+
+   Note the assigned public Elastic IP and update `ec2_eip` in `stacks/full-infra/self-managed/automation/ansible/inventories/host_vars/multi-lab-vps.yml`.
+
+2. **Initial Host Variables & SSH Bootstrap:**
+   In `inventories/host_vars/multi-lab-vps.yml`, set `connection_mode: "pre"` (port 22, initial user `ubuntu`). Accept the host key and run the bootstrap playbook to create the dedicated administrator account:
+
+   **Control node (Mac):**
+
+   ```bash
+   cd ../ansible
+   ssh -o StrictHostKeyChecking=accept-new ubuntu@<ec2_eip> "exit"
+   ansible-playbook playbooks/bootstrap.yml --limit multi-lab-vps --ask-become-pass
+   ```
+
+3. **Hardening Baseline & WireGuard Hub Establishment:**
+   Follow [Hardening — Ansible Baseline](#hardening--ansible-baseline):
+   - Switch `connection_mode: "hardened"` (port 22222) in `multi-lab-vps.yml`.
+   - Apply Baseline Preparation (`--tags hardening_2a`).
+   - Apply Access Chain (`--tags hardening_2b`) to configure SSH, UFW, WireGuard server, and Fail2Ban.
+   - Retrieve the EC2 WireGuard public key from `/etc/wireguard/publickey` and configure the Mac WireGuard client tunnel (`172.16.0.2`).
+   - Establish the tunnel on Mac and verify: `ping 172.16.0.1`.
+   - Switch `connection_mode: "wg"` in `multi-lab-vps.yml`.
+   - Apply System Hardening (`--tags hardening_2c`) and verify convergence (`changed=0`).
+
+4. **Full-Stack Service Orchestration:**
+   With WireGuard active and `connection_mode: "wg"`, run `site.yml` on the EC2 host:
+
+   **Control node (Mac):**
+
+   ```bash
+   ansible-playbook playbooks/site.yml --limit multi-lab-vps --check --diff --ask-become-pass
+   ansible-playbook playbooks/site.yml --limit multi-lab-vps --ask-become-pass
+   ansible-playbook playbooks/site.yml --limit multi-lab-vps --ask-become-pass
+   # → second run: changed=0
+   ```
+
+   > **Warning:** On the first pass of `file-transfer` and `dns`, the EC2 host automatically reboots to load immutable audit rules (`*_auditd_reboot: true`). Reconnect the WireGuard tunnel once the host returns.
+
+5. **Post-Lab Infrastructure Teardown:**
+   To eliminate ongoing AWS costs when testing concludes, destroy the EC2 instance and associated cloud infrastructure:
+
+   **Control node (Mac):**
+
+   ```bash
+   cd ../terraform
+   terraform destroy
+   ```
+
+##### Path B — Local VM Peer Provisioning & Rebuild (`multi-lab-local`)
+
+1. **Virtual Machine Baseline:**
+   Install Ubuntu Server 24.04 LTS on VMware Fusion or VirtualBox. Note the initial installer username and current DHCP IP.
+
+2. **Initial Host Variables & SSH Bootstrap:**
+   In `inventories/host_vars/multi-lab-local.yml`, configure `connection_mode: "pre"`, `vm_lan_ip`, and `vm_interface`. Run `bootstrap.yml`:
+
+   **Control node (Mac):**
+
+   ```bash
+   cd stacks/full-infra/self-managed/automation/ansible
+   ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass
+   ```
+
+3. **Hardening Baseline & Peer Tunnel Connection:**
+   Follow [Hardening — Ansible Baseline](#hardening--ansible-baseline):
+   - Switch `connection_mode: "hardened"` in `multi-lab-local.yml`.
+   - Apply Baseline Preparation (`--tags hardening_2a`) to set static IP.
+   - Configure `wireguard_endpoint` with the EC2 Elastic IP (`<ec2_eip>:51820`) and register peer public keys in `multi-lab-vps.yml` and `multi-lab-local.yml`.
+   - Apply Access Chain (`--tags hardening_2b`).
+   - Confirm WireGuard connectivity to hub: `ping 172.16.0.1`.
+   - Switch `connection_mode: "wg"` in `multi-lab-local.yml`.
+   - Apply System Hardening (`--tags hardening_2c`) and verify convergence (`changed=0`).
+
+4. **Full-Stack Service Orchestration:**
+   With the tunnel active and `connection_mode: "wg"`, run `site.yml` on the VM:
+
+   **Control node (Mac):**
+
+   ```bash
+   ansible-playbook playbooks/site.yml --limit multi-lab-local --check --diff --ask-become-pass
+   ansible-playbook playbooks/site.yml --limit multi-lab-local --ask-become-pass
+   ansible-playbook playbooks/site.yml --limit multi-lab-local --ask-become-pass
+   # → second run: changed=0
+   ```
+
+#### Why
+
+`site.yml` automates the execution of all module playbooks, but complete full-stack deployment is not 100% unattended. Several deliberate gates and out-of-band requirements exist by design:
+
+- **Separate Bootstrap (`playbooks/bootstrap.yml`):** Bootstrap connects over port 22 using the default or installer account (`connection_mode: "pre"`). It cannot be run inside `site.yml` because once hardening executes, port 22 and default logins are permanently disabled. See [Hardening Step 1](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a).
+- **Phased Connection Mode Transitions (`pre` → `hardened` → `wg`):** Transitioning connection modes requires human verification between steps (verifying key access before closing passwords; verifying WireGuard tunnel before closing public SSH). Running this unattended would risk permanent lockout if a network handshake fails. See [Control Node — Environment Setup](#control-node--environment-setup).
+- **Out-of-Band Cloud Infrastructure (Security Groups & SSM):** AWS Security Groups, VPC routes, and IAM instance profiles are managed declaratively in Terraform or AWS Console. Ansible operates exclusively within the guest OS and does not create cloud perimeter resources. See [Terraform — Infrastructure Provisioning](#terraform--infrastructure-provisioning).
+- **WireGuard Asymmetric Key Exchange:** Private keys are generated locally on each host and never leave the system. Public keys must be exchanged between the EC2 hub (`multi-lab-vps.yml`) and peers (`multi-lab-local.yml`) out-of-band before the tunnel can establish. See [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
+- **Interactive Password Prompts (`vars_prompt`):** Administrative passwords for the system admin (`bootstrap.yml`) and Samba Active Directory Administrator (`directory.yml`) are prompted interactively and hashed in memory. They are never stored in plaintext in version control or host variable files. See [Directory Step 1](#step-1--apply-tag-directory).
+- **Controlled Reboots for Immutable Audit Rules (`*_auditd_reboot`):** The hardening baseline locks the kernel audit subsystem in immutable mode (`-e 2`). New audit drop-ins (`file-transfer`, `dns`, `web-server`, `directory`) require a kernel reboot to take effect on EC2. Automated reboots (`*_auditd_reboot: true`) drop the active WireGuard tunnel temporarily, requiring the operator to re-establish the connection. See [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
+- **Public Domain & Route 53 Delegation Prerequisite:** Let's Encrypt requires public DNS resolution for the registered domain (`buildyourinfra.click`). The public hosted zone and registrar delegation are configured once as an account-level prerequisite outside Ansible. See [Web Server Step 1](#step-1--apply-tag-web-server).
+- **Let's Encrypt Rate Limits:** Automated certificate issuance enforces `web_server_certbot_staging: true` during initial testing to avoid hitting ACME production rate limits before production cutover. See [Web Server Step 1](#step-1--apply-tag-web-server).
+- **SMB2 Protocol Omission:** Samba 4.19.5 on Ubuntu 24.04 ARM64 has an upstream bug preventing SMB2 file-sharing service startup in AD DC mode. AD authentication, Kerberos, LDAP, and RPC operate normally; SMB2 file sharing is excluded as an accepted deviation. See [Directory Step 1](#step-1--apply-tag-directory).
+- **Client-Side Configuration Steps:** Workstation-specific settings (SFTP client alias in `~/.ssh/config`, WireGuard peer DNS forwarding, joining client machines to the Active Directory domain) run outside the control node playbook and are applied on the operator's machine. See [File Transfer Step 2](#step-2--verify-tag-file_transfer_verify) and [Directory Step 2](#step-2--verify-tag-directory_verify).
+
+#### Verification
+
+Verify service status directly on target hosts:
+
+**EC2 · multi-lab-vps:**
+
+```bash
+# Check WireGuard hub interface
+sudo wg show wg0
+# → interface: wg0 ...
+
+# Check BIND9 DNS service
+sudo systemctl is-active named
+# → active
+
+# Check Nginx HTTPS service
+sudo systemctl is-active nginx
+# → active
+
+# Check Samba AD DC service
+sudo systemctl is-active samba-ad-dc
+# → active
+```
+
+**VM · multi-lab-local:**
+
+```bash
+# Check WireGuard client interface
+sudo wg show wg0
+# → interface: wg0 ...
+
+# Check Kea DHCPv4 service
+sudo systemctl is-active kea-dhcp4-server
+# → active
+```
+
+---
+
+### Step 2 — Verify (Tags `*_verify`)
+
+#### What was done
+
+Run the dedicated verification test suites for each module across the infrastructure stack using the module-specific verification tags. Each verification playbook must report `changed=0 failed=0`:
+
+**Control node (Mac):**
+
+```bash
+# Verify Hardening baseline convergence
+ansible-playbook playbooks/hardening.yml --ask-become-pass
+# → changed=0 failed=0
+
+# Verify SFTP service assertions across both targets
+ansible-playbook playbooks/site.yml --tags file_transfer_verify --ask-become-pass
+# → changed=0 failed=0
+
+# Verify Authoritative BIND9 DNS server assertions on EC2
+ansible-playbook playbooks/site.yml --tags dns_verify --ask-become-pass
+# → changed=0 failed=0
+
+# Verify Nginx HTTPS and reverse proxy assertions across both targets
+ansible-playbook playbooks/site.yml --tags web-server_verify --ask-become-pass
+# → changed=0 failed=0
+
+# Verify Samba 4 Active Directory Domain Controller assertions on EC2
+ansible-playbook playbooks/site.yml --tags directory_verify --ask-become-pass
+# → changed=0 failed=0
+
+# Verify Kea DHCPv4 service assertions on local VM
+ansible-playbook playbooks/site.yml --tags dhcp_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+Summary of assertions validated across the full-stack suite:
+
+| Check | Expected | Manual verification |
+| --- | --- | --- |
+| Hardening (`hardening`) | SSH port 22222, UFW rules, WireGuard tunnel, sysctl kernel parameters, AIDE baseline, Lynis score (≥88 VM, ≥90 EC2) | [Hardening Step 4](#step-4--verification-and-convergence) |
+| SFTP (`file_transfer_verify`) | `sftpuser` with `nologin`, chroot ownership (`root:root 0755`), uploads permissions (`0750`), `internal-sftp` Match User rules, auditd watch | [File Transfer Step 2](#step-2--verify-tag-file_transfer_verify) |
+| DNS (`dns_verify`) | `named` active, `named-checkconf -z` clean, UDP/TCP 53 on `wg0`, forward/reverse zone lookups, system resolver on `127.0.0.1`, auditd watch | [DNS Step 2](#step-2--verify-tag-dns_verify) |
+| Web Server (`web-server_verify`) | Nginx service active, TLS certificate valid, HTTP to HTTPS redirect, reverse proxy 502 upstream response, auditd watch | [Web Server Step 2](#step-2--verify-tag-web-server_verify) |
+| Directory (`directory_verify`) | `samba-ad-dc` active, domain level 2016, Kerberos ticket via `kinit`, LDAP SRV query, AD listening ports (53, 88, 389, 445), auditd watch | [Directory Step 2](#step-2--verify-tag-directory_verify) |
+| DHCP (`dhcp_verify`) | `kea-dhcp4-server` active, `kea-dhcp4 -t` syntax clean, UDP port 67 bound, lease CSV exists, broadcast DHCP discovery response | [DHCP Step 2](#step-2--verify-tag-dhcp_verify) |
+
+#### Why
+
+- **Independent Module Verification:** Dedicated `*_verify` tags allow operators to validate the operational health and security assertions of any individual module without re-applying configuration changes or restarting daemons.
+- **End-to-End State Assurance:** Running the verification suite across all modules guarantees that downstream service configurations have not introduced drift, broken firewall rules, or degraded the baseline security controls established by earlier playbooks.

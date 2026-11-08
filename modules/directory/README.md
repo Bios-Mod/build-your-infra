@@ -12,6 +12,8 @@ on the target environment before applying this module.
 | aws-native | AWS Directory Service (Managed Microsoft AD) | [directory-aws-native.md](aws-native/directory-aws-native.md) |
 | self-managed | Samba 4 AD DC | [directory-self-managed.md](self-managed/directory-self-managed.md) |
 
+**Automation (self-managed):** Ansible role [`directory`](../../stacks/full-infra/self-managed/automation/self-managed-automation.md#directory--samba-4-active-directory-service)
+
 > **AWS Native cost:** Managed AD (Standard Edition) bills at ~$0.10/hour
 > (two controllers, always-on). Use the deploy-on-demand strategy documented
 > in the aws-native implementation guide.

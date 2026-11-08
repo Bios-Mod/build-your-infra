@@ -13,4 +13,6 @@ A freshly provisioned server is exposed by default: open ports, password logins,
 | self-managed | UFW · SSH · Fail2Ban · WireGuard · sysctl · AppArmor · auditd · AIDE · Lynis | [hardening-self-managed.md](self-managed/hardening-self-managed.md) |
 | aws-native | Security Groups · IMDSv2 · SSM · GuardDuty · CloudTrail · Security Hub · VPC Flow Logs | [hardening-aws-native.md](aws-native/hardening-aws-native.md) |
 
+**Automation (self-managed):** Ansible role [`hardening`](../../stacks/full-infra/self-managed/automation/self-managed-automation.md#hardening--ansible-baseline)
+
 Lynis hardening index: **88** (local VM) · **90** (EC2 self-managed)
