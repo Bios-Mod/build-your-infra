@@ -18,7 +18,7 @@ Hosts need to find each other by name without hardcoded IPs or public resolvers.
 > additional peers) consume DNS over the WireGuard tunnel — no DNS server is
 > installed on client nodes.
 
-> **Directory dependency:** Samba 4 AD DC includes its own internal DNS server that can > replace or integrate with BIND9. Review this module and its zone structure before
+> **Directory dependency:** Samba 4 AD DC includes its own internal DNS server that can replace or integrate with BIND9. Review this module and its zone structure before
 > provisioning the directory module — zone delegation or full BIND9 replacement may be
 > required.
 
