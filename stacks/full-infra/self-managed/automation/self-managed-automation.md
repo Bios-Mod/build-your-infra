@@ -463,6 +463,7 @@ Moving SSH to 22222 behind WireGuard keeps administrative access off the public 
 - **`Key is not the correct length or format`:** a `CHANGE_ME_...` placeholder is still in `host_vars` or `wg0.conf`. Keys must be 44 base64 characters ending in `=`.
 - **No handshake in `wg show`:** check that `multi-lab-sg` allows `51820/udp` from `0.0.0.0/0`, that the hub and client public keys are not crossed, and `sudo journalctl -xeu wg-quick@wg0` on the hub.
 - **`Timeout waiting for privilege escalation prompt`:** `meta: reset_connection` ignores `when` in ansible-core 2.21. The role only reaches it through `include_tasks` guarded by `connection_mode == 'pre'`.
+- **`Timeout waiting for privilege escalation prompt` (VM play latency):** On the lab VM, the first privilege-escalation prompt of a play intermittently exceeds 30 s (observed on `playbooks/site.yml` at the `dhcp` play; passes with 120). `ansible.cfg` sets `timeout = 120` to avoid timeouts during privilege escalation.
 - **EC2 unreachable over SSH:** open an SSM session (no inbound ports needed):
 
   **Control node (Mac):**
@@ -570,10 +571,11 @@ Expected values by target, checked with the manual Verification sections:
 #### Known Deviations
 
 1. **`/var/log/fail2ban.log`:** created as `syslog:adm` in Step 11, but Fail2Ban writes as root and logrotate recreates it as `root:adm` (`0640`). One `changed` after a rotation is expected.
-2. **Block 2B idempotency:** the `reset_connection` fix (`step_03_ssh_transition.yml`) is confirmed live only when the full 2B gate passes on both targets; the from-scratch rebuild is deferred to Phase 9.
+2. **Block 2B idempotency:** The `reset_connection` fix (`step_03_ssh_transition.yml`) is considered validated by incremental playbook executions across both target hosts; a greenfield rebuild from scratch was discarded by architectural decision.
 3. **WireGuard endpoint on the VM:** `wireguard_endpoint` must be `<ec2_eip>:51820` in `host_vars/multi-lab-local.yml`. Defaulting to the VM's own IP prevented the handshake.
 4. **UFW 22222 on EC2:** `step_04_ufw.yml` skips `limit 22222/tcp` when `hardening_wg_close_public_ssh: true`, so Step 4 does not recreate what Step 5 deletes.
 5. **APT system updates (`upgrade: full`):** `step_01_updates.yml` applies `upgrade: full` (`hardening_upgrade_type`). When upstream package updates or kernel releases appear in the repositories between playbook runs, the task reports `changed=1`. The role intentionally avoids unattended reboots; this is an expected exception to the `changed=0` idempotency check.
+6. **`Hold snapd` package selection:** `step_09_1_services.yml` uses `dpkg_selections` to hold `snapd` against reinstallation. `Hold snapd` may report `changed=1` on every pass; the hold is re-asserted and has no functional impact.
 
 ---
 
@@ -1535,8 +1537,8 @@ cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
 # Execute terraform destroy using existing terraform.tfvars
 terraform destroy
 
-# → Plan: 0 to add, 0 to change, 11 to destroy
-# → Destroy complete! Resources: 11 destroyed.
+# → Plan: 0 to add, 0 to change, N to destroy
+# → Destroy complete! Resources: N destroyed.
 ```
 
 > **Note:** `terraform destroy` reads `terraform.tfvars` for required parameters (`ami_id`, `instance_type`, `key_name`). CIDR variables default to closed (`""`), avoiding exposing any ports during the destroy cycle. Destroying the stack deletes the managed Route 53 A record pointing to the Elastic IP, but leaves the public hosted zone intact.
@@ -1576,7 +1578,7 @@ aws route53domains disable-domain-auto-renew \
 ```
 
 > [!CAUTION]
-> Always query the hosted zone by exact domain name (`--dns-name "buildyourinfra.click."`). Never delete unrelated hosted zones in the AWS account. Domain registrations are non-refundable; disabling auto-renewal ensures the domain simply lapses at the end of its paid registration period without new charges.
+> `aws route53 delete-hosted-zone` fails with `HostedZoneNotEmpty` while records other than the default apex NS and SOA exist; those custom records must be deleted beforehand via Console (described below) or with `aws route53 change-resource-record-sets`. Always query the hosted zone by exact domain name (`--dns-name "buildyourinfra.click."`). Never delete unrelated hosted zones in the AWS account. Domain registrations are non-refundable; disabling auto-renewal ensures the domain simply lapses at the end of its paid registration period without new charges.
 
 **Console Alternative:**
 1. **Route 53 Console:** Navigate to **Hosted zones** → Select `buildyourinfra.click` → Delete all non-default records → Click **Delete zone**.
@@ -1584,30 +1586,30 @@ aws route53domains disable-domain-auto-renew \
 
 ##### 3. AWS Native Stack Teardown (If Deployed)
 
-If the `aws-native` stack was provisioned, destroy resources in reverse order of deployment to respect inter-module dependencies:
+If the `aws-native` stack was provisioned, destroy resources in reverse order of deployment to respect inter-module dependencies. Terraform will display the destruction plan and prompt for `yes` confirmation; review that it destroys exclusively `multi-lab-*` resources (Managed AD, S3, CloudFront, Transfer Family).
 
 **CLI — Run on control node (Mac):**
 
 ```bash
 # If using the full-stack orchestration composition:
 cd ~/build-your-infra/stacks/full-infra/aws-native/automation/terraform
-terraform destroy -auto-approve
+terraform destroy
 
 # Alternatively, if deployed module-by-module, destroy in reverse dependency order:
 # 1. Directory (Managed AD - stops $0.10/hr charges):
-cd ~/build-your-infra/modules/directory/aws-native/automation/terraform && terraform destroy -auto-approve
+cd ~/build-your-infra/modules/directory/aws-native/automation/terraform && terraform destroy
 
 # 2. Web Server (CloudFront & S3 origin):
-cd ~/build-your-infra/modules/web-server/aws-native/automation/terraform && terraform destroy -auto-approve
+cd ~/build-your-infra/modules/web-server/aws-native/automation/terraform && terraform destroy
 
 # 3. File Transfer (Transfer Family - stops $0.30/hr charges & Transfer EIP):
-cd ~/build-your-infra/modules/file-transfer/aws-native/automation/terraform && terraform destroy -auto-approve
+cd ~/build-your-infra/modules/file-transfer/aws-native/automation/terraform && terraform destroy
 
 # 4. DNS (Private Hosted Zone & Resolver Logging):
-cd ~/build-your-infra/modules/dns/aws-native/automation/terraform && terraform destroy -auto-approve
+cd ~/build-your-infra/modules/dns/aws-native/automation/terraform && terraform destroy
 
 # 5. Hardening (VPC, Subnets, GuardDuty, CloudTrail, Flow Logs):
-cd ~/build-your-infra/modules/hardening/aws-native/automation/terraform && terraform destroy -auto-approve
+cd ~/build-your-infra/modules/hardening/aws-native/automation/terraform && terraform destroy
 ```
 
 See individual module automation guides for specific module teardown documentation: [`hardening-aws-native-automation.md`](../../../../modules/hardening/aws-native/automation/hardening-aws-native-automation.md), [`dns-aws-native-automation.md`](../../../../modules/dns/aws-native/automation/dns-aws-native-automation.md), [`file-transfer-aws-native-automation.md`](../../../../modules/file-transfer/aws-native/automation/file-transfer-aws-native-automation.md), [`web-server-aws-native-automation.md`](../../../../modules/web-server/aws-native/automation/web-server-aws-native-automation.md), and [`directory-aws-native-automation.md`](../../../../modules/directory/aws-native/automation/directory-aws-native-automation.md).
