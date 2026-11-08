@@ -1190,3 +1190,104 @@ What the assertions check on EC2:
 
 - **Server role verification via `testparm`:** `dns backend` is an option passed to `samba-tool domain provision`, not a configuration parameter stored in `smb.conf`. Running `testparm -s --parameter-name="dns backend"` fails with exit code 1 because `testparm` only inspects valid `smb.conf` parameters. The role instead queries `server role` via `testparm -s` (confirming `active directory domain controller`) alongside `realm`, `interfaces`, `bind interfaces only`, and `dns forwarder`. Internal DNS backend operation is independently verified by asserting that the UDP port 53 listener bound to `<directory_dc_ip>` is owned by Samba's `dns[master]` process.
 - **Kerberos authentication in check mode:** Kerberos ticket acquisition and cache destruction tasks execute with `check_mode: false` to allow non-destructive credential verification against an already provisioned Domain Controller during dry-run testing.
+
+---
+
+## DHCP — Kea DHCPv4 Service
+
+The `dhcp` role automates the deployment of the Kea DHCPv4 daemon exclusively on the local VM (`dhcp_servers` / `multi-lab-local`). Kea is the ISC-supported successor to `isc-dhcp-server`, providing JSON-based configuration, dynamic pool allocation, static reservations, auditd lease tracking, and AIDE baseline monitoring.
+
+The DHCP service operates exclusively on the local bridged LAN segment (`192.168.1.0/24`), serving clients on the local network while advertising the EC2 BIND9 resolver (`172.16.0.1` over WireGuard) as the primary DNS server.
+
+### Host Variables Configuration
+
+Before deploying `playbooks/dhcp.yml`, ensure the following host variables are defined in `inventories/host_vars/multi-lab-local.yml`:
+
+- `vm_interface`: The bridged network interface on the local VM (e.g. `ens160` or `enp2s0`). Pre-flight assertions verify that this interface exists on the host and has an assigned IPv4 address in `192.168.1.0/24`.
+- `dhcp_reservations`: A list of static MAC-to-IP reservations. Reserved IPs must be placed in `192.168.1.201`–`192.168.1.254` (outside the dynamic pool `.100`–`.200`). Set to `[]` if no reservations are needed.
+- `dhcp_auditd_reboot`: Boolean flag controlling automatic reboot when auditd rules are updated on immutable kernels (`-e 2`). Not triggered on the local VM while `hardening_auditd_immutable_mode` is `false`.
+
+```yaml
+# inventories/host_vars/multi-lab-local.yml
+vm_interface: "ens160"
+
+dhcp_reservations:
+  - hw_address: "00:0c:29:0c:8c:62"
+    ip_address: "192.168.1.201"
+    hostname: "multi-lab"
+
+dhcp_auditd_reboot: false
+```
+
+---
+
+### Step 1 — Apply (Role `dhcp`)
+
+#### What was done
+
+Deploy the Kea DHCPv4 service to the local VM:
+
+**Control node (Mac):**
+
+```bash
+ansible-playbook playbooks/dhcp.yml --limit multi-lab-local --check --diff --ask-become-pass
+ansible-playbook playbooks/dhcp.yml --limit multi-lab-local --ask-become-pass
+ansible-playbook playbooks/dhcp.yml --limit multi-lab-local --ask-become-pass
+# → second run: changed=0
+```
+
+Verify that Kea DHCPv4 is active and listening on UDP port 67:
+
+**VM · multi-lab-local:**
+
+```bash
+sudo systemctl status kea-dhcp4-server
+# → Active: active (running)
+
+sudo ss -H -lunp 'sport = :67'
+# → UNCONN ... 0.0.0.0:67 ... users:(("kea-dhcp4",...))
+```
+
+#### Why
+
+- **Kea DHCPv4 over ISC DHCP:** `isc-dhcp-server` reached end-of-life in 2022. Kea provides a modular architecture, clean JSON configuration format, built-in REST control socket (`/run/kea/kea4-ctrl-socket`), and active upstream maintenance.
+- **Raw Sockets & Absence of UFW Rules:** Kea is configured with `"dhcp-socket-type": "raw"`. AF_PACKET raw sockets attach directly to the network interface driver, intercepting DHCPDISCOVER broadcasts before the Linux netfilter stack processes them. Consequently, UFW does not inspect or filter DHCP packets, and no UFW perimeter rules are required.
+- **Source of Truth & Jinja Replacement:** The reference configuration in `modules/dhcp/self-managed/configs/kea/kea-dhcp4.conf` serves as the single source of truth. Dynamic interface binding and host reservations are injected via `copy` with `content` (`lookup` + `replace`), avoiding duplicated template configurations.
+- **Delayed Auditd Rule Deployment:** Kernel `auditctl` rejects file watches on paths that do not exist on disk. The playbook starts Kea and waits for `/var/lib/kea/kea-leases4.csv` to be created before deploying `/etc/audit/rules.d/99-zz-dhcp.rules`.
+- **AIDE Baseline Extension:** The Kea configuration directory (`/etc/kea`) is added to AIDE monitoring via `/etc/aide/aide.conf.d/99-zz-dhcp` (ordered after `99-hardening`), while `/var/lib/kea/kea-leases4.csv` is explicitly excluded to eliminate false positives on routine lease issuance.
+
+#### Verification
+
+Step 2 executes the verification test suite on the local VM using `--tags dhcp_verify`, checking daemon status, configuration syntax, socket listener, lease database presence, auditd rules, AIDE baseline integrity, and end-to-end broadcast discovery.
+
+---
+
+### Step 2 — Verify (Tag `dhcp_verify`)
+
+#### What was done
+
+Run the role assertions without modifying configuration state:
+
+**Control node (Mac):**
+
+```bash
+ansible-playbook playbooks/dhcp.yml --limit multi-lab-local --tags dhcp_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+What the assertions check on the local VM:
+
+| Check | Expected | Manual verification |
+| --- | --- | --- |
+| `kea-dhcp4-server` service | Active and enabled in systemd | [Step 1](../../../../modules/dhcp/self-managed/dhcp-self-managed.md#step-1--install-kea-dhcp) |
+| Configuration syntax | `kea-dhcp4 -t /etc/kea/kea-dhcp4.conf` returns exit code 0 | [Step 2](../../../../modules/dhcp/self-managed/dhcp-self-managed.md#step-2--configure-kea-dhcp) |
+| Socket listener | UDP port 67 active and bound to `kea-dhcp4` process | [Step 2](../../../../modules/dhcp/self-managed/dhcp-self-managed.md#step-2--configure-kea-dhcp) |
+| Configuration content | Subnet `192.168.1.0/24`, pool `.100`–`.200`, router `192.168.1.1`, DNS `172.16.0.1`, domain `lab.internal`, interface, and reservations present | [Step 2](../../../../modules/dhcp/self-managed/dhcp-self-managed.md#step-2--configure-kea-dhcp) |
+| Lease database | `/var/lib/kea/kea-leases4.csv` exists on disk | [Step 3](../../../../modules/dhcp/self-managed/dhcp-self-managed.md#step-3--static-reservations) |
+| Audit rules | `auditctl -l` contains key `dhcp_lease` watching `/var/lib/kea/kea-leases4.csv` | [Step 4](../../../../modules/dhcp/self-managed/dhcp-self-managed.md#step-4--auditd-dhcp-activity-rule) |
+| AIDE integrity | Drop-in `99-zz-dhcp` present (0644); `aide --config-check` returns exit code 0 | [Step 5](../../../../modules/dhcp/self-managed/dhcp-self-managed.md#step-5--aide-extend-baseline) |
+| Broadcast DHCP discovery | `nmap --script broadcast-dhcp-discover` confirms DHCPOFFER with Server ID, Router, DNS, Domain, Subnet Mask, Lease Time, and Offered IP in pool | [Step 6](../../../../modules/dhcp/self-managed/dhcp-self-managed.md#step-6--end-to-end-verification) |
+
+#### Why
+
+- **End-to-End Verification via `nmap` Script:** Simulating a DHCP client using `nmap --script broadcast-dhcp-discover -e {{ vm_interface }}` sends a DHCPDISCOVER broadcast and captures the DHCPOFFER response directly from the VM host. This validates the full operational configuration (pool, router, DNS, domain name, lease time) in a single command without requiring an external physical client on the LAN.

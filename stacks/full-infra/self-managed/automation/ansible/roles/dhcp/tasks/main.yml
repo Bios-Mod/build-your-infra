@@ -1,0 +1,349 @@
+# Deploy to:   dhcp_servers
+# Apply:       ansible-playbook playbooks/dhcp.yml --tags dhcp [--check --diff] --ask-become-pass
+# Module:      dhcp
+# Requires:    playbooks/hardening.yml executed (SSH on port 22222)
+#
+# Tasks for the dhcp role.
+# Why:         Installs and configures Kea DHCPv4 daemon, applies reservations, and integrates with auditd and AIDE.
+# Doc ref:     modules/dhcp/self-managed/dhcp-self-managed.md — Steps 1–6
+# Targets:     vm
+
+---
+# ==============================================================================
+# Prerequisites & Pre-flight Assertions
+# ==============================================================================
+
+# Queries active OpenSSH daemon configuration to verify that the hardening baseline has been applied
+- name: Query active OpenSSH daemon configuration
+  ansible.builtin.command:
+    cmd: sshd -T
+  register: dhcp_sshd_config_query
+  changed_when: false
+  check_mode: false
+  tags:
+    - dhcp
+
+# Asserts that the hardening baseline is applied by checking the active SSH port matches hardening_ssh_port
+- name: Assert hardening baseline is applied
+  ansible.builtin.assert:
+    that:
+      - ("port " ~ (hardening_ssh_port | string)) in dhcp_sshd_config_query.stdout_lines
+    fail_msg: >-
+      Hardening baseline prerequisite not met: active OpenSSH port is not {{ hardening_ssh_port }}.
+      Ensure role 'hardening' is fully deployed on the target before deploying 'dhcp'.
+  tags:
+    - dhcp
+
+# Asserts that vm_interface is defined, valid, present on host, and assigned an IPv4 address in 192.168.1.0/24
+- name: Assert vm_interface configuration
+  ansible.builtin.assert:
+    that:
+      - vm_interface is defined
+      - vm_interface | length > 0
+      - "'CHANGE_ME' not in vm_interface"
+      - vm_interface in ansible_facts['interfaces']
+      - ansible_facts[vm_interface]['ipv4'] is defined
+      - ansible_facts[vm_interface]['ipv4']['address'] is defined
+      - ansible_facts[vm_interface]['ipv4']['address'] is search('^192[.]168[.]1[.]')
+    fail_msg: >-
+      Interface '{{ vm_interface | default("UNDEFINED") }}' is invalid or not found on host.
+      Ensure 'vm_interface' is set in host_vars/multi-lab-local.yml, exists in network interfaces,
+      and has an IPv4 address in 192.168.1.0/24.
+  tags:
+    - dhcp
+
+# Asserts that dhcp_reservations is defined as a list
+- name: Assert dhcp_reservations format
+  ansible.builtin.assert:
+    that:
+      - dhcp_reservations is defined
+      - dhcp_reservations is sequence
+      - dhcp_reservations is not string
+      - dhcp_reservations is not mapping
+    fail_msg: >-
+      'dhcp_reservations' must be defined as a list in host_vars/multi-lab-local.yml (use [] if no reservations).
+  tags:
+    - dhcp
+
+# Asserts valid reservation parameters when static reservations are configured
+- name: Assert static reservation parameters
+  vars:
+    res_macs: "{{ dhcp_reservations | map(attribute='hw_address') | list }}"
+    res_ips: "{{ dhcp_reservations | map(attribute='ip_address') | list }}"
+    res_hosts: "{{ dhcp_reservations | map(attribute='hostname') | list }}"
+  ansible.builtin.assert:
+    that:
+      - (res_macs | select('match', '^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$') | list | length) == (dhcp_reservations | length)
+      - (res_macs | select('search', 'aa:bb:cc:dd:ee:ff') | list | length) == 0
+      - (res_ips | select('match', '^192[.]168[.]1[.](20[1-9]|2[1-4][0-9]|25[0-4])$') | list | length) == (dhcp_reservations | length)
+      - (res_macs | unique | length) == (dhcp_reservations | length)
+      - (res_ips | unique | length) == (dhcp_reservations | length)
+      - (res_hosts | select('match', '^.+$') | reject('search', 'CHANGE_ME') | list | length) == (dhcp_reservations | length)
+    fail_msg: >-
+      Invalid entry in 'dhcp_reservations'. Ensure all entries have valid hw_address (not aa:bb:cc:dd:ee:ff),
+      ip_address in 192.168.1.201-192.168.1.254 (outside pool), non-empty hostname without CHANGE_ME,
+      and unique MAC and IP values.
+  when: dhcp_reservations | length > 0
+  tags:
+    - dhcp
+
+# Asserts dhcp_auditd_reboot is defined and boolean when auditd immutable mode is active
+- name: Assert dhcp_auditd_reboot variable when auditd is immutable
+  ansible.builtin.assert:
+    that:
+      - dhcp_auditd_reboot is defined
+      - dhcp_auditd_reboot is boolean
+    fail_msg: >-
+      'dhcp_auditd_reboot' must be defined as a boolean in host_vars/multi-lab-local.yml
+      when hardening_auditd_immutable_mode is true.
+  when: hardening_auditd_immutable_mode | bool
+  tags:
+    - dhcp
+
+# Asserts source Kea DHCP configuration file contains expected replacement anchors
+- name: Assert source kea-dhcp4.conf contains replacement anchors
+  vars:
+    dhcp_source_config: "{{ lookup('file', dhcp_configs_dir ~ '/kea/kea-dhcp4.conf') }}"
+    dhcp_nl: "\n"
+    dhcp_anchor_iface: '"interfaces": [ "ens160" ]'
+    dhcp_anchor_res: >-
+      {{
+        (
+          '                    // Example — replace with real MAC and desired IP' ~ dhcp_nl ~
+          '                    // Reserved IPs outside pool (.201+) avoid assignment conflicts' ~ dhcp_nl ~
+          '                    {' ~ dhcp_nl ~
+          '                        "hw-address": "aa:bb:cc:dd:ee:ff",' ~ dhcp_nl ~
+          '                        "ip-address": "192.168.1.201",' ~ dhcp_nl ~
+          '                        "hostname": "example-host"' ~ dhcp_nl ~
+          '                    }'
+        )
+      }}
+  ansible.builtin.assert:
+    that:
+      - dhcp_source_config.count(dhcp_anchor_iface) == 1
+      - dhcp_source_config.count(dhcp_anchor_res) == 1
+    fail_msg: >-
+      Source '{{ dhcp_configs_dir }}/kea/kea-dhcp4.conf' does not contain the expected replacement anchors.
+  tags:
+    - dhcp
+
+# Checks if kea-dhcp4 binary is installed in /usr/sbin
+- name: Stat kea-dhcp4 binary in /usr/sbin
+  ansible.builtin.stat:
+    path: /usr/sbin/kea-dhcp4
+  register: dhcp_stat_kea_sbin
+  check_mode: false
+  tags:
+    - dhcp
+
+# Checks if kea-dhcp4 binary is installed in /usr/bin
+- name: Stat kea-dhcp4 binary in /usr/bin
+  ansible.builtin.stat:
+    path: /usr/bin/kea-dhcp4
+  register: dhcp_stat_kea_bin
+  check_mode: false
+  tags:
+    - dhcp
+
+# Checks if /etc/kea configuration directory exists
+- name: Stat /etc/kea directory
+  ansible.builtin.stat:
+    path: /etc/kea
+  register: dhcp_stat_kea_dir
+  check_mode: false
+  tags:
+    - dhcp
+
+# Checks if /etc/audit/rules.d directory exists for auditd drop-in placement
+- name: Stat /etc/audit/rules.d directory
+  ansible.builtin.stat:
+    path: /etc/audit/rules.d
+  register: dhcp_stat_audit_dir
+  check_mode: false
+  tags:
+    - dhcp
+
+# Checks if /etc/aide/aide.conf.d directory exists for AIDE drop-in placement
+- name: Stat /etc/aide/aide.conf.d directory
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d
+  register: dhcp_stat_aide_dir
+  check_mode: false
+  tags:
+    - dhcp
+
+# Sets consolidated fact confirming Kea DHCP binary installation state
+- name: Set Kea DHCP installation fact
+  ansible.builtin.set_fact:
+    dhcp_kea_installed: "{{ dhcp_stat_kea_sbin.stat.exists or dhcp_stat_kea_bin.stat.exists }}"
+  tags:
+    - dhcp
+
+# ==============================================================================
+# Step 1 — Install Kea DHCP
+# ==============================================================================
+
+# Installs Kea DHCPv4 server daemon and nmap network scanner for broadcast discovery verification (Steps 1, 6)
+- name: Install Kea DHCP server and nmap packages
+  ansible.builtin.apt:
+    name:
+      - kea-dhcp4-server
+      - nmap
+    state: present
+  tags:
+    - dhcp
+
+# ==============================================================================
+# Step 2 — Configure Kea DHCP & Step 3 — Static Reservations
+# ==============================================================================
+
+# Deploys /etc/kea/kea-dhcp4.conf with configured interface binding and rendered static reservations (Steps 2, 3)
+- name: Deploy Kea DHCPv4 configuration
+  vars:
+    dhcp_raw: "{{ lookup('file', dhcp_configs_dir ~ '/kea/kea-dhcp4.conf') }}"
+    dhcp_nl: "\n"
+    dhcp_anchor_iface: '"interfaces": [ "ens160" ]'
+    dhcp_anchor_res: >-
+      {{
+        (
+          '                    // Example — replace with real MAC and desired IP' ~ dhcp_nl ~
+          '                    // Reserved IPs outside pool (.201+) avoid assignment conflicts' ~ dhcp_nl ~
+          '                    {' ~ dhcp_nl ~
+          '                        "hw-address": "aa:bb:cc:dd:ee:ff",' ~ dhcp_nl ~
+          '                        "ip-address": "192.168.1.201",' ~ dhcp_nl ~
+          '                        "hostname": "example-host"' ~ dhcp_nl ~
+          '                    }'
+        )
+      }}
+    dhcp_res_items: >-
+      {%- set out = [] -%}
+      {%- for r in dhcp_reservations -%}
+      {%- set item =
+            '                    {' ~ dhcp_nl ~
+            '                        "hw-address": "' ~ r.hw_address ~ '",' ~ dhcp_nl ~
+            '                        "ip-address": "' ~ r.ip_address ~ '",' ~ dhcp_nl ~
+            '                        "hostname": "' ~ r.hostname ~ '"' ~ dhcp_nl ~
+            '                    }'
+      -%}
+      {%- set _ = out.append(item) -%}
+      {%- endfor -%}
+      {{ out | join(',' ~ dhcp_nl) }}
+    dhcp_res_replacement: "{{ dhcp_res_items if (dhcp_reservations | length > 0) else '' }}"
+    dhcp_rendered: >-
+      {{
+        dhcp_raw |
+        replace(dhcp_anchor_iface, '"interfaces": [ "' ~ vm_interface ~ '" ]') |
+        replace(dhcp_anchor_res, dhcp_res_replacement)
+      }}
+  ansible.builtin.copy:
+    content: "{{ dhcp_rendered ~ dhcp_nl }}"
+    dest: /etc/kea/kea-dhcp4.conf
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "kea-dhcp4 -t %s"
+  notify:
+    - Restart kea-dhcp4-server (dhcp)
+  when: not ansible_check_mode or (dhcp_kea_installed | bool)
+  tags:
+    - dhcp
+
+# Enables and starts Kea DHCPv4 daemon (Step 2)
+- name: Enable and start Kea DHCPv4 service
+  ansible.builtin.systemd_service:
+    name: kea-dhcp4-server
+    state: started
+    enabled: true
+  when: not ansible_check_mode or (dhcp_kea_installed | bool)
+  tags:
+    - dhcp
+
+# Waits for Kea lease database creation before deploying auditd watch rule (Step 3)
+- name: Wait for Kea lease database file creation
+  ansible.builtin.wait_for:
+    path: /var/lib/kea/kea-leases4.csv
+    state: present
+    timeout: 30
+  when: not ansible_check_mode
+  tags:
+    - dhcp
+
+# ==============================================================================
+# Step 4 — auditd: DHCP Activity Rule Drop-in
+# ==============================================================================
+
+# Deploys auditd drop-in configuration for monitoring Kea lease database writes (Step 4)
+- name: Deploy DHCP auditd monitoring rules
+  vars:
+    dhcp_audit_raw: "{{ lookup('file', dhcp_configs_dir ~ '/audit/99-hardening.rules') }}"
+    dhcp_nl: "\n"
+    dhcp_audit_header: "# dhcp audit rules (managed by Ansible)"
+    dhcp_active_rules: >-
+      {{
+        dhcp_audit_raw.splitlines() |
+        map('trim') |
+        reject('match', '^#') |
+        reject('equalto', '') |
+        list
+      }}
+  ansible.builtin.copy:
+    content: "{{ dhcp_audit_header ~ dhcp_nl ~ (dhcp_active_rules | join(dhcp_nl)) ~ dhcp_nl }}"
+    dest: /etc/audit/rules.d/99-zz-dhcp.rules
+    owner: root
+    group: root
+    mode: "0640"
+  register: dhcp_audit_rules_deploy
+  notify:
+    - Load auditd rules (dhcp)
+  when: not ansible_check_mode or dhcp_stat_audit_dir.stat.exists
+  tags:
+    - dhcp
+
+# ==============================================================================
+# Step 5 — AIDE: Extend Baseline for DHCP Service
+# ==============================================================================
+
+# Deploys AIDE integrity monitoring drop-in covering Kea configuration while excluding lease database (Step 5)
+# Named 99-zz-dhcp to load after 99-hardening in alphabetical order because 99-hardening defines the CONTENTEX rule group
+- name: Deploy AIDE DHCP integrity monitoring configuration
+  vars:
+    dhcp_aide_raw: "{{ lookup('file', dhcp_configs_dir ~ '/aide/99-hardening') }}"
+    dhcp_nl: "\n"
+  ansible.builtin.copy:
+    content: "{{ dhcp_aide_raw ~ dhcp_nl }}"
+    dest: /etc/aide/aide.conf.d/99-zz-dhcp
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Regenerate AIDE database (dhcp)
+  when: not ansible_check_mode or dhcp_stat_aide_dir.stat.exists
+  tags:
+    - dhcp
+
+# Validates AIDE configuration syntax before database regeneration (Step 5)
+- name: Validate AIDE configuration syntax
+  ansible.builtin.command:
+    cmd: /usr/bin/aide --config-check --config /etc/aide/aide.conf
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+  tags:
+    - dhcp
+
+# ==============================================================================
+# Handler Flushing & Verification
+# ==============================================================================
+
+# Flushes notified handlers (Kea restart, AIDE database regeneration, auditd rule reload) before verification tasks
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - dhcp
+
+# Executes verification assertions for the dhcp module
+- name: Verify DHCP deployment
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - dhcp
+    - dhcp_verify

@@ -1,0 +1,43 @@
+# Deploy to:   dhcp_servers
+# Apply:       ansible-playbook playbooks/dhcp.yml --limit <host> [options] --ask-become-pass
+# Module:      dhcp
+# Requires:    playbooks/hardening.yml executed (SSH on port 22222)
+#
+# Master playbook for deploying Kea DHCPv4 service.
+# Why:         Provisions Kea DHCPv4 server with LAN subnet pool, static reservations, auditd lease tracking, and AIDE integrity monitoring.
+# Doc ref:     modules/dhcp/self-managed/dhcp-self-managed.md
+# Targets:     vm
+
+---
+- name: Apply dhcp service
+  hosts: dhcp_servers
+  become: true
+  gather_facts: true
+
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: 600
+
+  pre_tasks:
+    # Validates control node toolchain environment against requirements.txt before running dhcp tasks
+    - name: Assert control node toolchain environment # noqa: run-once[task]
+      run_once: true
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full == controller_ansible_core_version
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.12', '>=')
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.15', '<')
+        fail_msg: >-
+          Control node environment mismatch. Activate the project virtualenv
+          (source .venv/bin/activate) and install pinned dependencies (pip install -r requirements.txt).
+          Expected ansible-core {{ controller_ansible_core_version }} and Python 3.12-3.14.
+          Running ansible-core {{ ansible_version.full }} on Python
+          {{ (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] }} ({{ ansible_playbook_python }}).
+
+  roles:
+    - role: dhcp
+      tags:
+        - dhcp

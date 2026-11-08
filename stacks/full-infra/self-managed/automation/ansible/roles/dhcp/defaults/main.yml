@@ -1,0 +1,19 @@
+# Deploy to:   dhcp_servers
+# Apply:       included automatically when role 'dhcp' is invoked
+# Module:      dhcp
+# Requires:    none
+#
+# Default variable definitions for the dhcp role.
+# Why:         Provides baseline defaults for source config paths and hardening pre-flight verification.
+# Doc ref:     modules/dhcp/self-managed/dhcp-self-managed.md
+# Targets:     vm
+
+---
+# Root directory containing the source-of-truth DHCP configs
+dhcp_configs_dir: "{{ configs_root }}/dhcp/self-managed/configs"
+
+# Hardened OpenSSH daemon port configured by the hardening baseline
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"  # noqa: var-naming[no-role-prefix]
+
+# Mirrors the hardening role default so the audit drop-in logic is correct on hosts that do not override it
+hardening_auditd_immutable_mode: true  # noqa: var-naming[no-role-prefix]
