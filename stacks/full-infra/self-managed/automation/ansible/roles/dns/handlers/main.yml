@@ -9,11 +9,25 @@
 # Targets:     ec2
 
 ---
+# Reloads systemd daemon to process unit drop-in configurations (Step 3 / Coexistence)
+- name: Reload systemd daemon (dns)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+
 # Reloads BIND9 DNS daemon to apply updated configuration or zone files (Steps 2, 3)
 - name: Reload named (dns)
   ansible.builtin.systemd_service:
     name: named
     state: reloaded
+
+# Restarts systemd-resolved after named reload to ensure loopback resolver is re-selected (Steps 2, 3)
+- name: Restart systemd-resolved after named reload (dns)
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: restarted
+  when: not ansible_check_mode
+  listen: Reload named (dns)
 
 # Initializes updated AIDE database baseline for BIND9 configs and zone files (Step 6)
 - name: Initialize AIDE database (dns)

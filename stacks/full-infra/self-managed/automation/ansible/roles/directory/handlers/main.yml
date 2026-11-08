@@ -1,0 +1,76 @@
+# Deploy to:   directory_servers
+# Apply:       triggered via notify from directory tasks
+# Module:      directory
+# Requires:    none
+#
+# Service handlers for the directory role.
+# Why:         Ensures affected daemons (samba-ad-dc), integrity baselines (AIDE), and audit rules absorb changes idempotently.
+# Doc ref:     modules/directory/self-managed/directory-self-managed.md — Steps 3, 4, 9, 10
+# Targets:     ec2
+
+---
+# Restarts Samba Active Directory Domain Controller daemon to apply updated configuration (Steps 3, 4)
+- name: Restart samba-ad-dc (directory)
+  ansible.builtin.systemd_service:
+    name: samba-ad-dc
+    state: restarted
+
+# Validates AIDE configuration syntax before database regeneration (Step 10)
+- name: Validate AIDE configuration syntax (directory)
+  ansible.builtin.command:
+    cmd: aide --config-check --config /etc/aide/aide.conf
+  changed_when: false
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (directory)
+
+# Initializes updated AIDE database baseline for directory configuration and database paths (Step 10)
+- name: Initialize AIDE database (directory)
+  ansible.builtin.command:
+    cmd: aide --init --config /etc/aide/aide.conf
+  register: directory_aide_init
+  failed_when: directory_aide_init.rc not in [0, 17]
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (directory)
+
+# Activates the newly initialized AIDE database baseline (Step 10)
+- name: Activate AIDE database (directory)
+  ansible.builtin.command:
+    cmd: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (directory)
+
+# Loads auditd rules directly when host is not in immutable mode (Step 9)
+- name: Load auditd rules with augenrules (directory)
+  ansible.builtin.command:
+    cmd: augenrules --load
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - not hardening_auditd_immutable_mode
+  listen: Load auditd rules (directory)
+
+# WARNING: Rebooting the host terminates the active WireGuard tunnel. Re-establish the tunnel before reconnecting.
+# After reboot, verify systemd-resolved DNS resolver status via 'resolvectl status' / 'Current DNS Server: 127.0.0.1'.
+# Reboots host to load updated auditd rules when kernel is running in immutable mode (-e 2) (Step 9)
+- name: Reboot host to apply immutable auditd rules (directory)
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when:
+    - not ansible_check_mode
+    - hardening_auditd_immutable_mode
+    - directory_auditd_reboot | default(false)
+  listen: Load auditd rules (directory)
+
+# Emits warning notification when audit rules changed in immutable mode but automated reboot is disabled (Step 9)
+- name: Warn reboot required for immutable auditd rules (directory)
+  ansible.builtin.debug:
+    msg: >-
+      Auditd rules in /etc/audit/rules.d/99-zz-directory.rules were updated, but the kernel is in immutable
+      mode (-e 2) and 'directory_auditd_reboot' is false. A manual reboot is required to load the new audit rules.
+  when:
+    - not ansible_check_mode
+    - hardening_auditd_immutable_mode
+    - not (directory_auditd_reboot | default(false))
+  listen: Load auditd rules (directory)

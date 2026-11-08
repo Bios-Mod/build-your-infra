@@ -1,0 +1,48 @@
+# Deploy to:   directory_servers
+# Apply:       ansible-playbook playbooks/directory.yml --limit <host> [options] --ask-become-pass
+# Module:      directory
+# Requires:    playbooks/hardening.yml, playbooks/dns.yml executed (SSH on port 22222, WireGuard active, DNS listen-on adjusted)
+#
+# Master playbook for deploying Samba 4 Active Directory Domain Controller.
+# Why:         Provisions Samba 4 AD DC with internal DNS, Kerberos realm, UFW perimeter rules, auditd and AIDE integrity monitoring.
+# Doc ref:     modules/directory/self-managed/directory-self-managed.md
+# Targets:     ec2
+
+---
+- name: Apply directory service
+  hosts: directory_servers
+  become: true
+  gather_facts: true
+
+  vars_prompt:
+    - name: directory_admin_password
+      prompt: "Enter Active Directory Administrator password (the one used at provision; min 8 chars, 3 of 4 classes: a-z, A-Z, 0-9, other)"
+      private: true
+
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: 600
+
+  pre_tasks:
+    # Validates control node toolchain environment against requirements.txt before running directory tasks
+    - name: Assert control node toolchain environment # noqa: run-once[task]
+      run_once: true
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full == controller_ansible_core_version
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.12', '>=')
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.15', '<')
+        fail_msg: >-
+          Control node environment mismatch. Activate the project virtualenv
+          (source .venv/bin/activate) and install pinned dependencies (pip install -r requirements.txt).
+          Expected ansible-core {{ controller_ansible_core_version }} and Python 3.12-3.14.
+          Running ansible-core {{ ansible_version.full }} on Python
+          {{ (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] }} ({{ ansible_playbook_python }}).
+
+  roles:
+    - role: directory
+      tags:
+        - directory

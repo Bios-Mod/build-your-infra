@@ -23,3 +23,7 @@ dns_vpc_reverse_domain: "10.in-addr.arpa"
 
 # AWS VPC resolver address used as upstream forwarder for internal VPC domain queries
 dns_vpc_resolver: "10.0.0.2"
+
+# Semicolon-terminated list of IPv4 listen-on addresses for BIND9; default 'any;' matches manual configuration
+# Set to '127.0.0.1; 172.16.0.1;' in host_vars when coexisting with Samba 4 AD DC to free the EC2 private IP on port 53
+dns_listen_on: "any;"

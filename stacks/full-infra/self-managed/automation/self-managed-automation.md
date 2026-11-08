@@ -734,6 +734,8 @@ It automates [`dns-self-managed.md`](../../../../modules/dns/self-managed/dns-se
 
 The `dns` role reproduces on EC2 (`dns_servers`) the state that the manual module leaves behind: BIND9 packages and checking utilities installed, `named.conf.options` restricting recursion and queries to `lab-net`, forward and reverse zone database files in `/etc/bind/zones/`, `named.conf.local` referencing the zones, full configuration checked with `named-checkconf -z`, `named` service enabled and started, UFW rules allowing UDP and TCP port 53 on `wg0`, AIDE drop-in `/etc/aide/aide.conf.d/99-zz-dns` validated with `aide --config-check`, and Netplan overlay `/etc/netplan/51-dns-lab.yaml` pointing the system resolver to `127.0.0.1` with the VPC resolver (`10.0.0.2`) as fallback (restarting `systemd-resolved` to lock resolution to loopback).
 
+> **Coexistence note (`dns_listen_on`):** To permit coexistence with Samba 4 Active Directory on EC2, set `dns_listen_on: "127.0.0.1; 172.16.0.1;"` in `inventories/host_vars/multi-lab-vps.yml` before applying the `directory` module. This restricts BIND9 listeners and frees the EC2 private IP on port 53 for Samba's internal DNS. Furthermore, an automated systemd drop-in for `named.service` (`10-restart-resolved.conf`) restarts `systemd-resolved` on every `named` startup, a handler restarts it after each reload, and `playbooks/dns.yml` automatically repairs the resolver on each run if it had already fallen back to `10.0.0.2`; verifying `resolvectl status ens5` (`Current DNS Server: 127.0.0.1`) remains the verification.
+
 Ensure `connection_mode: "wg"` is set in `inventories/host_vars/multi-lab-vps.yml`. With the WireGuard tunnel up, run the three commands in order on the EC2 hub: a dry run to review the diff, the real apply, and a second apply that must report `changed=0`.
 
 **Control node (Mac):**
@@ -1065,3 +1067,126 @@ What the assertions check on each target:
 | HTTPS reverse proxy | `curl -k https://localhost` returns 502 Bad Gateway (or 200 OK if backend up) | [Reverse Proxy](../../../../modules/web-server/self-managed/web-server-self-managed.md#reverse-proxy) |
 | Audit rules | `auditctl -l` contains key `nginx_config` (or notice displayed if reboot pending) | [Step 5](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-5--auditd-web-server-activity-rule) |
 | AIDE integrity | Drop-in `99-zz-web-server` present (0644); `aide --config-check` returns exit code 0 | [Step 6](../../../../modules/web-server/self-managed/web-server-self-managed.md#step-6--aide-extend-baseline) |
+
+---
+
+## Directory — Samba 4 Active Directory Service
+
+**Starting point:** hardening, DNS, and web-server are finished on EC2, EC2 uses `connection_mode: "wg"` in `inventories/host_vars/multi-lab-vps.yml`, and the WireGuard tunnel is up on the Mac. Nothing else has to be prepared before this section.
+
+It automates [`directory-self-managed.md`](../../../../modules/directory/self-managed/directory-self-managed.md): a Samba 4 Active Directory Domain Controller (`multilab.internal`) with internal DNS (`SAMBA_INTERNAL`) and Kerberos realm (`MULTILAB.INTERNAL`), deployed exclusively on the EC2 hub (`directory_servers`).
+
+### Step 1 — Apply (Tag `directory`)
+
+#### What was done
+
+The `directory` role reproduces on EC2 (`directory_servers`) the state that the manual module leaves behind: pre-flight validation of the hardening OpenSSH port, host IPv4 matching, port 53 listener availability, and interactive administrator password entry; system hostname set to `dc01.multilab.internal` and local `/etc/hosts` mapping configured to the DC private IP (leaving `systemd-resolved` and `/etc/resolv.conf` untouched without `chattr`); Samba 4, winbind, Kerberos client, and diagnostic utilities installed; standalone daemons (`smbd`, `nmbd`, `winbind`) stopped and disabled; `samba-ad-dc` service unmasked; domain provisioned with `samba-tool domain provision` using `SAMBA_INTERNAL` DNS backend, RFC2307 schema, and explicit Windows Server 2016 functional levels; `smb.conf` restricted to the private IP (`interfaces` and `bind interfaces only = yes`) with `dns forwarder = 127.0.0.1` pointing to local BIND9; reference Kerberos client configuration deployed to `/etc/krb5.conf`; `samba-ad-dc` enabled and started; UFW rules opened for AD DS ports (88, 389, 636, 445, 135, 3268) from the WireGuard subnet `172.16.0.0/24`; auditd activity monitoring drop-in `/etc/audit/rules.d/99-zz-directory.rules` deployed with automated reboot handling for immutable kernels; and AIDE drop-in `/etc/aide/aide.conf.d/99-zz-directory` validated with `aide --config-check`.
+
+Obtain the private IPv4 address of the EC2 instance on interface `ens5`:
+
+**EC2 · multi-lab-vps:**
+
+```bash
+ip -4 -br addr
+# → ens5 UP <ec2_private_ip>/24 ...
+```
+
+Configure host variables for EC2 in `inventories/host_vars/multi-lab-vps.yml`:
+
+```yaml
+dns_listen_on: "127.0.0.1; 172.16.0.1;"
+directory_dc_ip: "<ec2_private_ip>"
+directory_auditd_reboot: true
+```
+
+Before deploying the `directory` role, re-apply `playbooks/dns.yml` to update `listen-on` in BIND9 and free the EC2 private IP on port 53:
+
+**Control node (Mac):**
+
+```bash
+ansible-playbook playbooks/dns.yml --limit multi-lab-vps --check --diff --ask-become-pass
+ansible-playbook playbooks/dns.yml --limit multi-lab-vps --ask-become-pass
+```
+
+Inspect active port 53 listening sockets on EC2 to verify BIND9 no longer listens on `<directory_dc_ip>:53`:
+
+**EC2 · multi-lab-vps:**
+
+```bash
+sudo ss -H -lunpt 'sport = :53'
+# → udp  UNCONN  ... 127.0.0.1:53   ... users:(("named",...))
+# → udp  UNCONN  ... 172.16.0.1:53  ... users:(("named",...))
+# → tcp  LISTEN  ... 127.0.0.1:53   ... users:(("named",...))
+# → tcp  LISTEN  ... 172.16.0.1:53  ... users:(("named",...))
+```
+
+> **Warning:** On the first deployment with `directory_auditd_reboot: true`, the playbook automatically reboots the EC2 instance upon applying the auditd rules drop-in to enforce immutable kernel configuration (`-e 2`). This reboot terminates the active WireGuard tunnel. Reconnect the WireGuard tunnel on the control node before continuing. With `playbooks/dns.yml` applied beforehand (including the `named.service` drop-in), `Current DNS Server` must remain `127.0.0.1` after reboot; verify this on EC2 with `resolvectl status ens5`.
+
+> **Administrator Password Prompt:** `playbooks/directory.yml` prompts interactively for the Domain Administrator password (`vars_prompt`, minimum 8 characters). Password complexity (at least 3 of 4 classes: lowercase `[a-z]`, uppercase `[A-Z]`, digits `[0-9]`, and special characters `[^a-zA-Z0-9]`) is only required during initial domain provisioning; with the domain already provisioned, an incorrect password fails during verification (`directory_verify`) in `kinit` with a clear message.
+
+> **Partial Provision Recovery:** If pre-flight assertions detect a partial Samba provision (`sam.ldb` exists without `/var/lib/samba/private/krb5.conf`), the playbook aborts without modifying existing files. Clean the slate manually per Step 3 of [`directory-self-managed.md`](../../../../modules/directory/self-managed/directory-self-managed.md#step-3--domain-provisioning) (remove `/etc/samba/smb.conf` and `/var/lib/samba/*`) before rerunning the playbook.
+
+Deploy the Samba 4 Active Directory Domain Controller role:
+
+**Control node (Mac):**
+
+```bash
+ansible-playbook playbooks/directory.yml --limit multi-lab-vps --check --diff --ask-become-pass
+ansible-playbook playbooks/directory.yml --limit multi-lab-vps --ask-become-pass
+ansible-playbook playbooks/directory.yml --limit multi-lab-vps --ask-become-pass
+# → second run: changed=0
+```
+
+> **Manual Step 8 Note:** In Step 8 of the manual documentation, `samba-tool dns serverinfo 127.0.0.1` queries loopback. Because `interfaces = <directory_dc_ip>` and `bind interfaces only = yes` restrict Samba internal DNS strictly to the DC private IP, loopback port 53 is owned exclusively by BIND9. Samba internal DNS queries must target `<directory_dc_ip>` instead.
+
+#### Why
+
+- **SAMBA_INTERNAL DNS backend:** Eliminates packaging permissions failures and AppArmor scoping defects present with the `BIND9_DLZ` driver on Ubuntu 24.04. Samba manages its own internal DNS on `<directory_dc_ip>:53` while BIND9 handles `lab.internal` and forward resolution on `127.0.0.1:53` and `172.16.0.1:53`. Upstream queries from Samba are forwarded to BIND9 via `dns forwarder = 127.0.0.1`.
+- **Windows Server 2016 functional level:** Samba 4.19 defaults to 2008_R2. Supplying both `--function-level=2016` and `--option="ad dc functional level = 2016"` ensures that forest, domain, and lowest DC functional levels match the Windows Server 2016 specification expected by the manual documentation.
+- **System resolver preservation:** `systemd-resolved` and `/etc/resolv.conf` remain intact without `chattr +i`, preserving the multi-tier resolver architecture established in the `dns` module. Local resolution of the DC FQDN is handled by `/etc/hosts`.
+- **Static Kerberos client configuration:** The reference configuration in `configs/krb5/krb5.conf` is deployed directly to `/etc/krb5.conf`, ensuring deterministic KDC pointers without relying on runtime file generation.
+- **Admin password security:** The domain Administrator password is supplied interactively via `vars_prompt` in `playbooks/directory.yml` (`no_log: true`), preventing password hashes from residing in playbooks or version-controlled files.
+- **Conditional audit rule:** The `samba_keytab` watch rule is excluded from `/etc/audit/rules.d/99-zz-directory.rules` unless `dns.keytab` exists on disk, as auditctl rejects watch rules for non-existent files.
+- **Automated auditd drop-in:** Follows the established drop-in pattern with automated reboot handling for immutable kernels (`-e 2`) via `directory_auditd_reboot: true`.
+
+#### Verification
+
+Step 2 executes the verification test suite on EC2 using `--tags directory_verify`, testing daemon status, domain functional level, socket listeners, DNS resolution, Kerberos authentication, UFW rules, audit rules, and AIDE database integrity.
+
+---
+
+### Step 2 — Verify (Tag `directory_verify`)
+
+#### What was done
+
+Run the role assertions without modifying configuration state:
+
+**Control node (Mac):**
+
+```bash
+ansible-playbook playbooks/directory.yml --limit multi-lab-vps --tags directory_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+What the assertions check on EC2:
+
+| Check | Expected | Manual verification |
+| --- | --- | --- |
+| Hostname & local resolution | `hostname -f` == `dc01.multilab.internal`; `getent hosts` resolves to `directory_dc_ip` | [Step 1](../../../../modules/directory/self-managed/directory-self-managed.md#step-1--pre-provision-system-preparation) |
+| Standalone daemons | `smbd`, `nmbd`, and `winbind` inactive and disabled | [Step 2](../../../../modules/directory/self-managed/directory-self-managed.md#step-2--install-samba-and-dependencies) |
+| `samba-ad-dc` service | Active and enabled in systemd | [Step 6](../../../../modules/directory/self-managed/directory-self-managed.md#step-6--start-samba-ad-dc-service) |
+| Samba configuration | `testparm -s` confirms `server role = active directory domain controller`, interfaces, bind interfaces only, forwarder | [Step 3](../../../../modules/directory/self-managed/directory-self-managed.md#step-3--domain-provisioning) |
+| Socket listeners | TCP 88 (`kdc`), 389 (`ldap`), 445 (`smbd`) on `directory_dc_ip`; UDP 53 on `directory_dc_ip` (`dns[master]`, not named) and on `127.0.0.1` (named) | [Step 6](../../../../modules/directory/self-managed/directory-self-managed.md#step-6--start-samba-ad-dc-service) |
+| UFW firewall | Inbound rules for ports 88, 389, 636, 445, 135, 3268 ALLOW IN from `172.16.0.0/24` | [Step 7](../../../../modules/directory/self-managed/directory-self-managed.md#step-7--firewall-rules) |
+| Functional level | `samba-tool domain level show` reports 2016 for forest, domain, and lowest DC | [Step 6](../../../../modules/directory/self-managed/directory-self-managed.md#step-6--start-samba-ad-dc-service) |
+| AD DNS SRV records | `_ldap._tcp` and `_kerberos._tcp` SRV queries to `directory_dc_ip` return `dc01.multilab.internal` | [Step 4](../../../../modules/directory/self-managed/directory-self-managed.md#step-4--dns-coexistence-samba--bind9) |
+| AD DNS SOA record | SOA query for `multilab.internal` to `directory_dc_ip` returns status NOERROR | [Step 4](../../../../modules/directory/self-managed/directory-self-managed.md#step-4--dns-coexistence-samba--bind9) |
+| Kerberos configuration | `/etc/krb5.conf` contains default_realm `MULTILAB.INTERNAL` and kdc `dc01.multilab.internal` | [Step 5](../../../../modules/directory/self-managed/directory-self-managed.md#step-5--kerberos-configuration) |
+| Kerberos authentication | `kinit Administrator` via stdin succeeds, `klist` shows ticket, `kdestroy` cleans cache | [Step 5](../../../../modules/directory/self-managed/directory-self-managed.md#step-5--kerberos-configuration) |
+| Audit rules | `auditctl -l` contains keys `samba_config` and `samba_db` (and `samba_keytab` if keytab present) | [Step 9](../../../../modules/directory/self-managed/directory-self-managed.md#step-9--auditd-directory-service-activity-rule) |
+| AIDE integrity | Drop-in `99-zz-directory` present (0644); `aide --config-check` returns exit code 0 | [Step 10](../../../../modules/directory/self-managed/directory-self-managed.md#step-10--aide-extend-baseline) |
+
+#### Why
+
+- **Server role verification via `testparm`:** `dns backend` is an option passed to `samba-tool domain provision`, not a configuration parameter stored in `smb.conf`. Running `testparm -s --parameter-name="dns backend"` fails with exit code 1 because `testparm` only inspects valid `smb.conf` parameters. The role instead queries `server role` via `testparm -s` (confirming `active directory domain controller`) alongside `realm`, `interfaces`, `bind interfaces only`, and `dns forwarder`. Internal DNS backend operation is independently verified by asserting that the UDP port 53 listener bound to `<directory_dc_ip>` is owned by Samba's `dns[master]` process.
+- **Kerberos authentication in check mode:** Kerberos ticket acquisition and cache destruction tasks execute with `check_mode: false` to allow non-destructive credential verification against an already provisioned Domain Controller during dry-run testing.

@@ -42,10 +42,11 @@
   ansible.builtin.assert:
     that:
       - dns_source_options.count('dnssec-validation auto;') == 1
+      - dns_source_options.count('listen-on { any; };') == 1
       - dns_source_local.strip().endswith('};')
     fail_msg: >-
       Source BIND9 configuration files mismatch. Expected '{{ dns_configs_dir }}/bind/named.conf.options'
-      to contain exactly one 'dnssec-validation auto;' directive and '{{ dns_configs_dir }}/bind/named.conf.local'
+      to contain exactly one 'dnssec-validation auto;' directive and 'listen-on { any; };', and '{{ dns_configs_dir }}/bind/named.conf.local'
       to terminate with '};'.
   tags:
     - dns
@@ -81,6 +82,7 @@
 
 # Deploys global BIND9 options restricting listeners and recursion to lab-net ACL (Step 2)
 # Adds validate-except for VPC forward and reverse domains to prevent DNSSEC validation failure (SERVFAIL) on internal VPC queries
+# Replaces listen-on directive dynamically using dns_listen_on to support coexistence with Samba 4 AD DC
 - name: Deploy named.conf.options configuration
   vars:
     dns_options_raw: "{{ lookup('file', dns_configs_dir ~ '/bind/named.conf.options') }}"
@@ -93,7 +95,8 @@
           'dnssec-validation auto;',
           'dnssec-validation auto;' ~ dns_options_newline ~
           '    validate-except { "' ~ dns_vpc_domain ~ '"; "' ~ dns_vpc_reverse_domain ~ '"; };'
-        )
+        ) |
+        replace('listen-on { any; };', 'listen-on { ' ~ dns_listen_on ~ ' };')
       }}
     dest: /etc/bind/named.conf.options
     owner: root
@@ -205,6 +208,42 @@
   tags:
     - dns
 
+# Creates systemd override directory for named service (Step 3 / Coexistence)
+- name: Create systemd override directory for named service
+  ansible.builtin.file:
+    path: /etc/systemd/system/named.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  tags:
+    - dns
+
+# Deploys systemd drop-in to restart systemd-resolved on named startup ensuring loopback resolution is re-selected (Step 3 / Coexistence)
+# Note: ExecStartPost prefix '+' executes systemctl with root privileges even if the service runs under another user
+- name: Deploy named systemd drop-in to restart systemd-resolved on service startup
+  ansible.builtin.copy:
+    dest: /etc/systemd/system/named.service.d/10-restart-resolved.conf
+    content: |
+      # Deploy to:   dns_servers
+      # Apply:       systemd drop-in for named.service
+      # Module:      dns
+      # Requires:    named.service, systemd-resolved.service
+      #
+      # Restarts systemd-resolved after named startup so that the system resolver re-anchors
+      # on the local BIND9 resolver (127.0.0.1) instead of falling back to the VPC resolver (10.0.0.2).
+      # Parameters modified from baseline: none
+      #
+      [Service]
+      ExecStartPost=+/usr/bin/systemctl --no-block restart systemd-resolved.service
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (dns)
+  tags:
+    - dns
+
 # ==============================================================================
 # Step 4 — UFW: Allow DNS on WireGuard Interface
 # ==============================================================================
@@ -304,6 +343,28 @@
 # Flushes notified handlers (named reload, AIDE database regeneration, and Netplan apply) before verification tasks
 - name: Flush handlers
   ansible.builtin.meta: flush_handlers
+  tags:
+    - dns
+
+# Converges system resolver after reboot or fallback to VPC resolver (10.0.0.2); changed only if defective
+- name: Check system resolver status on primary interface
+  ansible.builtin.command:
+    cmd: resolvectl status ens5
+  register: dns_resolvectl_status
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode
+  tags:
+    - dns
+
+# Restarts systemd-resolved if 127.0.0.1 is not the current DNS server (converges to local loopback resolver)
+- name: Restart systemd-resolved if loopback resolver is not current
+  ansible.builtin.systemd_service:
+    name: systemd-resolved
+    state: restarted
+  when:
+    - not ansible_check_mode
+    - "'Current DNS Server: 127.0.0.1' not in dns_resolvectl_status.stdout"
   tags:
     - dns
 
