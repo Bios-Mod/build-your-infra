@@ -46,6 +46,7 @@ Execution can be targeted via Ansible tags:
 
 The role defines handlers triggered by configuration changes:
 
+- `Reload systemd daemon (dns)`: Executes `daemon-reload` via `ansible.builtin.systemd_service` to reload systemd manager configuration when the `named.service.d` drop-in is modified.
 - `Reload named (dns)`: Reloads the `named` systemd service when BIND9 options or zones change.
 - `Restart systemd-resolved after named reload (dns)`: Listens to `Reload named (dns)` and restarts `systemd-resolved` immediately following a `named` reload. On EC2 instances, `systemd-resolved` may temporarily fall back to the AWS VPC resolver (`10.0.0.2`) if a query occurs during the brief reload window; restarting `systemd-resolved` ensures that `127.0.0.1` is re-anchored as the active primary resolver.
 - `Regenerate AIDE database (dns)`: Initializes and activates an updated AIDE database baseline covering `/etc/bind`.
@@ -58,6 +59,7 @@ The role defines handlers triggered by configuration changes:
 - **/etc/ufw/user.rules:** Managed via `community.general.ufw` module. Adds targeted rules for incoming port 53 UDP and TCP on `wg0` without modifying other firewall rules. Port 53 is never exposed on the public interface.
 - **/etc/aide/aide.conf.d/:** Hardening deploys `/etc/aide/aide.conf.d/99-hardening`. The `dns` role deploys an independent drop-in at `/etc/aide/aide.conf.d/99-zz-dns` (ordered after `99-hardening`, which defines the `CONTENTEX` group) covering `/etc/bind` and `/etc/bind/zones` while excluding `/var/cache/bind`. Configuration syntax is verified with `aide --config-check` before flushing handlers to regenerate the baseline database.
 - **/etc/netplan/:** Deploys an independent overlay at `/etc/netplan/51-dns-lab.yaml` with mode `0600`, preserving `/etc/netplan/50-cloud-init.yaml` untouched to prevent conflict with cloud-init.
+- **/etc/systemd/system/named.service.d/10-restart-resolved.conf:** Systemd drop-in configuration specifying `ExecStartPost=+/usr/bin/systemctl --no-block restart systemd-resolved.service` to ensure `systemd-resolved` restarts on every `named` startup, re-anchoring resolution to `127.0.0.1` after system reboots.
 
 ---
 
@@ -69,3 +71,4 @@ The role defines handlers triggered by configuration changes:
 4. **Package `bind9-dnsutils`:** Installed alongside `bind9` and `bind9utils` to provide the `dig` diagnostic utility required for automated post-deploy verification assertions.
 5. **System Resolver Selection After Reboot:** After rebooting the host, if `resolvectl status ens5` shows `Current DNS Server: 10.0.0.2`, execute `sudo systemctl restart systemd-resolved` (the role only restarts it when applying the Netplan overlay). This recovery command should also be executed once if the role is applied on a host where `systemd-resolved` has already fallen back to `10.0.0.2`.
 6. **Role additions to the manual configs:** When deploying `named.conf.options` and `named.conf.local`, the role adds on the fly `validate-except { "compute.internal"; "10.in-addr.arpa"; };` and two `forward only` zones (`compute.internal` and `10.in-addr.arpa`) pointing to `10.0.0.2`. Without these additions, queries for internal VPC names (e.g. `*.eu-west-1.compute.internal`) and reverse PTR lookups for VPC host IPs fail DNSSEC validation via external forwarders with `SERVFAIL`, causing `systemd-resolved` to mark `127.0.0.1` defective and fall back permanently to `10.0.0.2` (which returns `NXDOMAIN` for `lab.internal`).
+7. **Drop-in override for `named.service`:** Deploys `/etc/systemd/system/named.service.d/10-restart-resolved.conf` to automatically restart `systemd-resolved` on every `named` startup. This drop-in is not present in the manual documentation; it is an automated infrastructure control preventing `systemd-resolved` from remaining permanently on the VPC resolver (`10.0.0.2`) when `systemd-resolved` initializes before `named` during EC2 boot.

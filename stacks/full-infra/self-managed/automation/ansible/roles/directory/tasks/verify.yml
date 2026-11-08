@@ -287,26 +287,26 @@
     - directory
     - directory_verify
 
-# Asserts ports 88, 389, 445 on dc_ip are bound by samba, and port 53 udp on dc_ip (samba) and 127.0.0.1 (named) (Step 6 Verification)
+# Asserts ports 88, 389, 445 on dc_ip are bound by kdc/ldap/smbd, and port 53 udp on dc_ip (dns[master], not named) and 127.0.0.1 (named) (Step 6 Verification)
 - name: Assert directory socket listeners and processes
   vars:
     tcp_lines: "{{ directory_ss_tcp.stdout_lines | default([]) }}"
     udp_lines: "{{ directory_ss_udp.stdout_lines | default([]) }}"
-    dc_88: "{{ directory_dc_ip ~ ':88' }}"
-    dc_389: "{{ directory_dc_ip ~ ':389' }}"
-    dc_445: "{{ directory_dc_ip ~ ':445' }}"
-    dc_53: "{{ directory_dc_ip ~ ':53' }}"
+    dc_88: "{{ (directory_dc_ip | regex_escape) ~ ':88' }}"
+    dc_389: "{{ (directory_dc_ip | regex_escape) ~ ':389' }}"
+    dc_445: "{{ (directory_dc_ip | regex_escape) ~ ':445' }}"
+    dc_53: "{{ (directory_dc_ip | regex_escape) ~ ':53' }}"
   ansible.builtin.assert:
     that:
-      - tcp_lines | select('search', dc_88) | select('search', 'samba') | list | length > 0
-      - tcp_lines | select('search', dc_389) | select('search', 'samba') | list | length > 0
-      - tcp_lines | select('search', dc_445) | select('search', 'samba') | list | length > 0
-      - udp_lines | select('search', dc_53) | select('search', 'samba') | list | length > 0
+      - tcp_lines | select('search', dc_88) | select('search', 'users:.*"kdc') | list | length > 0
+      - tcp_lines | select('search', dc_389) | select('search', 'users:.*"ldap') | list | length > 0
+      - tcp_lines | select('search', dc_445) | select('search', 'users:.*"smbd') | list | length > 0
+      - udp_lines | select('search', dc_53) | select('search', 'users:.*"dns') | reject('search', 'named') | list | length > 0
       - udp_lines | select('search', '127[.]0[.]0[.]1:53') | select('search', 'named') | list | length > 0
     fail_msg: >-
       Socket listener assertion failed.
-      TCP listeners for 88/389/445 on {{ directory_dc_ip }}: {{ tcp_lines }}.
-      UDP listeners for 53 on {{ directory_dc_ip }} (samba) and 127.0.0.1 (named): {{ udp_lines }}.
+      TCP listeners for 88 (kdc), 389 (ldap), 445 (smbd) on {{ directory_dc_ip }}: {{ tcp_lines }}.
+      UDP listeners for 53 on {{ directory_dc_ip }} (dns[master], not named) and 127.0.0.1 (named): {{ udp_lines }}.
   when: not ansible_check_mode or directory_verify_stat_samldb.stat.exists
   tags:
     - directory

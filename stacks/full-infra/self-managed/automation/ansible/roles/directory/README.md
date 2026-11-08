@@ -48,7 +48,7 @@ Execution can be targeted via Ansible tags:
 | Tag | Scope | Description |
 |---|---|---|
 | `directory` | Complete Role | Executes pre-flight assertions, system preparation (hostname and `/etc/hosts`), package installation, member daemon disabling, domain provisioning, `smb.conf` parameter configuration, Kerberos client configuration, service enablement, UFW rules, auditd drop-in, AIDE drop-in, handler flush, and verification assertions. |
-| `directory_verify` | Verification Only | Executes only the assertions defined in `tasks/verify.yml` (hostname and resolution, standalone daemon states, service status, `testparm` parameters including `server role`, UDP 53 socket listener by `samba`, UFW rules, functional levels, SRV and SOA DNS queries, Kerberos `kinit` authentication, auditd rules, and AIDE syntax). |
+| `directory_verify` | Verification Only | Executes only the assertions defined in `tasks/verify.yml` (hostname and resolution, standalone daemon states, service status, `testparm` parameters including `server role`, UDP 53 socket listener owned by Samba's `dns[master]` process, UFW rules, functional levels, SRV and SOA DNS queries, Kerberos `kinit` authentication, auditd rules, and AIDE syntax). |
 
 ---
 
@@ -70,4 +70,4 @@ Execution can be targeted via Ansible tags:
 5. **Conditional `samba_keytab` Audit Rule:** With `SAMBA_INTERNAL`, `/var/lib/samba/bind-dns/dns.keytab` is not created. Kernel `auditctl` rejects watches on non-existent files. The role dynamically excludes this rule unless the keytab file physically exists.
 6. **SMB2 Limitation:** SMB2 protocol verification is excluded from automated assertions due to a known Samba 4.19.5 defect on aarch64 architectures documented in the manual module.
 7. **Client Domain Join & Snapshots:** Joining client machines to the Active Directory domain and taking hypervisor/AMI snapshots remain manual operational steps.
-8. **Internal DNS & Server Role Verification:** Because `dns backend` is an option passed to `samba-tool domain provision` and not a parameter stored in `smb.conf`, `testparm` rejects it with rc 1. The role verifies `server role = active directory domain controller` via `testparm -s` and asserts that the UDP 53 listener bound to `<directory_dc_ip>` is owned by `samba` to confirm internal DNS operation.
+8. **Internal DNS & Server Role Verification:** Because `dns backend` is an option passed to `samba-tool domain provision` and not a parameter stored in `smb.conf`, `testparm` rejects it with rc 1. The role verifies `server role = active directory domain controller` via `testparm -s` and asserts that the UDP 53 listener bound to `<directory_dc_ip>` is owned by Samba's `dns[master]` process to confirm internal DNS operation.

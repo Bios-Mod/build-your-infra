@@ -9,6 +9,12 @@
 # Targets:     ec2
 
 ---
+# Reloads systemd daemon to process unit drop-in configurations (Step 3 / Coexistence)
+- name: Reload systemd daemon (dns)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+
 # Reloads BIND9 DNS daemon to apply updated configuration or zone files (Steps 2, 3)
 - name: Reload named (dns)
   ansible.builtin.systemd_service:
