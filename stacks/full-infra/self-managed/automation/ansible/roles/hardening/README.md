@@ -65,6 +65,7 @@ Host connectivity evolves across three progressive phases controlled by `connect
 | `hardening_wireguard_hub_vpn_ip` | `172.16.0.1` | `defaults/main.yml`, `group_vars/all.yml` | Gateway VPN IP assigned to `wg0` hub (`wireguard_server_vpn_ip`). |
 | `hardening_wireguard_vm_vpn_ip` | `172.16.0.3` | `defaults/main.yml`, `group_vars/all.yml` | Peer VPN IP assigned to local VM (`wireguard_vm_vpn_ip`). |
 | `hardening_wireguard_endpoint` | `""` | `defaults/main.yml` (EC2 hub set in `group_vars/ec2.yml`; VM client required in `host_vars/multi-lab-local.yml`) | Remote endpoint address for WireGuard tunnel (`<ec2_eip>:51820`). |
+| `hardening_wg_client_dns` | `9.9.9.9` | `defaults/main.yml` (overridden to `172.16.0.1` in `host_vars/multi-lab-local.yml` after BIND9 deployment) | WireGuard client DNS server IP address configured in `wg0.conf` on peers. |
 | `hardening_auditd_immutable_mode` | `true` | `defaults/main.yml` (overridden to `false` in `group_vars/vm.yml` during dev; `true` in `host_vars/multi-lab-local.yml` for greenfield convergence) | Enforces immutable kernel audit rules (`-e 2`). Host variables take precedence over group variables. |
 | `hardening_lynis_min_score` | `88` | `defaults/main.yml` (overridden to `90` in `group_vars/ec2.yml`) | Lynis Hardening Index threshold; emits advisory warning if score drops. |
 | `hardening_wg_close_public_ssh` | `false` | `defaults/main.yml` (overridden to `true` in `host_vars/multi-lab-vps.yml` after VPN verification) | Set to `true` on EC2 to delete rate-limited public port 22222 after tunnel verification. |

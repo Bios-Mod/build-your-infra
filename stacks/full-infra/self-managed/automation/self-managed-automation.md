@@ -573,6 +573,7 @@ Expected values by target, checked with the manual Verification sections:
 2. **Block 2B idempotency:** the `reset_connection` fix (`step_03_ssh_transition.yml`) is confirmed live only when the full 2B gate passes on both targets; the from-scratch rebuild is deferred to Phase 9.
 3. **WireGuard endpoint on the VM:** `wireguard_endpoint` must be `<ec2_eip>:51820` in `host_vars/multi-lab-local.yml`. Defaulting to the VM's own IP prevented the handshake.
 4. **UFW 22222 on EC2:** `step_04_ufw.yml` skips `limit 22222/tcp` when `hardening_wg_close_public_ssh: true`, so Step 4 does not recreate what Step 5 deletes.
+5. **APT system updates (`upgrade: full`):** `step_01_updates.yml` applies `upgrade: full` (`hardening_upgrade_type`). When upstream package updates or kernel releases appear in the repositories between playbook runs, the task reports `changed=1`. The role intentionally avoids unattended reboots; this is an expected exception to the `changed=0` idempotency check.
 
 ---
 
@@ -768,18 +769,25 @@ Following the playbook run, note that on EC2 the first run triggers an automated
 
 > **Warning:** Because the hardening baseline locks auditd in immutable mode (`-e 2`), loading the audit drop-in `/etc/audit/rules.d/99-zz-dns.rules` requires a kernel reboot. The role manages this via `dns_auditd_reboot: true` in `host_vars/multi-lab-vps.yml`, automatically rebooting EC2 on the first pass (terminating the active WireGuard tunnel; re-establish the tunnel once the host returns). Following reboot, the system resolver automatically converges back to loopback (`127.0.0.1`) thanks to the `named.service` drop-in (`10-restart-resolved.conf`) and the playbook's convergence check.
 
-Then complete the manual step outside Ansible:
+Then configure WireGuard client DNS declaratively on the local VM peer:
 
 **VM · multi-lab-local:**
 
-Configure WireGuard client DNS resolution to point to the EC2 DNS server (`172.16.0.1`):
+In `inventories/host_vars/multi-lab-local.yml`:
+1. Set `hardening_wg_client_dns: "172.16.0.1"` to direct VM WireGuard DNS queries to BIND9 across the tunnel.
+2. Temporarily switch to `connection_mode: "hardened"` (connecting via LAN IP on port 22222).
 
-> **Warning:** Execute these commands over the local VM LAN connection, not through the WireGuard tunnel itself. Restarting `wg-quick@wg0` temporarily drops tunnel traffic. If the hardening Step 5 task is subsequently re-run on the VM, it restores the default Quad9 DNS in `wg0.conf`, requiring this manual step to be repeated.
+> **Important:** Modifying `/etc/wireguard/wg0.conf` triggers the `Restart wireguard` handler (`systemctl restart wg-quick@wg0`). When connected via `connection_mode: "wg"`, restarting the `wg0` interface drops the active tunnel, terminating Ansible's SSH session mid-execution (analogous to how re-applying Step 5 on the EC2 hub restarts `wg0` and drops peer traffic, as noted in [Hardening Step 2, Phase A & B](#step-2--access-chain-manual-steps-36--tag-hardening_2b)). Because the local VM keeps LAN port 22222 permitted in UFW (`hardening_wg_close_public_ssh: false`), switching temporarily to `connection_mode: "hardened"` ensures Ansible's connection survives the WireGuard service restart.
+
+Apply Step 5 to render the updated `wg0.conf`:
+
+**VM · multi-lab-local · Run on control node:**
 
 ```bash
-sudo sed -i 's/^DNS\s*=.*/DNS = 172.16.0.1/' /etc/wireguard/wg0.conf
-sudo systemctl restart wg-quick@wg0
+ansible-playbook playbooks/hardening.yml --limit multi-lab-local --tags hardening_step5 --ask-become-pass
 ```
+
+After Step 5 completes successfully, restore `connection_mode: "wg"` in `inventories/host_vars/multi-lab-local.yml` (Ansible resumes communicating via `172.16.0.3:22222`).
 
 **Control node (Mac):**
 
@@ -793,7 +801,7 @@ For macOS WireGuard DNS behavior and optional fallback configuration, follow [ma
 - **Restarting systemd-resolved:** with `127.0.0.1` and `10.0.0.2` on the same interface (`ens5`), `systemd-resolved` retains its current server and only falls over on failure. If `127.0.0.1` was not responding at apply time, resolved stays with the VPC resolver (`10.0.0.2`), which returns NXDOMAIN for `lab.internal`. Restarting `systemd-resolved` after Netplan application while BIND9 is active resets query routing to the primary server (`127.0.0.1`).
 - **VPC domain forwarding and DNSSEC exception:** queries for internal VPC names (e.g. `*.compute.internal`) and reverse lookups for the host VPC IP (e.g. `141.1.0.10.in-addr.arpa` in `10.in-addr.arpa`) fail DNSSEC validation in Quad9 forwarders (`broken trust chain`), returning SERVFAIL. As a result, `systemd-resolved` marks `127.0.0.1` defective and permanently falls back to the VPC resolver (`10.0.0.2`), which returns NXDOMAIN for `lab.internal`. The role adds `validate-except { "compute.internal"; "10.in-addr.arpa"; };` in `named.conf.options` and two forward-only zones (`compute.internal` and `10.in-addr.arpa`) pointing to `10.0.0.2` in `named.conf.local` without modifying manual configs.
 - **Drop-in auditd rule with controlled reboot:** hardening locks auditd in immutable mode (`-e 2`) and clears rules with `-D`. The role deploys an independent drop-in at `/etc/audit/rules.d/99-zz-dns.rules` to monitor `/etc/bind/` and `/var/lib/bind/` with key `dns_config` without touching `99-hardening.rules`. In immutable mode, `dns_auditd_reboot: true` triggers a controlled reboot on the first pass to load the rules into the kernel.
-- **Manual peer DNS configuration:** the `hardening` role owns `/etc/wireguard/wg0.conf` on peers and would overwrite external changes during subsequent hardening runs.
+- **Declarative WireGuard peer DNS configuration:** the `hardening` role owns `/etc/wireguard/wg0.conf` on client peers. Hardcoding or manually editing `DNS` with `sed` gets overwritten on subsequent playbook runs (`hardening.yml` or `site.yml`). The `hardening_wg_client_dns` variable declaratively configures `/etc/wireguard/wg0.conf` (`172.16.0.1`), ensuring idempotence. Because `wg-quick@wg0` restarts via handler when the configuration changes, temporarily switching to `connection_mode: "hardened"` avoids SSH disconnection over `wg0`.
 - **Exclusion of Step 8:** pre-AMI sanitization of `/etc/resolv.conf` is omitted because the automated provisioning architecture is greenfield (Terraform and Ansible build clean environments), removing dependencies on golden AMIs.
 
 #### Verification
@@ -859,11 +867,20 @@ resolvectl status ens5 | grep "Current DNS Server"
 # → Current DNS Server: 127.0.0.1
 ```
 
-Test resolution from the WireGuard peer over the tunnel:
+Test resolution and resolver status from the WireGuard peer over the tunnel:
 
 **VM · multi-lab-local:**
 
 ```bash
+resolvectl status wg0
+# → Link ... (wg0)
+# → Current DNS Server: 172.16.0.1
+# → DNS Servers: 172.16.0.1
+# → DNS Domain: ~.
+
+resolvectl query vps.lab.internal
+# → vps.lab.internal: 172.16.0.1
+
 dig @172.16.0.1 vps.lab.internal +short
 # → 172.16.0.1
 
@@ -1378,6 +1395,7 @@ While `site.yml` orchestrates all module playbooks for ongoing maintenance and c
 - **Phased Connection Mode Transitions (`pre` → `hardened` → `wg`):** Transitioning connection modes requires human verification between access phases (verifying key-based access before disabling password logins; verifying the WireGuard VPN tunnel before closing public SSH ports). Running transitions unattended would risk permanent lockout if a handshake fails. See [Control Node — Environment Setup](#control-node--environment-setup) and [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
 - **Out-of-Band Cloud Infrastructure (Security Groups & SSM):** AWS Security Groups, VPC routes, and IAM instance profiles are managed declaratively in Terraform or AWS Console. Ansible operates exclusively within the guest OS and does not create cloud perimeter resources. See [Terraform — Infrastructure Provisioning](#terraform--infrastructure-provisioning).
 - **WireGuard Asymmetric Key Exchange:** Private keys are generated locally on each host and never leave the system. Public keys must be exchanged between the EC2 hub (`multi-lab-vps.yml`) and peers (`multi-lab-local.yml`) out-of-band before the tunnel can establish. See [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
+- **WireGuard Client DNS Configuration on VM (`hardening_wg_client_dns`):** On the local VM, `hardening_wg_client_dns` must be explicitly configured to `"172.16.0.1"` in `inventories/host_vars/multi-lab-local.yml` before running `site.yml` a second time (or during full convergence). Because `wg-quick` registers the DNS server with a routing domain `~.` on `wg0`, all VM queries are routed over the tunnel. If left at the default Quad9 (`9.9.9.9`), the queries cannot reach Quad9 across the tunnel (`172.16.0.0/24`), leaving the VM without working DNS resolution. See [DNS Step 1](#dns--bind9-authoritative-service).
 - **Interactive Password Prompts (`vars_prompt`):** Administrative passwords for the system admin (`bootstrap.yml`) and Samba Active Directory Administrator (`directory.yml`) are prompted interactively and hashed in memory. They are never stored in plaintext in version control or host variable files. See [Directory Step 1](#step-1--apply-tag-directory).
 - **Controlled Reboots for Immutable Audit Rules (`*_auditd_reboot`):** The hardening baseline locks the kernel audit subsystem in immutable mode (`-e 2`). New audit drop-ins (`file-transfer`, `dns`, `web-server`, `directory`) require a kernel reboot to take effect on EC2 (`*_auditd_reboot: true`). Automated reboots temporarily drop the active WireGuard tunnel, requiring tunnel verification before resuming. See [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
 - **Public Domain & Route 53 Delegation Prerequisite:** Let's Encrypt requires public DNS resolution for the registered domain (`buildyourinfra.click`). The public hosted zone and registrar delegation are configured once as an account-level prerequisite outside Ansible. See [Web Server Step 1](#step-1--apply-tag-web-server).

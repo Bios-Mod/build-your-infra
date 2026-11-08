@@ -111,6 +111,9 @@ hardening_wireguard_peer_public_keys: "{{ wireguard_peer_public_keys | default({
 # WireGuard public endpoint for remote clients (Step 5)
 hardening_wireguard_endpoint: "{{ wireguard_endpoint | default('') }}"
 
+# WireGuard DNS server address configured on client peers in /etc/wireguard/wg0.conf (Step 5)
+hardening_wg_client_dns: "{{ wg_client_dns | default('9.9.9.9') }}"
+
 # Whether to close public/LAN SSH port 22222 after confirming WireGuard tunnel access (Step 5)
 # Set to false by default for safety; switch to true only after tunnel connectivity is verified
 hardening_wg_close_public_ssh: false
