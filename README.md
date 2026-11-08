@@ -121,7 +121,7 @@ Each layer of the lab is automated with the tool that matches its scope. Terrafo
 
 The aws-native implementation order is `hardening` → `dns` → `file-transfer` → `web-server` → `directory`. Each module is independently deployable, and the full-stack composition sources them all.
 
-The self-managed Terraform stack provisions a clean EC2 host running Ubuntu Server 24.04 LTS ARM64 from the canonical AMI — infrastructure only. Ansible roles reproduce the entire OS configuration baseline from scratch without relying on pre-baked images. Monitoring (Prometheus, Grafana) is deployed as an independent self-managed module on top of the same hardened foundation.
+The self-managed Terraform stack provisions a clean EC2 host running Ubuntu Server 24.04 LTS ARM64 from the canonical AMI — infrastructure only. Ansible roles reproduce the entire OS configuration baseline from scratch without relying on pre-baked images. Monitoring (Prometheus, Grafana) is deployed as an independent self-managed module on top of the same hardened foundation. To eliminate all ongoing cloud billing after experimentation, see the [Teardown](stacks/full-infra/self-managed/automation/self-managed-automation.md#teardown--destroy-all-lab-resources) guide for step-by-step instructions on how to remove every resource the lab creates.
 
 ---
 

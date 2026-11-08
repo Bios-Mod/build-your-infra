@@ -49,7 +49,7 @@ The configuration in `stacks/full-infra/self-managed/automation/terraform/` laun
 > [!CAUTION]
 >
 > - Do not deploy the `aws-native` hardening module in the same AWS account: both stacks use the same resource names (`multi-lab-vpc`, `multi-lab-sg`, `multi-lab-ec2-role`).
-> - The 20 GiB gp3 volume keeps accruing cost while the instance is stopped, and the Elastic IP is charged (~$0.005/hr) unless attached to a running instance. Run `terraform destroy` when finished.
+> - The 20 GiB gp3 volume keeps accruing cost while the instance is stopped, and every public IPv4 address (including Elastic IPs associated with running or stopped instances) incurs $0.005/hr since February 2024. Run `terraform destroy` when finished.
 
 ### Step 1 — Provision EC2 Infrastructure
 
@@ -1323,7 +1323,9 @@ What the assertions check on the local VM:
 
 [`playbooks/site.yml`](ansible/playbooks/site.yml) provides a unified top-level orchestration playbook that executes all downstream service modules in dependency order across target inventory groups.
 
-### Step 1 — Apply (Master Playbook Execution & Greenfield Runbook)
+**Validation status:** Each individual module in this repository was validated live incrementally against running hosts (initial dry-run, execution, and second pass confirming idempotence with `changed=0`). `playbooks/site.yml` validates syntax and linting in CI and is used for full-stack convergence over already-deployed hosts. A full greenfield rebuild from scratch is discarded by architectural decision; initial deployment follows EC2 hub first, then local VM peer.
+
+### Step 1 — Apply (Master Playbook Execution)
 
 #### What was done
 
@@ -1368,143 +1370,16 @@ ansible-playbook playbooks/site.yml --limit multi-lab-local --ask-become-pass
 ansible-playbook playbooks/site.yml --tags web-server --ask-become-pass
 ```
 
-#### Greenfield Rebuild Runbook
-
-For a complete from-scratch deployment without assistance, follow the two rebuild paths in sequence: **EC2 first** (acting as the WireGuard hub), then the **local VM** (acting as the WireGuard peer). Each step links directly to its authoritative section in this document.
-
-##### Path A — EC2 Hub Provisioning & Rebuild (`multi-lab-vps`)
-
-1. **Infrastructure Provisioning (Terraform):**
-   Follow [Terraform — Step 1 (Provision EC2 Infrastructure)](#step-1--provision-ec2-infrastructure) and [Step 2 (Verify Connectivity)](#step-2--verify-connectivity).
-   - In `stacks/full-infra/self-managed/automation/terraform/`, copy `main.tf.example`, `outputs.tf.example`, and `terraform.tfvars.example` to active configuration files.
-   - Run `terraform init` and apply with the operator's current public IP CIDRs:
-     `terraform apply -var "ssh_bootstrap_cidr=$(curl -s ifconfig.me)/32" -var "ssh_hardened_cidr=$(curl -s ifconfig.me)/32"`.
-   - Record the allocated `instance_public_ip` (`ec2_eip`) and instance ID.
-   - Verify initial SSH connectivity on port 22 and AWS SSM agent registration as documented in Step 2.
-
-2. **Control Node Environment Setup (EC2 Target):**
-   Follow [Control Node — Step 1 (Prepare the Control Node Toolchain)](#step-1--prepare-the-control-node-toolchain).
-   - Copy `inventories/hosts.yml.example` and `inventories/host_vars/multi-lab-vps.yml.example` to active configuration files.
-   - In `inventories/host_vars/multi-lab-vps.yml`, configure `ec2_eip`, `ec2_initial_user: "ubuntu"`, `admin_username`, `admin_public_key_file`, and initial `connection_mode: "pre"`.
-   - Ensure the host alias `multi-lab-vps` is configured in `~/.ssh/config`.
-
-3. **Baseline Preparation (Hardening Step 1):**
-   Follow [Hardening — Step 1 (Baseline Preparation)](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a).
-   - Accept the host key on initial connection: `ssh -i ~/.ssh/id_ed25519_multi-lab ubuntu@<ec2_eip>`.
-   - Run `ansible-playbook playbooks/bootstrap.yml --limit multi-lab-vps` (without `--ask-become-pass`, leveraging passwordless sudo on the initial `ubuntu` user).
-   - Apply baseline updates and unattended-upgrades:
-     `ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_2a --ask-become-pass`.
-   - Verify key-based authentication for `admin_username` on port 22.
-
-4. **Access Chain Hardening (Hardening Step 2 Phase A):**
-   Follow [Hardening — Step 2 Phase A (EC2 hub)](#phase-a--ec2-hub) in sequence across all 8 steps:
-   - *Step 1:* Run SSH hardening on port 22 (`connection_mode: "pre"`).
-   - *Step 2:* Set `connection_mode: "hardened"` in `multi-lab-vps.yml` and apply UFW rate-limiting on port 22222 (`--tags hardening_step4`).
-   - *Step 3:* Retrieve or generate the Mac WireGuard public key and add it to `wireguard_peer_public_keys.mac` in `multi-lab-vps.yml`.
-   - *Step 4:* Deploy the WireGuard hub (`--tags hardening_step5`). The server public key is generated at `/etc/wireguard/server_public.key` and printed in the task output.
-   - *Step 5:* Configure the Mac WireGuard client with the hub public key and endpoint `<ec2_eip>:51820`.
-   - *Step 6:* Bring up the Mac WireGuard tunnel (`sudo wg-quick up wg0`) and verify connectivity (`ping -c 3 172.16.0.1` and `ssh -p 22222 <admin_username>@172.16.0.1`).
-   - *Step 7:* Close public SSH access: set `hardening_wg_close_public_ssh: true` in `multi-lab-vps.yml`, re-run Step 5 (`--tags hardening_step5`), and update the Terraform security group with empty ingress CIDRs (`terraform apply -var "ssh_bootstrap_cidr=" -var "ssh_hardened_cidr="` in `stacks/full-infra/self-managed/automation/terraform/`).
-   - *Step 8:* Set `connection_mode: "wg"` in `multi-lab-vps.yml` and deploy Fail2Ban (`--tags hardening_step6`).
-
-5. **System Hardening (Hardening Step 3):**
-   Follow [Hardening — Step 3 (System Hardening)](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
-   - With `connection_mode: "wg"`, apply system hardening controls (`--tags hardening_2c`) in immutable auditd mode (`hardening_auditd_immutable_mode: true` by default on EC2).
-   - Re-run with `--ask-become-pass` to verify convergence (`changed=0`).
-
-6. **Hardening Verification (Hardening Step 4):**
-   Follow [Hardening — Step 4 (Verification and Convergence)](#step-4--verification-and-convergence).
-   - Run the full hardening playbook on `multi-lab-vps` to confirm `changed=0 failed=0`.
-   - Verify Audit status reports `enabled 2` (immutable mode) and Lynis score ≥ 90.
-
-7. **Full-Stack Service Orchestration (`site.yml`):**
-   With WireGuard active and `connection_mode: "wg"`, run `site.yml` on the EC2 host:
-
-   **Control node (Mac):**
-
-   ```bash
-   ansible-playbook playbooks/site.yml --limit multi-lab-vps --check --diff --ask-become-pass
-   ansible-playbook playbooks/site.yml --limit multi-lab-vps --ask-become-pass
-   ansible-playbook playbooks/site.yml --limit multi-lab-vps --ask-become-pass
-   # → second run: changed=0
-   ```
-
-   > **Warning:** On the first pass of modules with immutable audit rules (`file-transfer`, `dns`, `web-server`, `directory`), the EC2 host triggers a controlled reboot when `*_auditd_reboot: true`. The WireGuard tunnel drops during each reboot; verify tunnel recovery (`ping 172.16.0.1`) before proceeding to subsequent playbooks.
-
-8. **Post-Lab Infrastructure Teardown (Optional):**
-   Follow [Terraform — Step 1 (Provision EC2 Infrastructure)](#step-1--provision-ec2-infrastructure). To eliminate ongoing AWS costs when testing concludes, run `terraform destroy` in `stacks/full-infra/self-managed/automation/terraform/`.
-
-##### Path B — Local VM Peer Provisioning & Rebuild (`multi-lab-local`)
-
-Prerequisite: Path A completed (EC2 WireGuard hub active at `172.16.0.1` and Mac tunnel up).
-
-1. **Control Node Setup & Host Variables (VM Target):**
-   Follow [Control Node — Step 1 (Prepare the Control Node Toolchain)](#step-1--prepare-the-control-node-toolchain).
-   - Install Ubuntu Server 24.04 LTS on VMware Fusion or VirtualBox.
-   - Copy `inventories/host_vars/multi-lab-local.yml.example` to `inventories/host_vars/multi-lab-local.yml`.
-   - Install the admin public key on the installer user via `ssh-copy-id`.
-   - Configure `multi-lab-local.yml` with `vm_initial_user`, `admin_username`, `vm_lan_ip`, `vm_interface`, `vm_static_ip`, `vm_gateway`, `lan_trusted_cidr`, and initial `connection_mode: "pre"`. Ensure the host alias `multi-lab-local` is in `~/.ssh/config`.
-   - **Immutable Rebuild Configuration:** To enforce production immutable audit controls on the rebuilt VM, set the following host variables in `inventories/host_vars/multi-lab-local.yml` (overriding `group_vars/vm.yml`):
-     ```yaml
-     hardening_auditd_immutable_mode: true
-     file_transfer_auditd_reboot: true
-     web_server_auditd_reboot: true
-     dhcp_auditd_reboot: true
-     ```
-
-2. **Baseline Preparation (Hardening Step 1):**
-   Follow [Hardening — Step 1 (Baseline Preparation)](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a).
-   - Run `ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass` (prompts for sudo and admin passwords).
-   - Apply baseline updates and static Netplan configuration:
-     `ansible-playbook playbooks/hardening.yml --limit multi-lab-local --tags hardening_2a --ask-become-pass`.
-   - Verify key-based admin authentication on port 22.
-
-3. **Access Chain Hardening (Hardening Step 2 Phase B):**
-   Follow [Hardening — Step 2 Phase B (VM peer)](#phase-b--vm-peer) in sequence across all 8 steps:
-   - *Step 1:* Retrieve the EC2 hub public key from `/etc/wireguard/server_public.key` on EC2.
-   - *Step 2:* Set `wireguard_hub_public_key: "<hub-public-key>"` and `wireguard_endpoint: "<ec2_eip>:51820"` in `multi-lab-local.yml`.
-   - *Step 3:* Apply SSH hardening on port 22 (`connection_mode: "pre"`).
-   - *Step 4:* Set `connection_mode: "hardened"` in `multi-lab-local.yml` and apply UFW rate-limiting on port 22222 (`--tags hardening_step4`).
-   - *Step 5:* Deploy WireGuard client (`--tags hardening_step5`). The VM public key is generated at `/etc/wireguard/server_public.key` and printed in the task output.
-   - *Step 6:* Add the VM public key to `wireguard_peer_public_keys.local_vm` in `inventories/host_vars/multi-lab-vps.yml` on the control node, and re-run Step 5 on EC2 (`ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_step5 --ask-become-pass`) to register the peer on the hub.
-   - *Step 7:* Verify peer WireGuard handshake and connectivity to hub: `ping -c 3 172.16.0.1` and connect from Mac via `ssh -p 22222 <admin_username>@172.16.0.3`.
-   - *Step 8:* Set `connection_mode: "wg"` in `multi-lab-local.yml` and apply Fail2Ban (`--tags hardening_step6`).
-
-4. **System Hardening with Immutable Auditd (Hardening Step 3):**
-   Follow [Hardening — Step 3 (System Hardening)](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
-   - Ensure `hardening_auditd_immutable_mode: true` is set in `multi-lab-local.yml`.
-   - With `connection_mode: "wg"`, apply system hardening controls (`--tags hardening_2c`).
-   - Re-run with `--ask-become-pass` to verify convergence (`changed=0`).
-
-5. **Hardening Verification (Hardening Step 4):**
-   Follow [Hardening — Step 4 (Verification and Convergence)](#step-4--verification-and-convergence).
-   - Run the full hardening playbook on `multi-lab-local` to confirm `changed=0 failed=0`.
-   - Verify Audit status reports `enabled 2` (immutable mode) and Lynis score ≥ 88.
-
-6. **Full-Stack Service Orchestration (`site.yml`):**
-   With the tunnel active and `connection_mode: "wg"`, run `site.yml` on the VM:
-
-   **Control node (Mac):**
-
-   ```bash
-   ansible-playbook playbooks/site.yml --limit multi-lab-local --check --diff --ask-become-pass
-   ansible-playbook playbooks/site.yml --limit multi-lab-local --ask-become-pass
-   ansible-playbook playbooks/site.yml --limit multi-lab-local --ask-become-pass
-   # → second run: changed=0
-   ```
-
-   > **Warning:** With immutable audit mode enabled (`hardening_auditd_immutable_mode: true`), deploying `file-transfer`, `web-server`, and `dhcp` audit rules triggers an automated system reboot on first run (`file_transfer_auditd_reboot: true`, `web_server_auditd_reboot: true`, `dhcp_auditd_reboot: true`). Each reboot temporarily tears down the WireGuard tunnel; verify that the tunnel recovers (`ping 172.16.0.3`) before proceeding to subsequent playbooks.
-
 #### Why
 
-`site.yml` automates the execution of all module playbooks, but complete full-stack deployment is not 100% unattended. Several deliberate gates and out-of-band requirements exist by design:
+While `site.yml` orchestrates all module playbooks for ongoing maintenance and convergence, initial host deployment requires executing several deliberate gates and out-of-band prerequisites by design:
 
-- **Separate Bootstrap (`playbooks/bootstrap.yml`):** Bootstrap connects over port 22 using the default or installer account (`connection_mode: "pre"`). It cannot be run inside `site.yml` because once hardening executes, port 22 and default logins are permanently disabled. See [Hardening Step 1](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a).
-- **Phased Connection Mode Transitions (`pre` → `hardened` → `wg`):** Transitioning connection modes requires human verification between steps (verifying key access before closing passwords; verifying WireGuard tunnel before closing public SSH). Running this unattended would risk permanent lockout if a network handshake fails. See [Control Node — Environment Setup](#control-node--environment-setup).
+- **Separate Bootstrap (`playbooks/bootstrap.yml`):** Initial bootstrapping connects over port 22 using the default or installer account (`connection_mode: "pre"`). It cannot run inside `site.yml` because once the hardening baseline executes, port 22 and default logins are permanently disabled. See [Hardening Step 1](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a).
+- **Phased Connection Mode Transitions (`pre` → `hardened` → `wg`):** Transitioning connection modes requires human verification between access phases (verifying key-based access before disabling password logins; verifying the WireGuard VPN tunnel before closing public SSH ports). Running transitions unattended would risk permanent lockout if a handshake fails. See [Control Node — Environment Setup](#control-node--environment-setup) and [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
 - **Out-of-Band Cloud Infrastructure (Security Groups & SSM):** AWS Security Groups, VPC routes, and IAM instance profiles are managed declaratively in Terraform or AWS Console. Ansible operates exclusively within the guest OS and does not create cloud perimeter resources. See [Terraform — Infrastructure Provisioning](#terraform--infrastructure-provisioning).
 - **WireGuard Asymmetric Key Exchange:** Private keys are generated locally on each host and never leave the system. Public keys must be exchanged between the EC2 hub (`multi-lab-vps.yml`) and peers (`multi-lab-local.yml`) out-of-band before the tunnel can establish. See [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
 - **Interactive Password Prompts (`vars_prompt`):** Administrative passwords for the system admin (`bootstrap.yml`) and Samba Active Directory Administrator (`directory.yml`) are prompted interactively and hashed in memory. They are never stored in plaintext in version control or host variable files. See [Directory Step 1](#step-1--apply-tag-directory).
-- **Controlled Reboots for Immutable Audit Rules (`*_auditd_reboot`):** The hardening baseline locks the kernel audit subsystem in immutable mode (`-e 2`). On EC2, immutable mode is enabled by default; new audit drop-ins (`file-transfer`, `dns`, `web-server`, `directory`) require a kernel reboot to take effect (`*_auditd_reboot: true` in `multi-lab-vps.yml`). On the local VM, development uses `hardening_auditd_immutable_mode: false` in `group_vars/vm.yml` to iterate without rebooting; for a clean greenfield rebuild, setting `hardening_auditd_immutable_mode: true` in `inventories/host_vars/multi-lab-local.yml` locks the VM kernel in immutable mode (`-e 2`), which in turn requires enabling `file_transfer_auditd_reboot: true`, `web_server_auditd_reboot: true`, and `dhcp_auditd_reboot: true`. Each module automatically reboots the VM on its initial pass when deploying audit rules, dropping the WireGuard tunnel. The operator must verify tunnel re-establishment before running downstream tasks. See [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
+- **Controlled Reboots for Immutable Audit Rules (`*_auditd_reboot`):** The hardening baseline locks the kernel audit subsystem in immutable mode (`-e 2`). New audit drop-ins (`file-transfer`, `dns`, `web-server`, `directory`) require a kernel reboot to take effect on EC2 (`*_auditd_reboot: true`). Automated reboots temporarily drop the active WireGuard tunnel, requiring tunnel verification before resuming. See [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
 - **Public Domain & Route 53 Delegation Prerequisite:** Let's Encrypt requires public DNS resolution for the registered domain (`buildyourinfra.click`). The public hosted zone and registrar delegation are configured once as an account-level prerequisite outside Ansible. See [Web Server Step 1](#step-1--apply-tag-web-server).
 - **Let's Encrypt Rate Limits:** Automated certificate issuance enforces `web_server_certbot_staging: true` during initial testing to avoid hitting ACME production rate limits before production cutover. See [Web Server Step 1](#step-1--apply-tag-web-server).
 - **SMB2 Protocol Omission:** Samba 4.19.5 on Ubuntu 24.04 ARM64 has an upstream bug preventing SMB2 file-sharing service startup in AD DC mode. AD authentication, Kerberos, LDAP, and RPC operate normally; SMB2 file sharing is excluded as an accepted deviation. See [Directory Step 1](#step-1--apply-tag-directory).
@@ -1517,10 +1392,6 @@ Verify service status directly on target hosts:
 **EC2 · multi-lab-vps:**
 
 ```bash
-# Check audit immutable status after clean rebuild (see Hardening Step 4)
-sudo auditctl -s | grep enabled
-# → enabled 2
-
 # Check WireGuard hub interface
 sudo wg show wg0
 # → interface: wg0 ...
@@ -1541,10 +1412,6 @@ sudo systemctl is-active samba-ad-dc
 **VM · multi-lab-local:**
 
 ```bash
-# Check audit immutable status after clean rebuild (see Hardening Step 4)
-sudo auditctl -s | grep enabled
-# → enabled 2
-
 # Check WireGuard client interface
 sudo wg show wg0
 # → interface: wg0 ...
@@ -1605,3 +1472,243 @@ Summary of assertions validated across the full-stack suite:
 
 - **Independent Module Verification:** Dedicated `*_verify` tags allow operators to validate the operational health and security assertions of any individual module without re-applying configuration changes or restarting daemons.
 - **End-to-End State Assurance:** Running the verification suite across all modules guarantees that downstream service configurations have not introduced drift, broken firewall rules, or degraded the baseline security controls established by earlier playbooks.
+
+---
+
+## Teardown — Destroy All Lab Resources
+
+When testing and experimentation conclude, all infrastructure and cloud resources created across both paths must be destroyed to eliminate recurring cloud billing.
+
+### Billable Resources Inventory
+
+The following resources generate ongoing costs or represent external dependencies:
+
+- **Self-Managed Stack (Terraform):**
+  - **EC2 Instance (`multi-lab-aws`):** Compute charges for the t4g.micro Graviton2 instance.
+  - **EBS Root Volume:** 20 GiB gp3 block device ($0.08/GB-month = ~$1.60/month). Accrues cost continuously even when the instance is stopped.
+  - **Public IPv4 Address / Elastic IP (`multi-lab-eip`):** Incurs $0.005/hr (~$3.60/month) continuously since February 2024, regardless of whether attached to a running instance, stopped instance, or unallocated.
+  - **VPC & Network Perimeter:** `multi-lab-vpc`, public subnet `multi-lab-vpc-subnet-public1-eu-west-1a`, Internet Gateway `multi-lab-vpc-igw`, Route Table `multi-lab-vpc-rtb-public`, Security Group `multi-lab-sg`, and IAM instance profile/role `multi-lab-ec2-role`. (No ongoing direct charges for standard VPC/IAM, but network dependencies prevent clean account teardown if orphaned).
+  - **Route 53 A-Record:** Managed dynamically when `route53_zone_name` is set in `terraform.tfvars`. `terraform destroy` removes this record automatically.
+- **External Prerequisites (Out-of-Band / Route 53):**
+  - **Route 53 Public Hosted Zone:** $0.50/month (unprorated flat fee per hosted zone per month). Not created or deleted by the self-managed Terraform stack.
+  - **Registered Domain Name (`buildyourinfra.click`):** Annual registrar registration and renewal fee. Non-refundable once registered.
+- **AWS Native Stack (Optional Deployment):**
+  - **AWS Directory Service (Managed Microsoft AD):** $0.10/hr (~$72/month) continuous billing from creation.
+  - **AWS Transfer Family Server:** $0.30/hr (~$216/month) continuous billing from creation, plus associated Elastic IP ($0.005/hr).
+  - **Persistent & Baseline Resources:** S3 storage buckets (`multi-lab-web-origin-*`, `multi-lab-transfer-*`, `multi-lab-cloudtrail-*`), CloudFront distribution (`multi-lab-cf`), CloudWatch log groups (`/aws/vpc/multi-lab-vpc`), Route 53 Private Hosted Zone ($0.50/month), GuardDuty detector, and SNS topic (`multi-lab-ad-alerts`).
+
+---
+
+### Step 1 — Destroy (Infrastructure Teardown & Local Cleanup)
+
+#### What was done
+
+Follow the destruction procedure in order:
+
+##### 1. Self-Managed Cloud Stack Teardown (Terraform)
+
+Destroy the EC2 instance, Elastic IP, EBS volume, and perimeter resources managed by the self-managed Terraform configuration.
+
+**CLI — Run on control node (Mac):**
+
+```bash
+cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
+
+# Execute terraform destroy using existing terraform.tfvars
+terraform destroy
+
+# → Plan: 0 to add, 0 to change, 11 to destroy
+# → Destroy complete! Resources: 11 destroyed.
+```
+
+> **Note:** `terraform destroy` reads `terraform.tfvars` for required parameters (`ami_id`, `instance_type`, `key_name`). CIDR variables default to closed (`""`), avoiding exposing any ports during the destroy cycle. Destroying the stack deletes the managed Route 53 A record pointing to the Elastic IP, but leaves the public hosted zone intact.
+
+**Console Alternative:**
+1. **EC2 Console (`eu-west-1`):** Navigate to **Instances** → Select `multi-lab-aws` → **Instance state** → **Terminate instance**.
+2. **Elastic IPs:** Navigate to **Network & Security** → **Elastic IPs** → Select `multi-lab-eip` → **Actions** → **Release Elastic IP addresses**.
+3. **VPC Console:** Navigate to **Your VPCs** → Select `multi-lab-vpc` → **Actions** → **Delete VPC** (automatically deletes subnets, IGW, and route tables).
+4. **Security Groups & IAM:** Delete security group `multi-lab-sg` and IAM role `multi-lab-ec2-role` in their respective consoles.
+
+##### 2. Route 53 Hosted Zone & Domain Retention (Optional)
+
+Decide whether to retain or decommission the public domain:
+- **Retain:** If you plan to redeploy the lab or use the domain for other projects, keep the public hosted zone ($0.50/month) and leave domain auto-renewal active.
+- **Decommission:** To achieve $0.00/month recurring cost, delete all custom DNS records (keeping only apex NS and SOA records), delete the hosted zone, and disable domain auto-renewal.
+
+**CLI — Run on control node (Mac):**
+
+```bash
+# Locate the public hosted zone ID by exact domain name
+ZONE_ID=$(aws route53 list-hosted-zones-by-name \
+  --dns-name "buildyourinfra.click." \
+  --profile multi-lab-admin \
+  --query "HostedZones[?Name=='buildyourinfra.click.'].Id" \
+  --output text | cut -d'/' -f3)
+
+# Delete the public hosted zone (only after custom records are removed)
+aws route53 delete-hosted-zone \
+  --id "$ZONE_ID" \
+  --profile multi-lab-admin
+
+# Disable annual auto-renewal for the registered domain (us-east-1 endpoint)
+aws route53domains disable-domain-auto-renew \
+  --domain-name "buildyourinfra.click" \
+  --region us-east-1 \
+  --profile multi-lab-admin
+```
+
+> [!CAUTION]
+> Always query the hosted zone by exact domain name (`--dns-name "buildyourinfra.click."`). Never delete unrelated hosted zones in the AWS account. Domain registrations are non-refundable; disabling auto-renewal ensures the domain simply lapses at the end of its paid registration period without new charges.
+
+**Console Alternative:**
+1. **Route 53 Console:** Navigate to **Hosted zones** → Select `buildyourinfra.click` → Delete all non-default records → Click **Delete zone**.
+2. **Registered domains:** Navigate to **Registered domains** → Select `buildyourinfra.click` → Under **Auto-renew**, click **Disable**.
+
+##### 3. AWS Native Stack Teardown (If Deployed)
+
+If the `aws-native` stack was provisioned, destroy resources in reverse order of deployment to respect inter-module dependencies:
+
+**CLI — Run on control node (Mac):**
+
+```bash
+# If using the full-stack orchestration composition:
+cd ~/build-your-infra/stacks/full-infra/aws-native/automation/terraform
+terraform destroy -auto-approve
+
+# Alternatively, if deployed module-by-module, destroy in reverse dependency order:
+# 1. Directory (Managed AD - stops $0.10/hr charges):
+cd ~/build-your-infra/modules/directory/aws-native/automation/terraform && terraform destroy -auto-approve
+
+# 2. Web Server (CloudFront & S3 origin):
+cd ~/build-your-infra/modules/web-server/aws-native/automation/terraform && terraform destroy -auto-approve
+
+# 3. File Transfer (Transfer Family - stops $0.30/hr charges & Transfer EIP):
+cd ~/build-your-infra/modules/file-transfer/aws-native/automation/terraform && terraform destroy -auto-approve
+
+# 4. DNS (Private Hosted Zone & Resolver Logging):
+cd ~/build-your-infra/modules/dns/aws-native/automation/terraform && terraform destroy -auto-approve
+
+# 5. Hardening (VPC, Subnets, GuardDuty, CloudTrail, Flow Logs):
+cd ~/build-your-infra/modules/hardening/aws-native/automation/terraform && terraform destroy -auto-approve
+```
+
+See individual module automation guides for specific module teardown documentation: [`hardening-aws-native-automation.md`](../../../../modules/hardening/aws-native/automation/hardening-aws-native-automation.md), [`dns-aws-native-automation.md`](../../../../modules/dns/aws-native/automation/dns-aws-native-automation.md), [`file-transfer-aws-native-automation.md`](../../../../modules/file-transfer/aws-native/automation/file-transfer-aws-native-automation.md), [`web-server-aws-native-automation.md`](../../../../modules/web-server/aws-native/automation/web-server-aws-native-automation.md), and [`directory-aws-native-automation.md`](../../../../modules/directory/aws-native/automation/directory-aws-native-automation.md).
+
+##### 4. Local Workstation Cleanup (Zero Cost)
+
+Clean up local state and keys on the operator workstation:
+
+**Control node (Mac):**
+
+```bash
+# Tear down local WireGuard VPN interface
+sudo wg-quick down wg0
+
+# Remove stale host keys from ~/.ssh/known_hosts
+ssh-keygen -R 172.16.0.1
+ssh-keygen -R 172.16.0.3
+ssh-keygen -R <ec2_eip>
+ssh-keygen -R <vm_lan_ip>
+```
+
+**Local Hypervisor (VMware Fusion / VirtualBox):**
+- Shut down the `multi-lab-local` virtual machine.
+- Delete all local snapshots and remove the VM from disk to reclaim local storage.
+
+#### Why
+
+AWS charges compute per second, public IPv4 addresses per hour, and EBS storage continuously. Managed AD and Transfer Family generate high hourly costs ($0.10/hr and $0.30/hr). A systematic, ordered teardown guarantees no orphaned dependencies prevent resource destruction, eliminates all billing, and returns the cloud account to a clean baseline.
+
+---
+
+### Step 2 — Verify (Cloud Billing & Resource Verification)
+
+#### What was done
+
+Execute explicit AWS CLI verification checks against `eu-west-1` using the `multi-lab-admin` profile to confirm that zero billable infrastructure remains active:
+
+**Control node (Mac):**
+
+```bash
+# 1. Verify no running or stopped EC2 instances remain:
+aws ec2 describe-instances \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --filters "Name=tag:Name,Values=multi-lab-*" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
+  --query "Reservations[*].Instances[*].[InstanceId,State.Name,Tags[?Key=='Name'].Value|[0]]" \
+  --output table
+# → empty
+
+# 2. Verify no EBS storage volumes remain:
+aws ec2 describe-volumes \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --filters "Name=tag:Name,Values=multi-lab-*" \
+  --query "Volumes[*].[VolumeId,State,Size]" \
+  --output table
+# → empty
+
+# 3. Verify no Elastic IPs / public IPv4 allocations remain:
+aws ec2 describe-addresses \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --filters "Name=tag:Name,Values=multi-lab-*" \
+  --query "Addresses[*].[PublicIp,AllocationId,AssociationId]" \
+  --output table
+# → empty
+
+# 4. Verify VPC has been deleted:
+aws ec2 describe-vpcs \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --filters "Name=tag:Name,Values=multi-lab-*" \
+  --query "Vpcs[*].[VpcId,CidrBlock]" \
+  --output table
+# → empty
+
+# 5. Verify no NAT Gateways remain:
+aws ec2 describe-nat-gateways \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --filter "Name=state,Values=available,pending" \
+  --query "NatGateways[*].[NatGatewayId,State]" \
+  --output table
+# → empty
+
+# 6. Verify Transfer Family server is deleted (aws-native):
+aws transfer list-servers \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --query "Servers[*].[ServerId,State]" \
+  --output table
+# → empty
+
+# 7. Verify Managed AD directory is deleted (aws-native):
+aws ds describe-directories \
+  --profile multi-lab-admin \
+  --region eu-west-1 \
+  --query "DirectoryDescriptions[?Name=='multi-lab.internal'].[DirectoryId,Stage]" \
+  --output table
+# → empty
+
+# 8. Check Route 53 public hosted zone status (exact query):
+aws route53 list-hosted-zones-by-name \
+  --dns-name "buildyourinfra.click." \
+  --profile multi-lab-admin \
+  --query "HostedZones[?Name=='buildyourinfra.click.'].[Id,Name]" \
+  --output table
+# → empty (if decommissioned) or 1 entry (if retained)
+```
+
+##### Billing & Cost Explorer Audit
+
+AWS Billing and Cost Explorer data updates with a 24-hour reporting latency.
+To confirm complete cessation of billing:
+1. Log in to the **AWS Management Console**.
+2. Navigate to **Billing and Cost Management** → **Cost Explorer**.
+3. Set the date range to include the day after teardown, group by **Usage type** or **Service**, and inspect daily unblended costs.
+4. Daily costs must drop to **$0.00** (or ~$0.016/day if only the Route 53 public hosted zone is retained).
+
+#### Why
+
+AWS CLI validation queries verify state directly from AWS API endpoints, eliminating the possibility of orphaned resources caused by aborted scripts, forgotten manual test resources, or partial Terraform runs. Performing a Cost Explorer audit 24 hours later provides independent billing confirmation directly from AWS financial metering.
