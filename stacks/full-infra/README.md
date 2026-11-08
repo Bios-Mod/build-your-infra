@@ -27,9 +27,7 @@ distribution with ACM certificate, and Directory Service. Each module is
 called as a Terraform `source` reference — configs stay in
 `modules/*/aws-native/automation/terraform/`.
 
-> **Prerequisites:** AWS credentials configured for the `multi-lab-admin`
-> profile. All individual module Terraform configurations must have been
-> applied and verified before running this stack.
+> **Prerequisites:** AWS credentials configured for the `multi-lab-admin` profile. Each module must be applied and verified on its own first, then destroyed (`terraform destroy`) before running this stack: it is a greenfield deployment and the module deployments would otherwise collide on resource names (`multi-lab-vpc`, `multi-lab-sg`, …).
 
 ---
 
