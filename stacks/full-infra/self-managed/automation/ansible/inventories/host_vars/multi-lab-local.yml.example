@@ -79,3 +79,16 @@ web_server_upstream_port: 8080
 # Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
 # Not triggered on local VM because hardening_auditd_immutable_mode is false.
 web_server_auditd_reboot: false
+
+# DHCP static host reservations for known LAN hosts (Kea DHCPv4).
+# Reserved IPs must be outside the dynamic pool (.100-.200) and within the subnet (.201-.254).
+# The example MAC 'aa:bb:cc:dd:ee:ff' must be replaced with real host values (the pre-flight check rejects it)
+# or set to an empty list '[]' if no static reservations are required.
+dhcp_reservations:
+  - hw_address: "aa:bb:cc:dd:ee:ff"
+    ip_address: "192.168.1.201"
+    hostname: "example-host"
+
+# Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
+# Not triggered on local VM while hardening_auditd_immutable_mode is false.
+dhcp_auditd_reboot: false

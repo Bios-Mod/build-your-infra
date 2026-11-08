@@ -1,0 +1,75 @@
+# Deploy to:   dhcp_servers
+# Apply:       triggered via notify from dhcp tasks
+# Module:      dhcp
+# Requires:    none
+#
+# Service handlers for the dhcp role.
+# Why:         Ensures affected daemons (kea-dhcp4-server), integrity baselines (AIDE), and audit rules absorb changes idempotently.
+# Doc ref:     modules/dhcp/self-managed/dhcp-self-managed.md — Steps 2, 4, 5
+# Targets:     vm
+
+---
+# Restarts Kea DHCPv4 server daemon to apply updated configuration (Step 2)
+- name: Restart kea-dhcp4-server (dhcp)
+  ansible.builtin.systemd_service:
+    name: kea-dhcp4-server
+    state: restarted
+
+# Validates AIDE configuration syntax before database regeneration (Step 5)
+- name: Validate AIDE configuration syntax (dhcp)
+  ansible.builtin.command:
+    cmd: aide --config-check --config /etc/aide/aide.conf
+  changed_when: false
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (dhcp)
+
+# Initializes updated AIDE database baseline for DHCP configuration paths (Step 5)
+- name: Initialize AIDE database (dhcp)
+  ansible.builtin.command:
+    cmd: aide --init --config /etc/aide/aide.conf
+  register: dhcp_aide_init
+  failed_when: dhcp_aide_init.rc not in [0, 17]
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (dhcp)
+
+# Activates the newly initialized AIDE database baseline (Step 5)
+- name: Activate AIDE database (dhcp)
+  ansible.builtin.command:
+    cmd: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (dhcp)
+
+# Loads auditd rules directly when host is not in immutable mode (Step 4)
+- name: Load auditd rules with augenrules (dhcp)
+  ansible.builtin.command:
+    cmd: augenrules --load
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - not hardening_auditd_immutable_mode
+  listen: Load auditd rules (dhcp)
+
+# WARNING: Rebooting the host terminates active network connections. Ensure connectivity recovers before continuing.
+# Reboots host to load updated auditd rules when kernel is running in immutable mode (-e 2) (Step 4)
+- name: Reboot host to apply immutable auditd rules (dhcp)
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when:
+    - not ansible_check_mode
+    - hardening_auditd_immutable_mode
+    - dhcp_auditd_reboot | default(false)
+  listen: Load auditd rules (dhcp)
+
+# Emits warning notification when audit rules changed in immutable mode but automated reboot is disabled (Step 4)
+- name: Warn reboot required for immutable auditd rules (dhcp)
+  ansible.builtin.debug:
+    msg: >-
+      Auditd rules in /etc/audit/rules.d/99-zz-dhcp.rules were updated, but the kernel is in immutable
+      mode (-e 2) and 'dhcp_auditd_reboot' is false. A manual reboot is required to load the new audit rules.
+  when:
+    - not ansible_check_mode
+    - hardening_auditd_immutable_mode
+    - not (dhcp_auditd_reboot | default(false))
+  listen: Load auditd rules (dhcp)

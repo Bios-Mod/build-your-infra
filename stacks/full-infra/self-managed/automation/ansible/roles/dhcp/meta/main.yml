@@ -1,0 +1,35 @@
+# Deploy to:   local Ansible controller (metadata only)
+# Apply:       read by Ansible Galaxy and dependency resolver
+# Module:      dhcp
+# Requires:    none
+#
+# Role metadata and platform compatibility definitions for the dhcp role.
+# Why:         Declares author, license, supported OS distributions, and dependencies for the role.
+# Doc ref:     modules/dhcp/self-managed/dhcp-self-managed.md
+# Targets:     vm
+
+---
+galaxy_info:
+  role_name: dhcp
+  author: Bios-Mod
+  description: Kea DHCPv4 server role with dynamic pool, static reservations, auditd lease tracking, and AIDE integrity monitoring.
+  company: build-your-infra
+  license: MIT
+  min_ansible_version: "2.16"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+  galaxy_tags:
+    - dhcp
+    - kea
+    - isc
+    - networking
+    - aide
+    - auditd
+    - security
+    - ubuntu
+
+dependencies: []

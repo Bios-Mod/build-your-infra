@@ -1,0 +1,376 @@
+# Deploy to:   dhcp_servers
+# Apply:       ansible-playbook playbooks/dhcp.yml --tags dhcp_verify [--check --diff] --ask-become-pass
+# Module:      dhcp
+# Requires:    dhcp applied
+#
+# Verification tasks and assertions for the dhcp role.
+# Why:         Validates configuration syntax, service state, lease file, socket listener, audit rules, AIDE drop-in, and DHCP discovery.
+# Doc ref:     modules/dhcp/self-managed/dhcp-self-managed.md — Verification sections
+# Targets:     vm
+
+---
+# ==============================================================================
+# Prerequisites & Binary Stat (Guards check_mode)
+# ==============================================================================
+
+# Checks if kea-dhcp4 binary exists on target to guard check_mode runs (Prerequisite Verification)
+- name: Stat kea-dhcp4 binary for verification
+  ansible.builtin.stat:
+    path: /usr/sbin/kea-dhcp4
+  register: dhcp_verify_stat_kea
+  check_mode: false
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Checks if auditctl binary exists on target for auditd rule inspection (Step 4 Verification)
+- name: Stat auditctl binary for verification guards
+  ansible.builtin.stat:
+    path: /sbin/auditctl
+  register: dhcp_verify_stat_auditctl
+  check_mode: false
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Checks if aide binary exists on target for integrity validation (Step 5 Verification)
+- name: Stat aide binary for verification guards
+  ansible.builtin.stat:
+    path: /usr/bin/aide
+  register: dhcp_verify_stat_aide
+  check_mode: false
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Checks if nmap binary exists on target for broadcast discovery probe (Step 6 Verification)
+- name: Stat nmap binary for verification guards
+  ansible.builtin.stat:
+    path: /usr/bin/nmap
+  register: dhcp_verify_stat_nmap
+  check_mode: false
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Checks if Kea configuration file exists on target (Step 2 Verification)
+- name: Stat Kea configuration file for verification
+  ansible.builtin.stat:
+    path: /etc/kea/kea-dhcp4.conf
+  register: dhcp_verify_stat_conf
+  check_mode: false
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Checks if Kea lease database exists on target (Step 3 Verification)
+- name: Stat Kea lease database for verification
+  ansible.builtin.stat:
+    path: /var/lib/kea/kea-leases4.csv
+  register: dhcp_verify_stat_lease
+  check_mode: false
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Checks if AIDE drop-in configuration exists on target (Step 5 Verification)
+- name: Stat AIDE DHCP drop-in for verification
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d/99-zz-dhcp
+  register: dhcp_verify_stat_aide_dropin
+  check_mode: false
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# ==============================================================================
+# Step 1 Verification — Service Active & Enabled
+# ==============================================================================
+
+# Queries Kea DHCPv4 systemd service state (Step 1 Verification)
+- name: Query Kea DHCP service status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active kea-dhcp4-server
+  register: dhcp_service_status
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or dhcp_verify_stat_kea.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Queries Kea DHCPv4 systemd service enable state (Step 1 Verification)
+- name: Query Kea DHCP service enabled status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-enabled kea-dhcp4-server
+  register: dhcp_service_enabled
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or dhcp_verify_stat_kea.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Asserts Kea DHCPv4 service is active and enabled (Step 1 Verification)
+- name: Assert Kea DHCP service is active and enabled
+  ansible.builtin.assert:
+    that:
+      - dhcp_service_status.rc == 0
+      - dhcp_service_status.stdout.strip() == 'active'
+      - dhcp_service_enabled.rc == 0
+      - dhcp_service_enabled.stdout.strip() == 'enabled'
+    fail_msg: >-
+      Kea DHCPv4 service is not active or enabled (active: '{{ dhcp_service_status.stdout | default("unknown") }}',
+      enabled: '{{ dhcp_service_enabled.stdout | default("unknown") }}').
+  when: not ansible_check_mode or dhcp_verify_stat_kea.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# ==============================================================================
+# Step 2 Verification — Config Syntax & Socket Listener
+# ==============================================================================
+
+# Tests Kea DHCPv4 configuration syntax using kea-dhcp4 -t (Step 2 Verification)
+- name: Test Kea DHCPv4 configuration syntax
+  ansible.builtin.command:
+    cmd: kea-dhcp4 -t /etc/kea/kea-dhcp4.conf
+  register: dhcp_syntax_test
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dhcp_verify_stat_kea.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Asserts Kea DHCPv4 configuration syntax is valid (Step 2 Verification)
+- name: Assert Kea DHCPv4 configuration syntax test succeeded
+  ansible.builtin.assert:
+    that:
+      - dhcp_syntax_test.rc == 0
+    fail_msg: >-
+      kea-dhcp4 -t /etc/kea/kea-dhcp4.conf failed with rc {{ dhcp_syntax_test.rc }}: {{ dhcp_syntax_test.stderr }}.
+  when: not ansible_check_mode or dhcp_verify_stat_kea.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Queries UDP port 67 listening sockets using ss (Step 2 Verification)
+- name: Query active UDP port 67 listening sockets
+  ansible.builtin.command:
+    cmd: "ss -H -lunp 'sport = :67'"
+  register: dhcp_port67_query
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dhcp_verify_stat_kea.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Asserts Kea DHCPv4 process is listening on UDP port 67 (Step 2 Verification)
+- name: Assert Kea DHCPv4 listens on UDP port 67
+  ansible.builtin.assert:
+    that:
+      - dhcp_port67_query.rc == 0
+      - dhcp_port67_query.stdout is search(':67[ ]+.*"kea-dhcp4"')
+    fail_msg: >-
+      Expected kea-dhcp4 listener on UDP port 67 not found. Sockets output: {{ dhcp_port67_query.stdout | default('') }}
+  when: not ansible_check_mode or dhcp_verify_stat_kea.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# ==============================================================================
+# Step 3 Verification — Configuration Content & Lease DB
+# ==============================================================================
+
+# Reads deployed Kea configuration for content inspection (Step 3 Verification)
+- name: Slurp /etc/kea/kea-dhcp4.conf content
+  ansible.builtin.slurp:
+    path: /etc/kea/kea-dhcp4.conf
+  register: dhcp_conf_slurp
+  check_mode: false
+  when: not ansible_check_mode or dhcp_verify_stat_conf.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Asserts Kea configuration contains expected subnet, interface, options, and reservations (Step 3 Verification)
+- name: Assert Kea configuration content
+  vars:
+    dhcp_conf_text: "{{ (dhcp_conf_slurp.content | b64decode) if (dhcp_conf_slurp is defined and 'content' in dhcp_conf_slurp) else '' }}"
+  ansible.builtin.assert:
+    that:
+      - "('\"interfaces\": [ \"' ~ vm_interface ~ '\" ]') in dhcp_conf_text"
+      - "'\"data\": \"172.16.0.1\"' in dhcp_conf_text"
+      - "'\"data\": \"lab.internal\"' in dhcp_conf_text"
+      - "'\"subnet\": \"192.168.1.0/24\"' in dhcp_conf_text"
+      - "'\"pool\": \"192.168.1.100 - 192.168.1.200\"' in dhcp_conf_text"
+      - "'\"data\": \"192.168.1.1\"' in dhcp_conf_text"
+      - (dhcp_reservations | map(attribute='hw_address') | reject('in', dhcp_conf_text) | list | length) == 0
+      - (dhcp_reservations | map(attribute='ip_address') | reject('in', dhcp_conf_text) | list | length) == 0
+      - (dhcp_reservations | map(attribute='hostname') | reject('in', dhcp_conf_text) | list | length) == 0
+    fail_msg: >-
+      Kea configuration /etc/kea/kea-dhcp4.conf missing expected subnet parameters, interface binding,
+      DNS options, or configured reservations.
+  when: not ansible_check_mode or dhcp_verify_stat_conf.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Asserts Kea lease database exists on disk (Step 3 Verification)
+- name: Assert Kea lease database exists
+  ansible.builtin.assert:
+    that:
+      - dhcp_verify_stat_lease.stat.exists
+    fail_msg: >-
+      Kea lease database file /var/lib/kea/kea-leases4.csv does not exist on disk.
+  when: not ansible_check_mode
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# ==============================================================================
+# Step 4 Verification — auditd DHCP Lease Activity Rule
+# ==============================================================================
+
+# Queries active auditd rules from the kernel using auditctl -l (Step 4 Verification)
+- name: Query active auditd rules via auditctl -l
+  ansible.builtin.command:
+    cmd: /sbin/auditctl -l
+  register: dhcp_auditctl_list
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or dhcp_verify_stat_auditctl.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Displays notice when audit rule is staged in immutable mode awaiting manual reboot (Step 4 Verification)
+- name: Display notice for staged auditd rules awaiting reboot
+  ansible.builtin.debug:
+    msg: "audit rule staged; reboot required to load into kernel"
+  when:
+    - (dhcp_audit_rules_deploy.changed | default(false))
+    - hardening_auditd_immutable_mode
+    - not (dhcp_auditd_reboot | default(false))
+    - not ansible_check_mode or dhcp_verify_stat_auditctl.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Asserts active auditd rules contain dhcp_lease key when rules are loaded (Step 4 Verification)
+- name: Assert auditd rules monitor Kea lease database
+  ansible.builtin.assert:
+    that:
+      - dhcp_auditctl_list.rc == 0
+      - dhcp_auditctl_list.stdout is search('-w /var/lib/kea/kea-leases4[.]csv -p wa -k dhcp_lease')
+    fail_msg: >-
+      Active auditd rules do not contain expected watch for '/var/lib/kea/kea-leases4.csv' with key 'dhcp_lease'.
+      Auditctl output: {{ dhcp_auditctl_list.stdout | default('') }}
+  when:
+    - not ansible_check_mode or dhcp_verify_stat_auditctl.stat.exists
+    - not ((dhcp_audit_rules_deploy.changed | default(false)) and
+           hardening_auditd_immutable_mode and
+           not (dhcp_auditd_reboot | default(false)))
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# ==============================================================================
+# Step 5 Verification — AIDE Baseline Drop-in & Syntax
+# ==============================================================================
+
+# Checks presence and permissions of AIDE DHCP drop-in configuration (Step 5 Verification)
+- name: Check AIDE drop-in 99-zz-dhcp exists
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d/99-zz-dhcp
+  register: dhcp_aide_dropin_stat
+  check_mode: false
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Reads AIDE DHCP drop-in configuration content (Step 5 Verification)
+- name: Slurp AIDE drop-in 99-zz-dhcp content
+  ansible.builtin.slurp:
+    path: /etc/aide/aide.conf.d/99-zz-dhcp
+  register: dhcp_aide_dropin_slurp
+  check_mode: false
+  when: not ansible_check_mode or dhcp_aide_dropin_stat.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Asserts AIDE drop-in exists with mode 0644 and contains expected monitored paths (Step 5 Verification)
+- name: Assert AIDE DHCP drop-in content and permissions
+  vars:
+    dhcp_aide_text: "{{ (dhcp_aide_dropin_slurp.content | b64decode) if (dhcp_aide_dropin_slurp is defined and 'content' in dhcp_aide_dropin_slurp) else '' }}"
+  ansible.builtin.assert:
+    that:
+      - dhcp_aide_dropin_stat.stat.exists
+      - dhcp_aide_dropin_stat.stat.mode == '0644'
+      - "'/etc/kea' in dhcp_aide_text"
+      - "'!/var/lib/kea/kea-leases4.csv' in dhcp_aide_text"
+    fail_msg: >-
+      AIDE drop-in /etc/aide/aide.conf.d/99-zz-dhcp missing, invalid permissions (expected 0644),
+      or missing /etc/kea or !/var/lib/kea/kea-leases4.csv.
+  when: not ansible_check_mode or dhcp_aide_dropin_stat.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Validates AIDE configuration syntax returns exit code 0 (Step 5 Verification)
+- name: Validate AIDE configuration syntax check passes
+  ansible.builtin.command:
+    cmd: aide --config-check --config /etc/aide/aide.conf
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dhcp_verify_stat_aide.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# ==============================================================================
+# Step 6 Verification — End-to-End Broadcast Discovery Probe
+# ==============================================================================
+
+# Executes broadcast DHCP discovery probe via nmap script (Step 6 Verification)
+- name: Execute broadcast DHCP discovery probe via nmap
+  ansible.builtin.command:
+    cmd: "nmap --script broadcast-dhcp-discover -e {{ vm_interface }}"
+  register: dhcp_nmap_discover
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or dhcp_verify_stat_nmap.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
+
+# Asserts nmap broadcast discovery response contains all expected DHCP options delivered by Kea (Step 6 Verification)
+- name: Assert nmap broadcast DHCP discovery response
+  vars:
+    nmap_out: "{{ dhcp_nmap_discover.stdout | default('') }}"
+    vm_ip: "{{ ansible_facts[vm_interface]['ipv4']['address'] }}"
+  ansible.builtin.assert:
+    that:
+      - dhcp_nmap_discover.rc == 0
+      - nmap_out is search('Server Identifier:[ ]+' ~ vm_ip)
+      - nmap_out is search('Router:[ ]+192[.]168[.]1[.]1')
+      - nmap_out is search('Domain Name Server:[ ]+172[.]16[.]0[.]1')
+      - nmap_out is search('Domain Name:[ ]+lab[.]internal')
+      - nmap_out is search('Subnet Mask:[ ]+255[.]255[.]255[.]0')
+      - nmap_out is search('12h00m00s')
+      - nmap_out is search('IP Offered:[ ]+192[.]168[.]1[.](1[0-9]{2}|200)')
+    fail_msg: >-
+      nmap broadcast discovery failed or returned unexpected DHCP options.
+      Expected Server Identifier {{ vm_ip }}, Router 192.168.1.1, DNS 172.16.0.1, Domain lab.internal,
+      Subnet Mask 255.255.255.0, Lease Time 12h00m00s, and IP Offered in .100-.200 pool.
+      Output: {{ nmap_out }}
+  when: not ansible_check_mode or dhcp_verify_stat_nmap.stat.exists
+  tags:
+    - dhcp
+    - dhcp_verify
