@@ -1370,45 +1370,54 @@ ansible-playbook playbooks/site.yml --tags web-server --ask-become-pass
 
 #### Greenfield Rebuild Runbook
 
-For a complete from-scratch deployment without assistance, follow the two rebuild paths in sequence: **EC2 first** (acting as the WireGuard hub), then the **local VM** (acting as the WireGuard peer).
+For a complete from-scratch deployment without assistance, follow the two rebuild paths in sequence: **EC2 first** (acting as the WireGuard hub), then the **local VM** (acting as the WireGuard peer). Each step links directly to its authoritative section in this document.
 
 ##### Path A — EC2 Hub Provisioning & Rebuild (`multi-lab-vps`)
 
 1. **Infrastructure Provisioning (Terraform):**
-   Follow [Terraform — Infrastructure Provisioning](#terraform--infrastructure-provisioning). Provision the EC2 instance, Elastic IP, and security groups:
+   Follow [Terraform — Step 1 (Provision EC2 Infrastructure)](#step-1--provision-ec2-infrastructure) and [Step 2 (Verify Connectivity)](#step-2--verify-connectivity).
+   - In `stacks/full-infra/self-managed/automation/terraform/`, copy `main.tf.example`, `outputs.tf.example`, and `terraform.tfvars.example` to active configuration files.
+   - Run `terraform init` and apply with the operator's current public IP CIDRs:
+     `terraform apply -var "ssh_bootstrap_cidr=$(curl -s ifconfig.me)/32" -var "ssh_hardened_cidr=$(curl -s ifconfig.me)/32"`.
+   - Record the allocated `instance_public_ip` (`ec2_eip`) and instance ID.
+   - Verify initial SSH connectivity on port 22 and AWS SSM agent registration as documented in Step 2.
 
-   **Control node (Mac):**
+2. **Control Node Environment Setup (EC2 Target):**
+   Follow [Control Node — Step 1 (Prepare the Control Node Toolchain)](#step-1--prepare-the-control-node-toolchain).
+   - Copy `inventories/hosts.yml.example` and `inventories/host_vars/multi-lab-vps.yml.example` to active configuration files.
+   - In `inventories/host_vars/multi-lab-vps.yml`, configure `ec2_eip`, `ec2_initial_user: "ubuntu"`, `admin_username`, `admin_public_key_file`, and initial `connection_mode: "pre"`.
+   - Ensure the host alias `multi-lab-vps` is configured in `~/.ssh/config`.
 
-   ```bash
-   cd stacks/full-infra/self-managed/automation/terraform
-   terraform init
-   terraform apply
-   ```
+3. **Baseline Preparation (Hardening Step 1):**
+   Follow [Hardening — Step 1 (Baseline Preparation)](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a).
+   - Accept the host key on initial connection: `ssh -i ~/.ssh/id_ed25519_multi-lab ubuntu@<ec2_eip>`.
+   - Run `ansible-playbook playbooks/bootstrap.yml --limit multi-lab-vps` (without `--ask-become-pass`, leveraging passwordless sudo on the initial `ubuntu` user).
+   - Apply baseline updates and unattended-upgrades:
+     `ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_2a --ask-become-pass`.
+   - Verify key-based authentication for `admin_username` on port 22.
 
-   Note the assigned public Elastic IP and update `ec2_eip` in `stacks/full-infra/self-managed/automation/ansible/inventories/host_vars/multi-lab-vps.yml`.
+4. **Access Chain Hardening (Hardening Step 2 Phase A):**
+   Follow [Hardening — Step 2 Phase A (EC2 hub)](#phase-a--ec2-hub) in sequence across all 8 steps:
+   - *Step 1:* Run SSH hardening on port 22 (`connection_mode: "pre"`).
+   - *Step 2:* Set `connection_mode: "hardened"` in `multi-lab-vps.yml` and apply UFW rate-limiting on port 22222 (`--tags hardening_step4`).
+   - *Step 3:* Retrieve or generate the Mac WireGuard public key and add it to `wireguard_peer_public_keys.mac` in `multi-lab-vps.yml`.
+   - *Step 4:* Deploy the WireGuard hub (`--tags hardening_step5`). The server public key is generated at `/etc/wireguard/server_public.key` and printed in the task output.
+   - *Step 5:* Configure the Mac WireGuard client with the hub public key and endpoint `<ec2_eip>:51820`.
+   - *Step 6:* Bring up the Mac WireGuard tunnel (`sudo wg-quick up wg0`) and verify connectivity (`ping -c 3 172.16.0.1` and `ssh -p 22222 <admin_username>@172.16.0.1`).
+   - *Step 7:* Close public SSH access: set `hardening_wg_close_public_ssh: true` in `multi-lab-vps.yml`, re-run Step 5 (`--tags hardening_step5`), and update the Terraform security group with empty ingress CIDRs (`terraform apply -var "ssh_bootstrap_cidr=" -var "ssh_hardened_cidr="` in `stacks/full-infra/self-managed/automation/terraform/`).
+   - *Step 8:* Set `connection_mode: "wg"` in `multi-lab-vps.yml` and deploy Fail2Ban (`--tags hardening_step6`).
 
-2. **Initial Host Variables & SSH Bootstrap:**
-   In `inventories/host_vars/multi-lab-vps.yml`, set `connection_mode: "pre"` (port 22, initial user `ubuntu`). Accept the host key and run the bootstrap playbook to create the dedicated administrator account:
+5. **System Hardening (Hardening Step 3):**
+   Follow [Hardening — Step 3 (System Hardening)](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
+   - With `connection_mode: "wg"`, apply system hardening controls (`--tags hardening_2c`) in immutable auditd mode (`hardening_auditd_immutable_mode: true` by default on EC2).
+   - Re-run with `--ask-become-pass` to verify convergence (`changed=0`).
 
-   **Control node (Mac):**
+6. **Hardening Verification (Hardening Step 4):**
+   Follow [Hardening — Step 4 (Verification and Convergence)](#step-4--verification-and-convergence).
+   - Run the full hardening playbook on `multi-lab-vps` to confirm `changed=0 failed=0`.
+   - Verify Audit status reports `enabled 2` (immutable mode) and Lynis score ≥ 90.
 
-   ```bash
-   cd ../ansible
-   ssh -o StrictHostKeyChecking=accept-new ubuntu@<ec2_eip> "exit"
-   ansible-playbook playbooks/bootstrap.yml --limit multi-lab-vps --ask-become-pass
-   ```
-
-3. **Hardening Baseline & WireGuard Hub Establishment:**
-   Follow [Hardening — Ansible Baseline](#hardening--ansible-baseline):
-   - Switch `connection_mode: "hardened"` (port 22222) in `multi-lab-vps.yml`.
-   - Apply Baseline Preparation (`--tags hardening_2a`).
-   - Apply Access Chain (`--tags hardening_2b`) to configure SSH, UFW, WireGuard server, and Fail2Ban.
-   - Retrieve the EC2 WireGuard public key from `/etc/wireguard/publickey` and configure the Mac WireGuard client tunnel (`172.16.0.2`).
-   - Establish the tunnel on Mac and verify: `ping 172.16.0.1`.
-   - Switch `connection_mode: "wg"` in `multi-lab-vps.yml`.
-   - Apply System Hardening (`--tags hardening_2c`) and verify convergence (`changed=0`).
-
-4. **Full-Stack Service Orchestration:**
+7. **Full-Stack Service Orchestration (`site.yml`):**
    With WireGuard active and `connection_mode: "wg"`, run `site.yml` on the EC2 host:
 
    **Control node (Mac):**
@@ -1420,44 +1429,59 @@ For a complete from-scratch deployment without assistance, follow the two rebuil
    # → second run: changed=0
    ```
 
-   > **Warning:** On the first pass of `file-transfer` and `dns`, the EC2 host automatically reboots to load immutable audit rules (`*_auditd_reboot: true`). Reconnect the WireGuard tunnel once the host returns.
+   > **Warning:** On the first pass of modules with immutable audit rules (`file-transfer`, `dns`, `web-server`, `directory`), the EC2 host triggers a controlled reboot when `*_auditd_reboot: true`. The WireGuard tunnel drops during each reboot; verify tunnel recovery (`ping 172.16.0.1`) before proceeding to subsequent playbooks.
 
-5. **Post-Lab Infrastructure Teardown:**
-   To eliminate ongoing AWS costs when testing concludes, destroy the EC2 instance and associated cloud infrastructure:
-
-   **Control node (Mac):**
-
-   ```bash
-   cd ../terraform
-   terraform destroy
-   ```
+8. **Post-Lab Infrastructure Teardown (Optional):**
+   Follow [Terraform — Step 1 (Provision EC2 Infrastructure)](#step-1--provision-ec2-infrastructure). To eliminate ongoing AWS costs when testing concludes, run `terraform destroy` in `stacks/full-infra/self-managed/automation/terraform/`.
 
 ##### Path B — Local VM Peer Provisioning & Rebuild (`multi-lab-local`)
 
-1. **Virtual Machine Baseline:**
-   Install Ubuntu Server 24.04 LTS on VMware Fusion or VirtualBox. Note the initial installer username and current DHCP IP.
+Prerequisite: Path A completed (EC2 WireGuard hub active at `172.16.0.1` and Mac tunnel up).
 
-2. **Initial Host Variables & SSH Bootstrap:**
-   In `inventories/host_vars/multi-lab-local.yml`, configure `connection_mode: "pre"`, `vm_lan_ip`, and `vm_interface`. Run `bootstrap.yml`:
+1. **Control Node Setup & Host Variables (VM Target):**
+   Follow [Control Node — Step 1 (Prepare the Control Node Toolchain)](#step-1--prepare-the-control-node-toolchain).
+   - Install Ubuntu Server 24.04 LTS on VMware Fusion or VirtualBox.
+   - Copy `inventories/host_vars/multi-lab-local.yml.example` to `inventories/host_vars/multi-lab-local.yml`.
+   - Install the admin public key on the installer user via `ssh-copy-id`.
+   - Configure `multi-lab-local.yml` with `vm_initial_user`, `admin_username`, `vm_lan_ip`, `vm_interface`, `vm_static_ip`, `vm_gateway`, `lan_trusted_cidr`, and initial `connection_mode: "pre"`. Ensure the host alias `multi-lab-local` is in `~/.ssh/config`.
+   - **Immutable Rebuild Configuration:** To enforce production immutable audit controls on the rebuilt VM, set the following host variables in `inventories/host_vars/multi-lab-local.yml` (overriding `group_vars/vm.yml`):
+     ```yaml
+     hardening_auditd_immutable_mode: true
+     file_transfer_auditd_reboot: true
+     web_server_auditd_reboot: true
+     dhcp_auditd_reboot: true
+     ```
 
-   **Control node (Mac):**
+2. **Baseline Preparation (Hardening Step 1):**
+   Follow [Hardening — Step 1 (Baseline Preparation)](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a).
+   - Run `ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass` (prompts for sudo and admin passwords).
+   - Apply baseline updates and static Netplan configuration:
+     `ansible-playbook playbooks/hardening.yml --limit multi-lab-local --tags hardening_2a --ask-become-pass`.
+   - Verify key-based admin authentication on port 22.
 
-   ```bash
-   cd stacks/full-infra/self-managed/automation/ansible
-   ansible-playbook playbooks/bootstrap.yml --limit multi-lab-local --ask-become-pass
-   ```
+3. **Access Chain Hardening (Hardening Step 2 Phase B):**
+   Follow [Hardening — Step 2 Phase B (VM peer)](#phase-b--vm-peer) in sequence across all 8 steps:
+   - *Step 1:* Retrieve the EC2 hub public key from `/etc/wireguard/server_public.key` on EC2.
+   - *Step 2:* Set `wireguard_hub_public_key: "<hub-public-key>"` and `wireguard_endpoint: "<ec2_eip>:51820"` in `multi-lab-local.yml`.
+   - *Step 3:* Apply SSH hardening on port 22 (`connection_mode: "pre"`).
+   - *Step 4:* Set `connection_mode: "hardened"` in `multi-lab-local.yml` and apply UFW rate-limiting on port 22222 (`--tags hardening_step4`).
+   - *Step 5:* Deploy WireGuard client (`--tags hardening_step5`). The VM public key is generated at `/etc/wireguard/server_public.key` and printed in the task output.
+   - *Step 6:* Add the VM public key to `wireguard_peer_public_keys.local_vm` in `inventories/host_vars/multi-lab-vps.yml` on the control node, and re-run Step 5 on EC2 (`ansible-playbook playbooks/hardening.yml --limit multi-lab-vps --tags hardening_step5 --ask-become-pass`) to register the peer on the hub.
+   - *Step 7:* Verify peer WireGuard handshake and connectivity to hub: `ping -c 3 172.16.0.1` and connect from Mac via `ssh -p 22222 <admin_username>@172.16.0.3`.
+   - *Step 8:* Set `connection_mode: "wg"` in `multi-lab-local.yml` and apply Fail2Ban (`--tags hardening_step6`).
 
-3. **Hardening Baseline & Peer Tunnel Connection:**
-   Follow [Hardening — Ansible Baseline](#hardening--ansible-baseline):
-   - Switch `connection_mode: "hardened"` in `multi-lab-local.yml`.
-   - Apply Baseline Preparation (`--tags hardening_2a`) to set static IP.
-   - Configure `wireguard_endpoint` with the EC2 Elastic IP (`<ec2_eip>:51820`) and register peer public keys in `multi-lab-vps.yml` and `multi-lab-local.yml`.
-   - Apply Access Chain (`--tags hardening_2b`).
-   - Confirm WireGuard connectivity to hub: `ping 172.16.0.1`.
-   - Switch `connection_mode: "wg"` in `multi-lab-local.yml`.
-   - Apply System Hardening (`--tags hardening_2c`) and verify convergence (`changed=0`).
+4. **System Hardening with Immutable Auditd (Hardening Step 3):**
+   Follow [Hardening — Step 3 (System Hardening)](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
+   - Ensure `hardening_auditd_immutable_mode: true` is set in `multi-lab-local.yml`.
+   - With `connection_mode: "wg"`, apply system hardening controls (`--tags hardening_2c`).
+   - Re-run with `--ask-become-pass` to verify convergence (`changed=0`).
 
-4. **Full-Stack Service Orchestration:**
+5. **Hardening Verification (Hardening Step 4):**
+   Follow [Hardening — Step 4 (Verification and Convergence)](#step-4--verification-and-convergence).
+   - Run the full hardening playbook on `multi-lab-local` to confirm `changed=0 failed=0`.
+   - Verify Audit status reports `enabled 2` (immutable mode) and Lynis score ≥ 88.
+
+6. **Full-Stack Service Orchestration (`site.yml`):**
    With the tunnel active and `connection_mode: "wg"`, run `site.yml` on the VM:
 
    **Control node (Mac):**
@@ -1469,6 +1493,8 @@ For a complete from-scratch deployment without assistance, follow the two rebuil
    # → second run: changed=0
    ```
 
+   > **Warning:** With immutable audit mode enabled (`hardening_auditd_immutable_mode: true`), deploying `file-transfer`, `web-server`, and `dhcp` audit rules triggers an automated system reboot on first run (`file_transfer_auditd_reboot: true`, `web_server_auditd_reboot: true`, `dhcp_auditd_reboot: true`). Each reboot temporarily tears down the WireGuard tunnel; verify that the tunnel recovers (`ping 172.16.0.3`) before proceeding to subsequent playbooks.
+
 #### Why
 
 `site.yml` automates the execution of all module playbooks, but complete full-stack deployment is not 100% unattended. Several deliberate gates and out-of-band requirements exist by design:
@@ -1478,7 +1504,7 @@ For a complete from-scratch deployment without assistance, follow the two rebuil
 - **Out-of-Band Cloud Infrastructure (Security Groups & SSM):** AWS Security Groups, VPC routes, and IAM instance profiles are managed declaratively in Terraform or AWS Console. Ansible operates exclusively within the guest OS and does not create cloud perimeter resources. See [Terraform — Infrastructure Provisioning](#terraform--infrastructure-provisioning).
 - **WireGuard Asymmetric Key Exchange:** Private keys are generated locally on each host and never leave the system. Public keys must be exchanged between the EC2 hub (`multi-lab-vps.yml`) and peers (`multi-lab-local.yml`) out-of-band before the tunnel can establish. See [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
 - **Interactive Password Prompts (`vars_prompt`):** Administrative passwords for the system admin (`bootstrap.yml`) and Samba Active Directory Administrator (`directory.yml`) are prompted interactively and hashed in memory. They are never stored in plaintext in version control or host variable files. See [Directory Step 1](#step-1--apply-tag-directory).
-- **Controlled Reboots for Immutable Audit Rules (`*_auditd_reboot`):** The hardening baseline locks the kernel audit subsystem in immutable mode (`-e 2`). New audit drop-ins (`file-transfer`, `dns`, `web-server`, `directory`) require a kernel reboot to take effect on EC2. Automated reboots (`*_auditd_reboot: true`) drop the active WireGuard tunnel temporarily, requiring the operator to re-establish the connection. See [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
+- **Controlled Reboots for Immutable Audit Rules (`*_auditd_reboot`):** The hardening baseline locks the kernel audit subsystem in immutable mode (`-e 2`). On EC2, immutable mode is enabled by default; new audit drop-ins (`file-transfer`, `dns`, `web-server`, `directory`) require a kernel reboot to take effect (`*_auditd_reboot: true` in `multi-lab-vps.yml`). On the local VM, development uses `hardening_auditd_immutable_mode: false` in `group_vars/vm.yml` to iterate without rebooting; for a clean greenfield rebuild, setting `hardening_auditd_immutable_mode: true` in `inventories/host_vars/multi-lab-local.yml` locks the VM kernel in immutable mode (`-e 2`), which in turn requires enabling `file_transfer_auditd_reboot: true`, `web_server_auditd_reboot: true`, and `dhcp_auditd_reboot: true`. Each module automatically reboots the VM on its initial pass when deploying audit rules, dropping the WireGuard tunnel. The operator must verify tunnel re-establishment before running downstream tasks. See [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
 - **Public Domain & Route 53 Delegation Prerequisite:** Let's Encrypt requires public DNS resolution for the registered domain (`buildyourinfra.click`). The public hosted zone and registrar delegation are configured once as an account-level prerequisite outside Ansible. See [Web Server Step 1](#step-1--apply-tag-web-server).
 - **Let's Encrypt Rate Limits:** Automated certificate issuance enforces `web_server_certbot_staging: true` during initial testing to avoid hitting ACME production rate limits before production cutover. See [Web Server Step 1](#step-1--apply-tag-web-server).
 - **SMB2 Protocol Omission:** Samba 4.19.5 on Ubuntu 24.04 ARM64 has an upstream bug preventing SMB2 file-sharing service startup in AD DC mode. AD authentication, Kerberos, LDAP, and RPC operate normally; SMB2 file sharing is excluded as an accepted deviation. See [Directory Step 1](#step-1--apply-tag-directory).
@@ -1491,6 +1517,10 @@ Verify service status directly on target hosts:
 **EC2 · multi-lab-vps:**
 
 ```bash
+# Check audit immutable status after clean rebuild (see Hardening Step 4)
+sudo auditctl -s | grep enabled
+# → enabled 2
+
 # Check WireGuard hub interface
 sudo wg show wg0
 # → interface: wg0 ...
@@ -1511,6 +1541,10 @@ sudo systemctl is-active samba-ad-dc
 **VM · multi-lab-local:**
 
 ```bash
+# Check audit immutable status after clean rebuild (see Hardening Step 4)
+sudo auditctl -s | grep enabled
+# → enabled 2
+
 # Check WireGuard client interface
 sudo wg show wg0
 # → interface: wg0 ...
@@ -1560,7 +1594,7 @@ Summary of assertions validated across the full-stack suite:
 
 | Check | Expected | Manual verification |
 | --- | --- | --- |
-| Hardening (`hardening`) | SSH port 22222, UFW rules, WireGuard tunnel, sysctl kernel parameters, AIDE baseline, Lynis score (≥88 VM, ≥90 EC2) | [Hardening Step 4](#step-4--verification-and-convergence) |
+| Hardening (`hardening`) | SSH port 22222, UFW rules, WireGuard tunnel, sysctl kernel parameters, AIDE baseline, Lynis score (≥88 VM, ≥90 EC2), Audit status = enabled 2 | [Hardening Step 4](#step-4--verification-and-convergence) |
 | SFTP (`file_transfer_verify`) | `sftpuser` with `nologin`, chroot ownership (`root:root 0755`), uploads permissions (`0750`), `internal-sftp` Match User rules, auditd watch | [File Transfer Step 2](#step-2--verify-tag-file_transfer_verify) |
 | DNS (`dns_verify`) | `named` active, `named-checkconf -z` clean, UDP/TCP 53 on `wg0`, forward/reverse zone lookups, system resolver on `127.0.0.1`, auditd watch | [DNS Step 2](#step-2--verify-tag-dns_verify) |
 | Web Server (`web-server_verify`) | Nginx service active, TLS certificate valid, HTTP to HTTPS redirect, reverse proxy 502 upstream response, auditd watch | [Web Server Step 2](#step-2--verify-tag-web-server_verify) |
