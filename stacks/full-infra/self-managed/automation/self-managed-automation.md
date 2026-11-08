@@ -598,12 +598,20 @@ The public key file must already exist on the control node at the path you set; 
 ssh-keygen -y -f ~/.ssh/id_ed25519_sftp > ~/.ssh/id_ed25519_sftp.pub
 ```
 
-> The auditd rule (manual Step 5) and the client `~/.ssh/config` alias (manual Step 7) are not part of the role. The auditd rule stays manual because `99-hardening.rules` ends with `-e 2`; the client alias lives on your Mac.
+The auditd rule is deployed as a drop-in at `/etc/audit/rules.d/99-zz-file-transfer.rules`. Because the hardening baseline locks auditd in immutable mode (`-e 2`) on EC2, loading the new audit rule requires a kernel reboot. The role handles this via `file_transfer_auditd_reboot: true`, which automatically reboots EC2 on the first pass (terminating the active WireGuard tunnel; reconnect after the instance returns). On the local VM, `hardening_auditd_immutable_mode: false` allows rules to load directly without rebooting. The client `~/.ssh/config` alias (manual Step 7) lives on your Mac.
 
-First, point each host to the existing public key. Add this line to `inventories/host_vars/multi-lab-vps.yml` and to `inventories/host_vars/multi-lab-local.yml` (there is no default):
+First, point each host to the existing public key and configure auditd reboot behavior. Add these lines to `inventories/host_vars/multi-lab-vps.yml`:
 
 ```yaml
 file_transfer_sftp_public_key_file: "~/.ssh/id_ed25519_sftp.pub"
+file_transfer_auditd_reboot: true
+```
+
+And to `inventories/host_vars/multi-lab-local.yml`:
+
+```yaml
+file_transfer_sftp_public_key_file: "~/.ssh/id_ed25519_sftp.pub"
+file_transfer_auditd_reboot: false
 ```
 
 With the WireGuard tunnel up, run the three commands in order on each host: a dry run to review the diff, the real apply, and a second apply that must report `changed=0`.
@@ -676,6 +684,7 @@ What the assertions check, on both targets:
 | SSH key | `.ssh` `0700`, `authorized_keys` `0600`, owned by `sftpuser` | [Step 3](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-3--ssh-key-for-sftp-user) |
 | sshd for `sftpuser` | `forcecommand internal-sftp -l VERBOSE`, chroot directory, `passwordauthentication no`, `allowtcpforwarding no`, `allowusers sftpuser` only (the `Match` replaces the global list for that user) | [Step 4](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) |
 | sshd for the admin | Port `22222`, `forcecommand none`, `allowusers` is the admin only | [Step 4](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-4--sshd_config-match-user-block) |
+| auditd rules | Active rules contain `-w /srv/sftp/ -p rwa -k sftp_activity` | [Step 5](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-5--auditd-sftp-chroot-activity-rule) |
 | AIDE | `98-file-transfer` contains the `sftpuser` entry | [Step 6](../../../../modules/file-transfer/self-managed/file-transfer-self-managed.md#step-6--aide-extend-baseline) |
 
 Client setup (manual Step 7). Add the alias for EC2 to `~/.ssh/config` on the Mac:
@@ -747,19 +756,12 @@ ansible-playbook playbooks/dns.yml --limit multi-lab-vps --ask-become-pass
 # → second run: changed=0
 ```
 
-Following the playbook run, complete the manual steps outside Ansible:
+Following the playbook run, note that on EC2 the first run triggers an automated reboot to apply the new audit rules in immutable mode (`-e 2`):
 
-**EC2 · multi-lab-vps:**
+> [!WARNING]
+> Because the hardening baseline locks auditd in immutable mode (`-e 2`), loading the audit drop-in `/etc/audit/rules.d/99-zz-dns.rules` requires a kernel reboot. The role manages this via `dns_auditd_reboot: true` in `host_vars/multi-lab-vps.yml`, automatically rebooting EC2 on the first pass (terminating the active WireGuard tunnel; re-establish the tunnel once the host returns). Following reboot, the system resolver automatically converges back to loopback (`127.0.0.1`) thanks to the `named.service` drop-in (`10-restart-resolved.conf`) and the playbook's convergence check.
 
-Append the auditd monitoring rule for BIND9 configuration and zone directories (manual Step 5):
-
-```bash
-sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/dns/self-managed/configs/audit/99-hardening.rules
-sudo augenrules --load
-sudo systemctl restart auditd
-```
-
-> Hardening locks auditd in immutable mode (`-e 2`) and clears rules with `-D`. If auditd fails to restart due to immutable mode, reboot the EC2 instance (`sudo reboot now`) to load the new rule.
+Then complete the manual step outside Ansible:
 
 **VM · multi-lab-local:**
 
@@ -784,7 +786,7 @@ For macOS WireGuard DNS behavior and optional fallback configuration, follow [ma
 - **Dedicated AIDE drop-in and syntax check:** hardening owns `/etc/aide/aide.conf.d/99-hardening`. The role deploys `/etc/aide/aide.conf.d/99-zz-dns` (ordered after `99-hardening`, which defines the `CONTENTEX` group) as an independent drop-in, validates configuration syntax with `aide --config-check` before flushing handlers, and regenerates the database only if the drop-in changes.
 - **Restarting systemd-resolved:** with `127.0.0.1` and `10.0.0.2` on the same interface (`ens5`), `systemd-resolved` retains its current server and only falls over on failure. If `127.0.0.1` was not responding at apply time, resolved stays with the VPC resolver (`10.0.0.2`), which returns NXDOMAIN for `lab.internal`. Restarting `systemd-resolved` after Netplan application while BIND9 is active resets query routing to the primary server (`127.0.0.1`).
 - **VPC domain forwarding and DNSSEC exception:** queries for internal VPC names (e.g. `*.compute.internal`) and reverse lookups for the host VPC IP (e.g. `141.1.0.10.in-addr.arpa` in `10.in-addr.arpa`) fail DNSSEC validation in Quad9 forwarders (`broken trust chain`), returning SERVFAIL. As a result, `systemd-resolved` marks `127.0.0.1` defective and permanently falls back to the VPC resolver (`10.0.0.2`), which returns NXDOMAIN for `lab.internal`. The role adds `validate-except { "compute.internal"; "10.in-addr.arpa"; };` in `named.conf.options` and two forward-only zones (`compute.internal` and `10.in-addr.arpa`) pointing to `10.0.0.2` in `named.conf.local` without modifying manual configs.
-- **Manual auditd rule:** `-D` (flush rules) and `-e 2` (immutable mode) in `99-hardening.rules` prevent dynamic drop-in rule insertion at runtime without a kernel restart. The manually added audit rule lives in `99-hardening.rules`, owned by hardening: if Step 10 of hardening is re-run, the file is restored and the `dns_config` rule disappears, so it must be added again.
+- **Drop-in auditd rule with controlled reboot:** hardening locks auditd in immutable mode (`-e 2`) and clears rules with `-D`. The role deploys an independent drop-in at `/etc/audit/rules.d/99-zz-dns.rules` to monitor `/etc/bind/` and `/var/lib/bind/` with key `dns_config` without touching `99-hardening.rules`. In immutable mode, `dns_auditd_reboot: true` triggers a controlled reboot on the first pass to load the rules into the kernel.
 - **Manual peer DNS configuration:** the `hardening` role owns `/etc/wireguard/wg0.conf` on peers and would overwrite external changes during subsequent hardening runs.
 - **Exclusion of Step 8:** pre-AMI sanitization of `/etc/resolv.conf` is omitted because the automated provisioning architecture is greenfield (Terraform and Ansible build clean environments), removing dependencies on golden AMIs.
 
@@ -839,6 +841,7 @@ What the assertions check on EC2 (`multi-lab-vps`):
 | System resolution | Local system resolver resolves `ns1.lab.internal` to `172.16.0.1` | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
 | PTR of the VPC host IP via BIND | NOERROR | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
 | Active DNS server | Current DNS Server: 127.0.0.1 (no fallback to VPC resolver) | [Step 7](../../../../modules/dns/self-managed/dns-self-managed.md#step-7--point-system-resolver-to-bind9) |
+| auditd rules | Active rules contain `-w /etc/bind/ -p wa -k dns_config` and `-w /var/lib/bind/ -p wa -k dns_config` | [Step 5](../../../../modules/dns/self-managed/dns-self-managed.md#step-5--auditd-zone-file-monitoring) |
 | AIDE integrity | Drop-in `99-zz-dns` monitors `/etc/bind` and excludes `/var/cache/bind` | [Step 6](../../../../modules/dns/self-managed/dns-self-managed.md#step-6--aide-extend-baseline) |
 
 After rebooting the host, if `resolvectl status ens5` shows `Current DNS Server: 10.0.0.2`, restart `systemd-resolved` to switch back to the local resolver (the role only restarts it when applying the Netplan overlay). This recovery command must also be executed once if the role is applied on a host where `systemd-resolved` has already fallen back to `10.0.0.2`:

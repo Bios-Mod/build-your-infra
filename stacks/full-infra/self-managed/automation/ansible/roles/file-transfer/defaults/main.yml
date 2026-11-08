@@ -19,10 +19,16 @@ file_transfer_chroot_dir: /srv/sftp/sftpuser
 file_transfer_configs_dir: "{{ configs_root }}/file-transfer/self-managed/configs"
 
 # Hardened OpenSSH daemon port configured by the hardening baseline
-hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"  # noqa: var-naming[no-role-prefix]
 
 # Administrative username configured by the hardening baseline
-hardening_admin_username: "{{ admin_username | default('admin') }}"
+hardening_admin_username: "{{ admin_username | default('admin') }}"  # noqa: var-naming[no-role-prefix]
+
+# Mirrors the hardening role default so the audit drop-in logic is correct on hosts that do not override it; VM overrides it to false in group_vars/vm.yml
+hardening_auditd_immutable_mode: true  # noqa: var-naming[no-role-prefix]
 
 # Note: file_transfer_sftp_public_key_file has NO default value by design.
 # It must be defined explicitly in host_vars (e.g. inventories/host_vars/multi-lab-local.yml or multi-lab-vps.yml).
+
+# Note: file_transfer_auditd_reboot has NO default value by design when hardening_auditd_immutable_mode is true.
+# It must be defined explicitly in host_vars (e.g. inventories/host_vars/multi-lab-vps.yml).

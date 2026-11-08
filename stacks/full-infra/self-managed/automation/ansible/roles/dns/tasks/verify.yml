@@ -4,7 +4,7 @@
 # Requires:    dns applied
 #
 # Verification tasks and assertions for the dns role.
-# Why:         Validates service state, zone loading, socket listeners, DNS resolution, firewall rules, and AIDE drop-in.
+# Why:         Validates service state, zone loading, socket listeners, DNS resolution, firewall rules, auditd rules, and AIDE drop-in.
 # Doc ref:     modules/dns/self-managed/dns-self-managed.md — Verification sections
 # Targets:     ec2
 
@@ -28,6 +28,16 @@
   ansible.builtin.stat:
     path: /etc/netplan/51-dns-lab.yaml
   register: dns_verify_stat_netplan
+  check_mode: false
+  tags:
+    - dns
+    - dns_verify
+
+# Checks if auditctl binary exists on target to guard check_mode runs (Step 5 Verification)
+- name: Stat auditctl binary for verification
+  ansible.builtin.stat:
+    path: /sbin/auditctl
+  register: dns_verify_stat_auditctl
   check_mode: false
   tags:
     - dns
@@ -263,6 +273,55 @@
       UFW status does not contain ALLOW IN for 53/udp or 53/tcp on interface wg0:
       {{ dns_ufw_status.stdout | default('') }}
   when: not ansible_check_mode
+  tags:
+    - dns
+    - dns_verify
+
+# ==============================================================================
+# Step 5 Verification — auditd DNS Configuration Rules
+# ==============================================================================
+
+# Queries active auditd rules from the kernel using auditctl -l (Step 5 Verification)
+- name: Query active auditd rules via auditctl -l
+  ansible.builtin.command:
+    cmd: /sbin/auditctl -l
+  register: dns_auditctl_list
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or dns_verify_stat_auditctl.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Displays notice when audit rule is staged in immutable mode awaiting manual reboot (Step 5 Verification)
+- name: Display notice for staged auditd rules awaiting reboot
+  ansible.builtin.debug:
+    msg: "audit rule staged; reboot required to load into kernel"
+  when:
+    - (dns_audit_rules_deploy.changed | default(false))
+    - hardening_auditd_immutable_mode
+    - not (dns_auditd_reboot | default(false))
+    - not ansible_check_mode or dns_verify_stat_auditctl.stat.exists
+  tags:
+    - dns
+    - dns_verify
+
+# Asserts active auditd rules contain dns_config key when rules are loaded (Step 5 Verification)
+- name: Assert auditd rules monitor BIND9 configuration and zone paths
+  ansible.builtin.assert:
+    that:
+      - dns_auditctl_list.rc == 0
+      - dns_auditctl_list.stdout is search('-w /etc/bind/? -p wa -k dns_config')
+      - dns_auditctl_list.stdout is search('-w /var/lib/bind/? -p wa -k dns_config')
+    fail_msg: >-
+      Active auditd rules do not contain expected watches for '/etc/bind/' or '/var/lib/bind/' with key 'dns_config'.
+      Auditctl output: {{ dns_auditctl_list.stdout | default('') }}
+  when:
+    - not ansible_check_mode or dns_verify_stat_auditctl.stat.exists
+    - not ((dns_audit_rules_deploy.changed | default(false)) and
+           hardening_auditd_immutable_mode and
+           not (dns_auditd_reboot | default(false)))
   tags:
     - dns
     - dns_verify

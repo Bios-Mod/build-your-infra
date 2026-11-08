@@ -4,8 +4,8 @@
 # Requires:    playbooks/hardening.yml executed
 #
 # Task orchestration entry point for the file-transfer role.
-# Why:         Applies dedicated SFTP user, chroot hierarchy, OpenSSH drop-in, and AIDE integrity monitoring.
-# Doc ref:     modules/file-transfer/self-managed/file-transfer-self-managed.md — Steps 1, 2, 3, 4, 6
+# Why:         Applies dedicated SFTP user, chroot hierarchy, OpenSSH drop-in, auditd drop-in, and AIDE integrity monitoring.
+# Doc ref:     modules/file-transfer/self-managed/file-transfer-self-managed.md — Steps 1, 2, 3, 4, 5, 6
 # Targets:     both
 
 ---
@@ -82,6 +82,19 @@
     fail_msg: >-
       Source configuration '{{ file_transfer_configs_dir }}/ssh/sshd_config' does not contain
       expected 'Match User {{ file_transfer_user }}' or 'ChrootDirectory {{ file_transfer_chroot_dir }}'.
+  tags:
+    - file_transfer
+
+# Asserts file_transfer_auditd_reboot is defined as boolean when auditd immutable mode is active (Prerequisites)
+- name: Assert file_transfer_auditd_reboot is defined for immutable auditd hosts
+  ansible.builtin.assert:
+    that:
+      - file_transfer_auditd_reboot is defined
+      - file_transfer_auditd_reboot is boolean
+    fail_msg: >-
+      Variable 'file_transfer_auditd_reboot' (boolean) must be defined in host_vars when
+      hardening_auditd_immutable_mode is active.
+  when: hardening_auditd_immutable_mode
   tags:
     - file_transfer
 
@@ -209,6 +222,58 @@
   ansible.builtin.command:
     cmd: /usr/sbin/sshd -t
   changed_when: false
+  tags:
+    - file_transfer
+
+# ==============================================================================
+# Step 5 — auditd: SFTP Chroot Activity Rule Drop-in
+# ==============================================================================
+
+# Checks if /srv/sftp directory exists before deploying audit rule (Step 5)
+- name: Stat /srv/sftp directory for audit rule prerequisite
+  ansible.builtin.stat:
+    path: /srv/sftp
+  register: file_transfer_stat_srv_sftp
+  check_mode: false
+  tags:
+    - file_transfer
+
+# Asserts /srv/sftp directory exists before deploying auditd drop-in rule (Step 5)
+- name: Assert /srv/sftp directory exists before deploying auditd rule
+  ansible.builtin.assert:
+    that:
+      - file_transfer_stat_srv_sftp.stat.exists
+    fail_msg: >-
+      Directory /srv/sftp must exist before deploying auditd watch rule.
+  when: not ansible_check_mode
+  tags:
+    - file_transfer
+
+# Deploys auditd drop-in configuration for monitoring SFTP chroot activity (Step 5)
+# Preserves only active rule definitions from configs/audit/99-hardening.rules stripping non-ASCII comments
+# to prevent auditd parser aborts, adding an ASCII header
+- name: Deploy file-transfer auditd monitoring rules
+  vars:
+    file_transfer_audit_raw: "{{ lookup('file', file_transfer_configs_dir ~ '/audit/99-hardening.rules') }}"
+    file_transfer_nl: "\n"
+    file_transfer_audit_header: "# file-transfer audit rules (managed by Ansible)"
+  ansible.builtin.copy:
+    content: >-
+      {{
+        file_transfer_audit_header ~ file_transfer_nl ~
+        ((file_transfer_audit_raw.splitlines() |
+          map('trim') |
+          reject('match', '^#') |
+          reject('equalto', '')) |
+         join(file_transfer_nl)) ~ file_transfer_nl
+      }}
+    dest: /etc/audit/rules.d/99-zz-file-transfer.rules
+    owner: root
+    group: root
+    mode: "0640"
+  register: file_transfer_audit_rules_deploy
+  notify:
+    - Load auditd rules (file-transfer)
   tags:
     - file_transfer
 

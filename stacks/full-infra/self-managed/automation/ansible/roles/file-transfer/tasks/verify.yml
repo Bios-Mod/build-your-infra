@@ -4,7 +4,7 @@
 # Requires:    file-transfer applied
 #
 # Verification tasks and assertions for the file-transfer role.
-# Why:         Validates user configuration, chroot permissions, OpenSSH effective rules, and AIDE drop-in.
+# Why:         Validates user configuration, chroot permissions, OpenSSH effective rules, auditd rules, and AIDE drop-in.
 # Doc ref:     modules/file-transfer/self-managed/file-transfer-self-managed.md — Verification sections
 # Targets:     both
 
@@ -224,6 +224,64 @@
       Administrator OpenSSH configuration mismatch: expected port {{ hardening_ssh_port }}, forcecommand none,
       admin user '{{ hardening_admin_username }}' in AllowUsers, and SFTP user '{{ file_transfer_user }}' absent from AllowUsers.
   when: not ansible_check_mode or file_transfer_stat_sshd_dropin.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Checks if auditctl binary exists on target for auditd rule inspection (Step 5 Verification)
+- name: Stat auditctl binary for verification
+  ansible.builtin.stat:
+    path: /sbin/auditctl
+  register: file_transfer_stat_auditctl
+  check_mode: false
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# ==============================================================================
+# Step 5 Verification — auditd SFTP Activity Rule
+# ==============================================================================
+
+# Queries active auditd rules from the kernel using auditctl -l (Step 5 Verification)
+- name: Query active auditd rules via auditctl -l
+  ansible.builtin.command:
+    cmd: /sbin/auditctl -l
+  register: file_transfer_auditctl_list
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or file_transfer_stat_auditctl.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Displays notice when audit rule is staged in immutable mode awaiting manual reboot (Step 5 Verification)
+- name: Display notice for staged auditd rules awaiting reboot
+  ansible.builtin.debug:
+    msg: "audit rule staged; reboot required to load into kernel"
+  when:
+    - (file_transfer_audit_rules_deploy.changed | default(false))
+    - hardening_auditd_immutable_mode
+    - not (file_transfer_auditd_reboot | default(false))
+    - not ansible_check_mode or file_transfer_stat_auditctl.stat.exists
+  tags:
+    - file_transfer
+    - file_transfer_verify
+
+# Asserts active auditd rules contain sftp_activity key when rules are loaded (Step 5 Verification)
+- name: Assert auditd rules monitor SFTP chroot activity
+  ansible.builtin.assert:
+    that:
+      - file_transfer_auditctl_list.rc == 0
+      - file_transfer_auditctl_list.stdout is search('-w /srv/sftp/? -p rwa -k sftp_activity')
+    fail_msg: >-
+      Active auditd rules do not contain expected watch for '/srv/sftp/' with key 'sftp_activity'.
+      Auditctl output: {{ file_transfer_auditctl_list.stdout | default('') }}
+  when:
+    - not ansible_check_mode or file_transfer_stat_auditctl.stat.exists
+    - not ((file_transfer_audit_rules_deploy.changed | default(false)) and
+           hardening_auditd_immutable_mode and
+           not (file_transfer_auditd_reboot | default(false)))
   tags:
     - file_transfer
     - file_transfer_verify
