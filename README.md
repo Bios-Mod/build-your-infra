@@ -23,6 +23,7 @@
 [![Samba4](https://img.shields.io/badge/Samba4-AD%20DC-blue?style=flat-square)](modules/directory/self-managed/directory-self-managed.md)
 [![Kea DHCP](https://img.shields.io/badge/Kea-DHCP-informational?style=flat-square)](modules/dhcp/self-managed/dhcp-self-managed.md)
 [![Ansible](https://img.shields.io/badge/Ansible-automation-EE0000?style=flat-square&logo=ansible&logoColor=white)](stacks/full-infra/self-managed/automation/self-managed-automation.md)
+[![Terraform](https://img.shields.io/badge/Terraform-IaC-7B42BC?style=flat-square&logo=terraform&logoColor=white)](stacks/full-infra/self-managed/automation/self-managed-automation.md)
 
 [![AWS EC2](https://img.shields.io/badge/AWS-EC2%20t4g.micro-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](environments/vps/vps-ec2-setup.md)
 [![SSM](https://img.shields.io/badge/SSM-Session%20Manager-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/hardening/aws-native/hardening-aws-native.md)
