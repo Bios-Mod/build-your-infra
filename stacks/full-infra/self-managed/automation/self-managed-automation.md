@@ -1338,13 +1338,24 @@ What the assertions check on the local VM:
 
 ## Monitoring — Prometheus and Grafana Stack
 
-The `monitoring` role automates Steps 1–5 of the pull-based observability stack across `monitoring_targets` (`multi-lab-local` VM and `multi-lab-vps` EC2) and `monitoring_servers` (`multi-lab-local` VM only). Prometheus (`127.0.0.1:9090`), `blackbox_exporter` (`127.0.0.1:9115`), and Grafana OSS (`172.16.0.3:3000` over `wg0`) run exclusively on the local VM alongside a loopback `node_exporter`, while EC2 runs `node_exporter` bound to `172.16.0.1:9100` and is scraped and synthetically probed across the WireGuard tunnel. The role assumes hosts already have the manual deployment applied (and also supports fresh hardened targets with DNS and Web Server active) and converges idempotently without disturbing hardening rules or existing Grafana databases.
+The `monitoring` role automates Steps 1–5 of [`monitoring-self-managed.md`](../../../../modules/monitoring/self-managed/monitoring-self-managed.md): Prometheus, `blackbox_exporter`, Grafana OSS, and `node_exporter` on the local VM (`multi-lab-local`), plus `node_exporter` alone on EC2 (`multi-lab-vps`, scraped over `wg0`). It assumes hosts already have the manual module applied and cleans up shared `99-hardening` additions automatically. Every run is idempotent (`changed=0` on convergence) without modifying existing Grafana databases.
+
+> **Prerequisites:**
+> - **Control node & tunnel:** virtualenv active ([Control Node](#control-node--environment-setup)), Mac WireGuard tunnel up, and `connection_mode: "wg"` set in `inventories/host_vars/multi-lab-vps.yml` and `inventories/host_vars/multi-lab-local.yml`.
+> - **Base modules:** [Hardening](#hardening--ansible-baseline), [DNS](#dns--bind9-authoritative-service), and [Web Server](#web-server--nginx-https-service) applied so `blackbox_exporter` probes succeed.
+> - **Connectivity:** confirm both targets respond to `playbooks/ping.yml` below, matching [Control Node verification](#step-1--prepare-the-control-node-toolchain).
+> - **Optional manual baseline:** compatible with hosts where the manual module already ran; shared additions are migrated cleanly.
+
+**Control node (Mac):**
+
+```bash
+ansible-playbook playbooks/ping.yml
+# → ping reachability verified
+```
 
 ### Host Variables Configuration
 
-IP addresses, ports, and scrape targets derive automatically from existing WireGuard variables (`wireguard_vm_vpn_ip` and `wireguard_server_vpn_ip` in `inventories/group_vars/all.yml`, combined with `is_cloud` in `inventories/group_vars/vm.yml` and `inventories/group_vars/ec2.yml`), so no extra IP variables are needed.
-
-Add the `monitoring_targets` and `monitoring_servers` groups to `inventories/hosts.yml`:
+Target IPs and scrape addresses derive automatically from existing WireGuard variables. Add the `monitoring_targets` and `monitoring_servers` groups to `inventories/hosts.yml`:
 
 **Control node (Mac):**
 
@@ -1362,7 +1373,7 @@ all:
         multi-lab-local:
 ```
 
-Define `monitoring_auditd_reboot` in `inventories/host_vars/multi-lab-local.yml` (required on `monitoring_servers` when `hardening_auditd_immutable_mode` is `true`, and `false` while immutable mode is disabled during development):
+Set `monitoring_auditd_reboot` in `inventories/host_vars/multi-lab-local.yml`:
 
 **Control node (Mac):**
 
@@ -1377,44 +1388,34 @@ monitoring_auditd_reboot: false
 
 #### What was done
 
-Applies and converges the monitoring stack across both hosts: removes monitoring-owned lines appended to `/etc/audit/rules.d/99-hardening.rules` and `/etc/aide/aide.conf.d/99-hardening` by manual execution, installs and configures `prometheus-node-exporter` (with `wg-quick@wg0` startup ordering on EC2), enforces WireGuard UFW rules (`9100/tcp` from `172.16.0.3` on EC2; `3000/tcp` on `wg0` on VM), deploys and syntax-validates Prometheus and `blackbox_exporter`, migrates Grafana's APT keyring to `/etc/apt/keyrings/grafana.asc`, provisions Grafana datasource and `lab-overview.json` configurations, and writes independent `99-zz-monitoring` AIDE and auditd drop-ins.
-
-When running against hosts that already have `/var/lib/grafana/grafana.db` from the manual deployment, press Enter to leave the `monitoring_grafana_admin_password` prompt empty — the password prompt is used only on a brand-new installation before Grafana's first start.
+Deploys `prometheus-node-exporter` across both targets and Prometheus, `blackbox_exporter`, Grafana OSS, and auditd config watches on the local VM. Enforces `wg0` firewall rules, systemd startup ordering, Grafana provisioning, and independent `99-zz-monitoring` AIDE and auditd drop-ins while cleaning any manual `99-hardening` additions.
 
 **Control node (Mac):**
 
 ```bash
-# Dry-run across VM and EC2 (leave Grafana admin password empty if grafana.db already exists)
 ansible-playbook playbooks/monitoring.yml --check --diff --ask-become-pass
-
-# Execute monitoring role across both targets
 ansible-playbook playbooks/monitoring.yml --ask-become-pass
-
-# Re-run to verify idempotent convergence
 ansible-playbook playbooks/monitoring.yml --ask-become-pass
 # → second run: changed=0
 ```
 
+> **Note:** Leave the `monitoring_grafana_admin_password` prompt empty if the manual setup already set a Grafana password (`/var/lib/grafana/grafana.db` exists).
+
 #### Why
 
-- **Independent `99-zz-monitoring` Drop-Ins:** Placing AIDE scopes in `/etc/aide/aide.conf.d/99-zz-monitoring` (alphabetically after `99-hardening`, which defines `CONTENTEX`) and VM audit watches in `/etc/audit/rules.d/99-zz-monitoring.rules` isolates monitoring configuration lifecycle from the hardening baseline.
-- **Idempotent Cleanup of Manual `99-hardening` Additions:** Running `lineinfile` with `state: absent` strips only the active monitoring lines previously appended via `tee -a` to `/etc/audit/rules.d/99-hardening.rules` and `/etc/aide/aide.conf.d/99-hardening`, preventing `augenrules --load` from aborting with `Rule exists` alongside `99-zz-monitoring.rules` while preserving hardening-owned rules and section headers (accepted deviation).
-- **ASCII-Armored Grafana Key (`grafana.asc`) & Explicit `0644` Permissions:** Downloading `gpg.key` to `/etc/apt/keyrings/grafana.asc` (`0644`), verifying its GPG fingerprint, updating `/etc/apt/sources.list.d/grafana.list`, and removing any legacy `/etc/apt/keyrings/grafana.gpg` avoids `gpg --dearmor` pipelines while guaranteeing `_apt` and `grafana` can read files created under the restrictive hardening `umask`.
-- **Auditd Restricted to `monitoring_servers` (VM):** Deploying audit watch rules exclusively on the VM avoids triggering `-e 2` immutable-mode reboots on EC2, which would drop the WireGuard hub tunnel.
-- **WireGuard-Scoped Firewall & Startup Ordering:** UFW allows `9100/tcp` on `wg0` only from `172.16.0.3` on EC2 and `3000/tcp` on `wg0` on the VM, paired with `After=` / `Wants=wg-quick@wg0.service` systemd drop-ins so tunnel-bound services start reliably on reboot.
-- **Initial Password via `vars_prompt` & `runuser` Override:** Setting the Grafana `admin` password via `runuser -u grafana -- grafana cli ... --configOverrides cfg:default.paths.data=/var/lib/grafana admin reset-admin-password --password-from-stdin` with `no_log: true` and `creates: /var/lib/grafana/grafana.db` before first startup writes to the service database instead of creating a root-owned database under `/usr/share/grafana/data`, and preserves existing manual passwords untouched.
+- **Isolated `99-zz-monitoring` drop-ins:** Avoid `hardening` overwrites and strip manual `99-hardening` lines so `augenrules --load` avoids duplicates.
+- **Grafana `grafana.asc` and `vars_prompt`:** Uses ASCII-armored `grafana.asc` (`0644`) for `_apt` and initializes `grafana.db` via `grafana cli` running as `grafana`.
+- **WireGuard-scoped UFW and `wg0` ordering:** Restricts `9100/tcp` (EC2) and `3000/tcp` (VM) to `wg0`, orders binds after `wg-quick@wg0`, and skips EC2 auditd rules.
 
 #### Verification
 
-Run [Step 2 (`--tags monitoring_verify`)](#step-2--verify-tag-monitoring_verify) to verify service states, socket listeners, Prometheus API target/probe convergence, Grafana health and permissions, AIDE syntax, and auditd rules.
+Run [Step 2 (`--tags monitoring_verify`)](#step-2--verify-tag-monitoring_verify) to execute the read-only assertions across both targets.
 
 ---
 
 ### Step 2 — Verify (Tag `monitoring_verify`)
 
 #### What was done
-
-Run the read-only verification suite across both targets without modifying state:
 
 **Control node (Mac):**
 
@@ -1423,22 +1424,16 @@ ansible-playbook playbooks/monitoring.yml --tags monitoring_verify --ask-become-
 # → changed=0 failed=0
 ```
 
-What the assertions check across targets (`multi-lab-local` VM and `multi-lab-vps` EC2):
+> **Note:** `playbooks/monitoring.yml` also prompts for `monitoring_grafana_admin_password` here; press Enter to skip.
 
 | Check | Expected | Manual verification |
 | --- | --- | --- |
-| `node_exporter` (VM & EC2) | Service active/enabled, socket on `127.0.0.1:9100` (VM) / `172.16.0.1:9100` (EC2), `/metrics` returns HTTP 200 with `node_exporter_build_info` | [Step 1](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-1--install-and-configure-node_exporter) |
-| EC2 `wg0` ordering & UFW | `wg-quick@wg0.service` ordering in unit, UFW `9100/tcp` ALLOW IN on `wg0` from `172.16.0.3` | [Step 1](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-1--install-and-configure-node_exporter) |
-| Prometheus & blackbox (VM) | Services active/enabled, sockets on `127.0.0.1:9090` and `127.0.0.1:9115`, `/-/ready` HTTP 200, API confirms `count(up) == 8`, `up == 0` count `0`, `count(probe_success) == 5`, `probe_success == 0` count `0` | [Step 2](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-2--install-and-configure-prometheus) · [Step 3](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-3--install-and-configure-blackbox_exporter) |
-| Grafana (VM) | Service active/enabled, socket on `172.16.0.3:3000`, UFW `3000/tcp` on `wg0`, `/api/health` returns `database: ok`, provisioning/dashboard files `0644`, `/var/lib/grafana/grafana.db` owned by `grafana:grafana`, `/usr/share/grafana/data/grafana.db` absent | [Step 4](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-4--install-provision-and-expose-grafana) |
-| AIDE & auditd | `99-zz-monitoring` (`0644`) present and `aide --config-check` exits `0` on VM & EC2; `auditctl -l` shows `monitoring_config` watches on VM | [Step 5](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-5--hardening-integration-auditd--aide) |
+| `node_exporter` & EC2 UFW | Active/enabled, bound (`127.0.0.1:9100` VM / `172.16.0.1:9100` EC2), `wg0` ordering and UFW `9100/tcp` on EC2 | [Step 1](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-1--install-and-configure-node_exporter) |
+| Prometheus & `blackbox_exporter` | Loopback services (`:9090`, `:9115`) active, `/-/ready` 200, API reports 8 `up` and 5 `probe_success` | [Step 2](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-2--install-and-configure-prometheus) · [Step 3](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-3--install-and-configure-blackbox_exporter) |
+| Grafana | Active on `172.16.0.3:3000`, UFW `3000/tcp` on `wg0`, `/api/health` ok, `0644` configs, DB owned by `grafana` | [Step 4](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-4--install-provision-and-expose-grafana) |
+| AIDE & auditd | `99-zz-monitoring` (`0644`) passes `aide --config-check` on VM & EC2; `monitoring_config` watches loaded on VM | [Step 5](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-5--hardening-integration-auditd--aide) |
 
-> **Manual procedures:** Controlled `named` fault-injection testing and interactive Grafana UI inspection from the Mac control node remain manual steps — execute [Step 6 (Fault Injection)](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-6--end-to-end-verification-and-fault-injection) and [Step 7 (Access Grafana from the Mac)](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-7--access-grafana-from-the-mac) manually in the module guide.
-
-#### Why
-
-- **Prometheus API Convergence Retries:** Querying `/api/v1/query` with `retries: 12` and `delay: 5` absorbs initial `15s` scrape cycles after daemon restarts before asserting all 8 targets and 5 blackbox probes report healthy (`1`).
-- **Manual Step 6 & Step 7 Exclusion:** Stopping `named` on EC2 intentionally disrupts `lab.internal` DNS resolution for ~30 seconds, and dashboard visualization requires browser rendering from the Mac workstation; both remain deliberate operator-driven checks.
+Controlled `named` fault injection ([manual Step 6](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-6--end-to-end-verification-and-fault-injection)) and interactive browser checks from the Mac ([manual Step 7](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-7--access-grafana-from-the-mac)) remain manual procedures outside Ansible.
 
 ---
 
