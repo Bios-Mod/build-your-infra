@@ -219,10 +219,8 @@ Provisioned the Managed Microsoft AD directory in `multi-lab.internal` using
 Standard Edition, deployed across the two private subnets created in Steps 1
 and pre-existing `10.0.2.0/24`.
 
-> **Billing starts now.** Directory provisioning typically takes 20–40 minutes.
-> Billing begins immediately at creation, not when the directory reaches
-> Active state. Do not cancel mid-provisioning — a failed directory still
-> accrues charges until explicitly deleted.
+> **Billing starts now.** Provisioning takes 20–40 minutes; do not cancel
+> mid-provisioning since charges start immediately (see [Cost notice](#directory--aws-native)).
 
 **Console**
 
@@ -717,7 +715,4 @@ resolvectl status | grep "DNS Servers"
 # → DNS Servers: 169.254.169.253   ← AmazonProvidedDNS
 ```
 
-> Cost Explorer data has up to 24h latency — the current day's charges
-> may not appear immediately. Use the Billing Dashboard for a real-time
-> estimate.
-
+> **Cost Explorer latency:** see [Billing & Cost Explorer Audit](../../../stacks/full-infra/self-managed/automation/self-managed-automation.md#billing--cost-explorer-audit).

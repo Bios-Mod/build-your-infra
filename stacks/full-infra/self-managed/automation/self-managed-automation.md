@@ -744,7 +744,7 @@ It automates [`dns-self-managed.md`](../../../../modules/dns/self-managed/dns-se
 
 The `dns` role reproduces on EC2 (`dns_servers`) the state that the manual module leaves behind: BIND9 packages and checking utilities installed, `named.conf.options` restricting recursion and queries to `lab-net`, forward and reverse zone database files in `/etc/bind/zones/`, `named.conf.local` referencing the zones, full configuration checked with `named-checkconf -z`, `named` service enabled and started, UFW rules allowing UDP and TCP port 53 on `wg0`, AIDE drop-in `/etc/aide/aide.conf.d/99-zz-dns` validated with `aide --config-check`, and Netplan overlay `/etc/netplan/51-dns-lab.yaml` pointing the system resolver to `127.0.0.1` with the VPC resolver (`10.0.0.2`) as fallback (restarting `systemd-resolved` to lock resolution to loopback).
 
-> **Coexistence note (`dns_listen_on`):** To permit coexistence with Samba 4 Active Directory on EC2, set `dns_listen_on: "127.0.0.1; 172.16.0.1;"` in `inventories/host_vars/multi-lab-vps.yml` before applying the `directory` module. This restricts BIND9 listeners and frees the EC2 private IP on port 53 for Samba's internal DNS. Furthermore, an automated systemd drop-in for `named.service` (`10-restart-resolved.conf`) restarts `systemd-resolved` on every `named` startup, a handler restarts it after each reload, and `playbooks/dns.yml` automatically repairs the resolver on each run if it had already fallen back to `10.0.0.2`; verifying `resolvectl status ens5` (`Current DNS Server: 127.0.0.1`) remains the verification.
+> **Coexistence note (`dns_listen_on`):** To permit coexistence with Samba 4 Active Directory on EC2, set `dns_listen_on: "127.0.0.1; 172.16.0.1;"` in `inventories/host_vars/multi-lab-vps.yml` before applying the `directory` module. This restricts BIND9 listeners and frees the EC2 private IP on port 53 for Samba's internal DNS.
 
 Ensure `connection_mode: "wg"` is set and configure BIND9 listeners and auditd reboot behavior in `inventories/host_vars/multi-lab-vps.yml`:
 
@@ -808,14 +808,7 @@ For macOS WireGuard DNS behavior and optional fallback configuration, follow [ma
 
 #### Verification
 
-**EC2 · multi-lab-vps · Run on control node:**
-
-```bash
-ansible-playbook playbooks/dns.yml --limit multi-lab-vps --tags dns_verify --ask-become-pass
-# → changed=0 failed=0
-```
-
-Verify service status and config syntax directly on the EC2 host:
+Run [Step 2 (`--tags dns_verify`)](#step-2--verify-tag-dns_verify) to execute the full role assertions, and confirm service status and config syntax directly on EC2:
 
 **EC2 · multi-lab-vps:**
 
@@ -937,14 +930,7 @@ dig +short NS buildyourinfra.click @1.1.1.1
 
 The `web-server` role reproduces on both targets the state that the manual module leaves behind: Nginx installed and enabled, UFW application profile `Nginx Full` (ports 80 and 443) allowed, TLS certificates provisioned (397-day self-signed certificate on VM; Certbot Let's Encrypt certificate and `certbot.timer` auto-renewal on EC2), default site removed from `sites-enabled/`, dedicated virtual host `multi-lab.conf` deployed and validated with `nginx -t`, default lab `index.html` placed in `/var/www/html/`, auditd activity monitoring drop-in `/etc/audit/rules.d/99-zz-web-server.rules` deployed with automated reboot handling for immutable kernels, and AIDE drop-in `/etc/aide/aide.conf.d/99-zz-web-server` validated with `aide --config-check`.
 
-The root DNS A record pointing to the EC2 Elastic IP is provisioned declaratively via Terraform, avoiding manual DNS records or drifting state. Port mapping and TLS modes are defined per target in `host_vars`.
-
-##### Staging vs Production (EC2 ACME Issuance)
-
-Let's Encrypt limits include 5 failed validations per account, per hostname, per hour, and 5 duplicate certificates (same set of hostnames) per 7 days; the 50-per-week limit applies per registered domain. These limits can lock out automated deployments if DNS propagation or firewall rules fail. EC2 issuance is therefore executed in two sequential stages:
-
-1. **Staging rehearsal (`web_server_certbot_staging: true`):** Validates the complete ACME HTTP-01 challenge against Let's Encrypt staging environment without consuming production quotas.
-2. **Production issuance (`web_server_certbot_staging: false`):** Promotes the existing lineage to the production ACME endpoint (`--server https://acme-v02.api.letsencrypt.org/directory --force-renewal --cert-name`) without deleting certificate files or renewal configurations.
+The root DNS A record pointing to the EC2 Elastic IP is provisioned via Terraform before configuring per-target port mapping and TLS mode in `host_vars`. On EC2, ACME issuance runs in two sequential stages: first staging rehearsal (`web_server_certbot_staging: true`), then production promotion (`web_server_certbot_staging: false`).
 
 **Control node (Mac):**
 
@@ -1025,7 +1011,7 @@ ansible-playbook playbooks/web-server.yml --limit multi-lab-vps --ask-become-pas
 
 #### Why
 
-- **ACME staging rehearsal:** Let's Encrypt enforces strict production rate limits. Staging issuance verifies public DNS resolution, ingress firewall rules, and Nginx challenge routing without penalty before requesting the production certificate.
+- **ACME staging rehearsal:** Let's Encrypt enforces production rate limits (5 failed validations per account/hostname/hour, 5 duplicate certificates per 7 days, and 50 per registered domain per week). Staging issuance verifies public DNS resolution, ingress firewall rules, and Nginx challenge routing without exhausting production quotas.
 - **Production promotion without lineage regeneration:** Promoting from staging with `--cert-name <domain> --server https://acme-v02.api.letsencrypt.org/directory --force-renewal` avoids deleting `/etc/letsencrypt/` directories or re-creating symlinks, ensuring a seamless transition to the production CA.
 - **Automated auditd drop-in:** Rather than manually appending rules to `99-hardening.rules` (which would be wiped if hardening is re-run), the role deploys `/etc/audit/rules.d/99-zz-web-server.rules` containing only active ASCII rules. For immutable kernels (`-e 2`), `web_server_auditd_reboot: true` handles the required kernel reload cleanly via an Ansible reboot handler.
 - **Declarative DNS A record via Terraform:** Querying the Route 53 hosted zone via Terraform `data "aws_route53_zone"` keeps DNS state declarative and attached to the EC2 Elastic IP lifecycle, preventing manual drift and orphaned records.
@@ -1530,56 +1516,16 @@ ansible-playbook playbooks/site.yml --tags web-server --ask-become-pass
 
 #### Why
 
-While `site.yml` orchestrates all module playbooks for ongoing maintenance and convergence, initial host deployment requires executing several deliberate gates and out-of-band prerequisites by design:
+While `site.yml` converges all service roles, initial provisioning keeps deliberate gates and out-of-band prerequisites outside the master playbook:
 
-- **Separate Bootstrap (`playbooks/bootstrap.yml`):** Initial bootstrapping connects over port 22 using the default or installer account (`connection_mode: "pre"`). It cannot run inside `site.yml` because once the hardening baseline executes, port 22 and default logins are permanently disabled. See [Hardening Step 1](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a).
-- **Phased Connection Mode Transitions (`pre` → `hardened` → `wg`):** Transitioning connection modes requires human verification between access phases (verifying key-based access before disabling password logins; verifying the WireGuard VPN tunnel before closing public SSH ports). Running transitions unattended would risk permanent lockout if a handshake fails. See [Control Node — Environment Setup](#control-node--environment-setup) and [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
-- **Out-of-Band Cloud Infrastructure (Security Groups & SSM):** AWS Security Groups, VPC routes, and IAM instance profiles are managed declaratively in Terraform or AWS Console. Ansible operates exclusively within the guest OS and does not create cloud perimeter resources. See [Terraform — Infrastructure Provisioning](#terraform--infrastructure-provisioning).
-- **WireGuard Asymmetric Key Exchange:** Private keys are generated locally on each host and never leave the system. Public keys must be exchanged between the EC2 hub (`multi-lab-vps.yml`) and peers (`multi-lab-local.yml`) out-of-band before the tunnel can establish. See [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
-- **WireGuard Client DNS Configuration on VM (`hardening_wg_client_dns`):** On the local VM, `hardening_wg_client_dns` must be explicitly configured to `"172.16.0.1"` in `inventories/host_vars/multi-lab-local.yml` before running `site.yml` a second time (or during full convergence). Because `wg-quick` registers the DNS server with a routing domain `~.` on `wg0`, all VM queries are routed over the tunnel. If left at the default Quad9 (`9.9.9.9`), the queries cannot reach Quad9 across the tunnel (`172.16.0.0/24`), leaving the VM without working DNS resolution. See [DNS Step 1](#dns--bind9-authoritative-service).
-- **Interactive Password Prompts (`vars_prompt`):** Administrative passwords for the system admin (`bootstrap.yml`), Samba Active Directory Administrator (`directory.yml`), and initial Grafana `admin` account (`monitoring.yml`, prompted on first install only when `/var/lib/grafana/grafana.db` is absent — leave blank on converged hosts) are supplied interactively and never stored in plaintext in version control or host variable files. See [Directory Step 1](#step-1--apply-tag-directory) and [Monitoring Step 1](#step-1--apply-role-monitoring).
-- **Controlled Reboots for Immutable Audit Rules (`*_auditd_reboot`):** The hardening baseline locks the kernel audit subsystem in immutable mode (`-e 2`). New audit drop-ins (`file-transfer`, `dns`, `web-server`, `directory`) require a kernel reboot to take effect on EC2 (`*_auditd_reboot: true`). Automated reboots temporarily drop the active WireGuard tunnel, requiring tunnel verification before resuming. See [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
-- **Public Domain & Route 53 Delegation Prerequisite:** Let's Encrypt requires public DNS resolution for the registered domain (`buildyourinfra.click`). The public hosted zone and registrar delegation are configured once as an account-level prerequisite outside Ansible. See [Web Server Step 1](#step-1--apply-tag-web-server).
-- **Let's Encrypt Rate Limits:** Automated certificate issuance enforces `web_server_certbot_staging: true` during initial testing to avoid hitting ACME production rate limits before production cutover. See [Web Server Step 1](#step-1--apply-tag-web-server).
-- **SMB2 Protocol Omission:** Samba 4.19.5 on Ubuntu 24.04 ARM64 has an upstream bug preventing SMB2 file-sharing service startup in AD DC mode. AD authentication, Kerberos, LDAP, and RPC operate normally; SMB2 file sharing is excluded as an accepted deviation. See [Directory Step 1](#step-1--apply-tag-directory).
-- **Client-Side Configuration Steps:** Workstation-specific settings (SFTP client alias in `~/.ssh/config`, WireGuard peer DNS forwarding, joining client machines to the Active Directory domain) run outside the control node playbook and are applied on the operator's machine. See [File Transfer Step 2](#step-2--verify-tag-file_transfer_verify) and [Directory Step 2](#step-2--verify-tag-directory_verify).
-- **Manual Monitoring Checks (Fault Injection & Browser Access):** Controlled `named` fault-injection testing (manual Step 6) and inspecting Grafana datasources and `Lab Overview` panels from the Mac browser over WireGuard (manual Step 7) are intentionally kept manual outside Ansible. See [Monitoring Step 2](#step-2--verify-tag-monitoring_verify).
+- **Bootstrap and phased `connection_mode` (`pre` → `hardened` → `wg`):** `bootstrap.yml` connects on port 22 before hardening permanently closes it ([Hardening Step 1](#step-1--baseline-preparation-manual-steps-02--tag-hardening_2a)), and `connection_mode` transitions require manual verification between phases to avoid lockout ([Control Node](#control-node--environment-setup), [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b)).
+- **Terraform cloud perimeter vs. guest OS:** VPC rules, IAM roles, and Security Groups stay in Terraform ([Terraform](#terraform--infrastructure-provisioning)); Ansible manages only OS configuration and reboots (`*_auditd_reboot` for kernel `-e 2` drops `wg0` until the tunnel is re-established, see [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c)).
+- **Runtime inputs on convergence:** `hardening_wg_client_dns` must be `"172.16.0.1"` in `multi-lab-local.yml` so `wg0` `~.` DNS routing reaches BIND9 over the tunnel ([DNS](#dns--bind9-authoritative-service)), and `vars_prompt` passwords (`bootstrap.yml`, [`directory.yml`](#step-1--apply-tag-directory), [`monitoring.yml`](#step-1--apply-role-monitoring)) remain interactive (leave Grafana empty once `/var/lib/grafana/grafana.db` exists).
+- **Module-specific prerequisites & manual steps:** Out-of-band WireGuard key exchange ([Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b)), Route 53 delegation and ACME staging ([Web Server Step 1](#step-1--apply-tag-web-server)), Samba 4.19.5 ARM64 SMB2 omission ([Directory Step 1](#step-1--apply-tag-directory)), operator workstation configs ([File Transfer Step 2](#step-2--verify-tag-file_transfer_verify), [Directory Step 2](#step-2--verify-tag-directory_verify)), and manual `named` fault-injection / browser checks ([Monitoring Step 2](#step-2--verify-tag-monitoring_verify)) follow each module section.
 
 #### Verification
 
-Verify service status directly on target hosts:
-
-**EC2 · multi-lab-vps:**
-
-```bash
-# Check WireGuard hub interface
-sudo wg show wg0
-# → interface: wg0 ...
-
-# Check BIND9 DNS service
-sudo systemctl is-active named
-# → active
-
-# Check Nginx HTTPS service
-sudo systemctl is-active nginx
-# → active
-
-# Check Samba AD DC service
-sudo systemctl is-active samba-ad-dc
-# → active
-```
-
-**VM · multi-lab-local:**
-
-```bash
-# Check WireGuard client interface
-sudo wg show wg0
-# → interface: wg0 ...
-
-# Check Kea DHCPv4 service
-sudo systemctl is-active kea-dhcp4-server
-# → active
-```
+Run [Step 2 — Verify (`*_verify`)](#step-2--verify-tags-_verify) across all module tags to confirm convergence and service assertions without re-applying changes.
 
 ---
 
@@ -1691,7 +1637,19 @@ terraform destroy
 
 If deployed module by module, destroy in reverse dependency order following each module guide: [`directory-aws-native-automation.md`](../../../../modules/directory/aws-native/automation/directory-aws-native-automation.md), [`web-server-aws-native-automation.md`](../../../../modules/web-server/aws-native/automation/web-server-aws-native-automation.md), [`file-transfer-aws-native-automation.md`](../../../../modules/file-transfer/aws-native/automation/file-transfer-aws-native-automation.md), [`dns-aws-native-automation.md`](../../../../modules/dns/aws-native/automation/dns-aws-native-automation.md), and [`hardening-aws-native-automation.md`](../../../../modules/hardening/aws-native/automation/hardening-aws-native-automation.md).
 
-##### 4. Local Workstation Cleanup (Zero Cost)
+##### 4. Self-Owned AMIs & EBS Snapshots (If Created)
+
+`terraform destroy` does not delete manually created AMIs or their backing EBS snapshots, which continue accruing storage charges until removed.
+
+**Control node (Mac):**
+
+```bash
+aws ec2 describe-images --owners self --region eu-west-1 --profile multi-lab-admin --query "Images[*].[ImageId,Name,BlockDeviceMappings[*].Ebs.SnapshotId]" --output table
+aws ec2 deregister-image --image-id <AMI_ID> --region eu-west-1 --profile multi-lab-admin
+aws ec2 delete-snapshot --snapshot-id <SNAPSHOT_ID> --region eu-west-1 --profile multi-lab-admin
+```
+
+##### 5. Local Workstation Cleanup (Zero Cost)
 
 Clean up local state and keys on the operator workstation:
 
@@ -1728,6 +1686,10 @@ Ordered teardown clears dependency chains first and stops all recurring EC2, EBS
 aws ec2 describe-instances --profile multi-lab-admin --region eu-west-1 --filters "Name=tag:Name,Values=multi-lab-*" "Name=instance-state-name,Values=pending,running,stopping,stopped" --query "Reservations[*].Instances[*].[InstanceId,State.Name,Tags[?Key=='Name'].Value|[0]]" --output table
 # → empty
 aws ec2 describe-addresses --profile multi-lab-admin --region eu-west-1 --filters "Name=tag:Name,Values=multi-lab-*" --query "Addresses[*].[PublicIp,AllocationId,AssociationId]" --output table
+# → empty
+aws ec2 describe-images --owners self --profile multi-lab-admin --region eu-west-1 --query "Images[*].[ImageId,Name]" --output table
+# → empty
+aws ec2 describe-snapshots --owner-ids self --profile multi-lab-admin --region eu-west-1 --query "Snapshots[*].[SnapshotId,State,Description]" --output table
 # → empty
 ```
 

@@ -332,8 +332,4 @@ sudo nmap --script broadcast-dhcp-discover -e ens160
 
 ## Snapshot
 
-Kea DHCP is the last service module before the Automation phase.
-Take a snapshot before proceeding — this preserves the verified state:
-hardened OS + all service modules deployed.
-
----
+Take a final VM snapshot before proceeding to automation — see [`snapshots/README.md`](../../../snapshots/README.md) for naming and retention rules.

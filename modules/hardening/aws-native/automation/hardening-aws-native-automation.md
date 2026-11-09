@@ -377,6 +377,7 @@ Tear down all security controls managed by this module.
 
 ```bash
 terraform destroy -auto-approve
+# → Destroy complete! Resources: N destroyed.
 ```
 
 ### Why
@@ -390,9 +391,6 @@ completes.
 ### Verification
 
 ```bash
-terraform destroy -auto-approve
-# → Destroy complete! Resources: N destroyed.
-
 terraform show
 # → The state file is empty. No resources.
 ```

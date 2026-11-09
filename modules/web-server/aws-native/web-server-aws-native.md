@@ -460,46 +460,16 @@ aws route53 change-resource-record-sets \
 > distributions globally — it is not your zone ID. This value is constant
 > and required for CloudFront Alias records.
 
-
-> **Known gap:** The CloudFront wizard does not set `DefaultRootObject`.
-> Without it, CloudFront requests `/` to S3 with no key — S3 returns 403.
-> Always set it explicitly after creation.
-
-```bash
-# Fix missing DefaultRootObject (required if created via wizard or CLI without it)
-aws cloudfront get-distribution-config \
-  --id ELYETQLN17EQY \
-  --profile multi-lab-admin > /tmp/cf-config.json
-
-ETAG=$(cat /tmp/cf-config.json | python3 -c "import sys,json; print(json.load(sys.stdin)['ETag'])")
-
-cat /tmp/cf-config.json | python3 -c "
-import sys, json
-d = json.load(sys.stdin)
-d['DistributionConfig']['DefaultRootObject'] = 'index.html'
-print(json.dumps(d['DistributionConfig']))
-" > /tmp/cf-config-fixed.json
-
-aws cloudfront update-distribution \
-  --id ELYETQLN17EQY \
-  --distribution-config file:///tmp/cf-config-fixed.json \
-  --if-match $ETAG \
-  --profile multi-lab-admin \
-  --query 'Distribution.Status'
-
-# → "InProgress" — wait ~2 min then re-verify
-```
-
-> **Known gap:** The CloudFront wizard only adds the apex domain to
-> `Aliases` (Alternate Domain Names). `www` must be added manually,
-> otherwise CloudFront rejects the TLS handshake for `www` with
-> `sslv3 alert handshake failure`. Additionally, the default ACM
-> certificate only covers the apex — a new certificate with both
-> `buildyourinfra.click` and `www.buildyourinfra.click` as SANs must
-> be requested, issued, and associated to the distribution.
+> **Known gaps:** The CloudFront wizard does not set `DefaultRootObject`
+> (without it, CloudFront requests `/` to S3 with no key and S3 returns 403)
+> and only adds the apex domain to `Aliases` (`www` fails TLS handshake with
+> `sslv3 alert handshake failure`). The default ACM certificate also covers
+> only the apex — request, issue, and associate a certificate covering both
+> `buildyourinfra.click` and `www.buildyourinfra.click` as SANs, then apply
+> both fixes in a single distribution update.
 
 ```bash
-# Add www alias and update certificate in one operation
+# Set DefaultRootObject, add www alias, and update certificate in one operation
 rm /tmp/cf-config.json /tmp/cf-config-fixed.json 2>/dev/null
 aws cloudfront get-distribution-config \
   --id ELYETQLN17EQY \
@@ -510,6 +480,7 @@ ETAG=$(cat /tmp/cf-config.json | python3 -c "import sys,json; print(json.load(sy
 cat /tmp/cf-config.json | python3 -c "
 import sys, json
 d = json.load(sys.stdin)
+d['DistributionConfig']['DefaultRootObject'] = 'index.html'
 d['DistributionConfig']['Aliases']['Quantity'] = 2
 d['DistributionConfig']['Aliases']['Items'] = ['buildyourinfra.click', 'www.buildyourinfra.click']
 d['DistributionConfig']['ViewerCertificate']['ACMCertificateArn'] = 'arn:aws:acm:us-east-1:541801281490:certificate/c33f5761-3afe-47db-9750-1380671ce149'
@@ -524,7 +495,7 @@ aws cloudfront update-distribution \
   --profile multi-lab-admin \
   --query 'Distribution.Status'
 
-# → "InProgress" — wait ~2 min
+# → "InProgress" — wait ~2 min then re-verify
 ```
 
 ### Why
