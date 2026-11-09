@@ -41,7 +41,7 @@
 
   vars_prompt:
     - name: monitoring_grafana_admin_password
-      prompt: "Enter Grafana admin password (used only on initial installation when grafana.db does not exist; leave blank if already set)"
+      prompt: "Grafana admin password (initial install on VM multi-lab-local when grafana.db does not exist; leave empty on EC2 or if already set)"
       private: true
       default: ""
 

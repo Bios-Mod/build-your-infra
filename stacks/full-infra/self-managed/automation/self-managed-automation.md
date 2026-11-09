@@ -1389,10 +1389,17 @@ ansible-inventory --graph
 # → |  |--multi-lab-local
 ```
 
-**Control node (Mac):**
+**EC2 · multi-lab-vps · Run on control node:**
 
 ```bash
-ansible-playbook playbooks/ping.yml
+ansible-playbook playbooks/ping.yml --limit multi-lab-vps
+# → ping reachability verified
+```
+
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/ping.yml --limit multi-lab-local
 # → ping reachability verified
 ```
 
@@ -1402,18 +1409,27 @@ ansible-playbook playbooks/ping.yml
 
 #### What was done
 
-Deploys `prometheus-node-exporter` across both targets and Prometheus, `blackbox_exporter`, Grafana OSS, and auditd config watches on the local VM. Enforces `wg0` firewall rules, systemd startup ordering, Grafana provisioning, and independent `99-zz-monitoring` AIDE and auditd drop-ins while cleaning any manual `99-hardening` additions.
+Deploys `prometheus-node-exporter` across both targets and Prometheus, `blackbox_exporter`, Grafana OSS, and auditd config watches on the local VM. Enforces `wg0` firewall rules, systemd startup ordering, Grafana provisioning, and independent `99-zz-monitoring` AIDE and auditd drop-ins while cleaning any manual `99-hardening` additions. Apply EC2 first so `node_exporter` is active before the VM verifies scrapes.
 
-**Control node (Mac):**
+**EC2 · multi-lab-vps · Run on control node:**
 
 ```bash
-ansible-playbook playbooks/monitoring.yml --check --diff --ask-become-pass
-ansible-playbook playbooks/monitoring.yml --ask-become-pass
-ansible-playbook playbooks/monitoring.yml --ask-become-pass
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-vps --check --diff --ask-become-pass
+# BECOME password = sudo password for <admin_username> on EC2; Grafana prompt: press Enter (unused on EC2)
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-vps --ask-become-pass
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-vps --ask-become-pass
 # → second run: changed=0
 ```
 
-> **Note:** Leave the `monitoring_grafana_admin_password` prompt empty if the manual setup already set a Grafana password (`/var/lib/grafana/grafana.db` exists).
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-local --check --diff --ask-become-pass
+# BECOME password = sudo password for <admin_username> on VM; Grafana prompt: enter password only if grafana.db does not exist (fresh install), press Enter if manual module already set it
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-local --ask-become-pass
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-local --ask-become-pass
+# → second run: changed=0
+```
 
 #### Why
 
@@ -1431,14 +1447,21 @@ Run [Step 2 (`--tags monitoring_verify`)](#step-2--verify-tag-monitoring_verify)
 
 #### What was done
 
-**Control node (Mac):**
+**EC2 · multi-lab-vps · Run on control node:**
 
 ```bash
-ansible-playbook playbooks/monitoring.yml --tags monitoring_verify --ask-become-pass
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-vps --tags monitoring_verify --ask-become-pass
 # → changed=0 failed=0
 ```
 
-> **Note:** `playbooks/monitoring.yml` also prompts for `monitoring_grafana_admin_password` here; press Enter to skip.
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-local --tags monitoring_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+> **Note:** Press Enter at the Grafana admin password prompt on both EC2 and VM.
 
 | Check | Expected | Manual verification |
 | --- | --- | --- |
