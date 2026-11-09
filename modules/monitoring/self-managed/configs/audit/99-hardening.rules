@@ -12,4 +12,3 @@
 # ── MONITORING — Prometheus and Grafana configuration ─────────────────────────
 -w /etc/prometheus/ -p wa -k monitoring_config
 -w /etc/grafana/ -p wa -k monitoring_config
-

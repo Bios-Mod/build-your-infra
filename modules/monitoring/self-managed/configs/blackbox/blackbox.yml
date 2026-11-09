@@ -43,4 +43,3 @@ modules:
     timeout: 5s
     tcp:
       preferred_ip_protocol: ip4
-

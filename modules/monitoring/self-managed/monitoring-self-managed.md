@@ -250,12 +250,10 @@ curl -sf http://127.0.0.1:9090/-/ready
 
 curl -sf http://127.0.0.1:9090/api/v1/targets \
   | python3 -c "import sys,json; [print(t['labels']['job'], t['labels']['host'], t['health']) for t in json.load(sys.stdin)['data']['activeTargets']]"
-
-# → blackbox-* targets remain "down" until blackbox_exporter starts in Step 3
 # → prometheus multi-lab-local up
 # → node multi-lab-local up
 # → node multi-lab-vps up
-
+# → blackbox-* targets remain "down" until blackbox_exporter starts in Step 3
 ```
 
 ---
@@ -350,16 +348,18 @@ A systemd override binds Grafana HTTP (`3000/tcp`) exclusively to the VM's
 WireGuard address (`172.16.0.3` via `<vm_wg_ip>`) and orders startup after
 `wg-quick@wg0.service`. UFW permits inbound `3000/tcp` on `wg0` only, and
 file-based provisioning registers the local Prometheus datasource and the custom
-`Lab Overview` dashboard (`lab-overview.json`) automatically on boot.
+`Lab Overview` dashboard (`lab-overview.json`) automatically on boot. The
+password reset applies to the built-in `admin` account; no email address is
+configured, so sign in with the username `admin`.
 
 > **GPG key verification:** verify the downloaded Grafana repository signing
 > key fingerprint (`B53AE77BADB630A683046005963FA27710458545`) before writing
 > `/etc/apt/sources.list.d/grafana.list`. Abort if the fingerprint does not match.
 
 > **Interactive credential handling:** set the `admin` password via `read -rsp`
-> piped to `grafana-cli ... --password-from-stdin` and unset the variable
-> afterward. Never commit passwords to the repository or pass them as plaintext
-> CLI flags visible in shell history or `ps`.
+> piped to `sudo -u grafana grafana cli ... --password-from-stdin` and unset
+> the variable afterward. Never commit passwords to the repository or pass them
+> as plaintext CLI flags visible in shell history or `ps`.
 
 > **Placeholder substitution:** substitute `<vm_wg_ip>` (`172.16.0.3`) with
 > `sed` on the deployed copy
@@ -384,7 +384,7 @@ sudo chmod 644 /etc/apt/keyrings/grafana.gpg /etc/apt/sources.list.d/grafana.lis
 sudo apt update
 sudo apt install -y grafana
 grafana-server -v
-# → Version 
+# → Version <x.y.z> (commit: <hash>, branch: <branch>)
 
 # Bind Grafana to wg0 (172.16.0.3:3000) and order after wg-quick@wg0.service
 sudo mkdir -p /etc/systemd/system/grafana-server.service.d
@@ -405,9 +405,8 @@ sudo chmod 644 /var/lib/grafana/dashboards/lab-overview.json
 
 # Set Grafana admin password interactively before exposing the service
 read -rsp "New Grafana admin password: " GRAFANA_PASS && echo
-printf '%s\n' "$GRAFANA_PASS" | sudo grafana-cli --homepath /usr/share/grafana --config /etc/grafana/grafana.ini admin reset-admin-password --password-from-stdin
+printf '%s\n' "$GRAFANA_PASS" | sudo -u grafana grafana cli --homepath /usr/share/grafana --config /etc/grafana/grafana.ini --configOverrides cfg:default.paths.data=/var/lib/grafana admin reset-admin-password --password-from-stdin
 unset GRAFANA_PASS
-sudo chown -R grafana:grafana /var/lib/grafana /var/log/grafana
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now grafana-server
@@ -432,12 +431,11 @@ and SFTP without introducing another self-signed browser warning. Overriding
 the package-managed `/etc/grafana/grafana.ini` untouched for clean APT upgrades,
 and provisioning the datasource and `lab-overview.json` from files ensures the
 dashboard comes up identically on every rebuild without importing third-party
-community JSON. Because `grafana-cli` executes as `root` before Grafana's first
-startup, it creates and initializes `/var/lib/grafana/grafana.db` (and touches
-log paths) under root ownership; running
-`sudo chown -R grafana:grafana /var/lib/grafana /var/log/grafana` before
-starting `grafana-server` ensures the unprivileged `grafana` service user can
-read and write its database, dashboards, and log directory.
+community JSON. Running `grafana cli` as the `grafana` user with the override
+`cfg:default.paths.data=/var/lib/grafana` updates the SQLite database used by
+`grafana-server.service` instead of creating a new `root`-owned database under
+`/usr/share/grafana/data` (because the systemd unit passes `/var/lib/grafana`
+as a runtime override that the standalone CLI does not see).
 
 ### Verification
 
@@ -446,6 +444,12 @@ read and write its database, dashboards, and log directory.
 ```bash
 ls -l /etc/apt/keyrings/grafana.gpg /etc/grafana/provisioning/datasources/prometheus.yml
 # → -rw-r--r-- ...
+
+ls -l /var/lib/grafana/grafana.db
+# → -rw-r----- ... grafana grafana ... /var/lib/grafana/grafana.db
+
+ls /usr/share/grafana/data/grafana.db
+# → ls: cannot access '/usr/share/grafana/data/grafana.db': No such file or directory
 
 sudo systemctl is-active grafana-server
 # → active
@@ -711,7 +715,11 @@ curl -sI http://172.16.0.3:3000/login | head -n 1
 
 **Browser verification (Mac with WireGuard active):**
 
-1. Open `http://172.16.0.3:3000` and sign in as `admin` using the password set in Step 4.
+> **Login lockout:** after several failed login attempts, Grafana temporarily
+> locks out the user for a few minutes even if the correct password is entered
+> afterward.
+
+1. Open `http://172.16.0.3:3000`, enter `admin` in the username field (no email address is configured), and sign in with the password set in Step 4.
 2. Go to **Connections → Data sources → Prometheus** and click **Test** — confirm Grafana reports that it successfully queried the Prometheus API.
 3. Go to **Dashboards → Lab → Lab Overview**, set the time range to **Last 1 hour**, and set the `host` variable to **All**.
 4. Check every panel:
