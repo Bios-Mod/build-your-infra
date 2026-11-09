@@ -1343,15 +1343,9 @@ The `monitoring` role automates Steps 1–5 of [`monitoring-self-managed.md`](..
 > **Prerequisites:**
 > - **Control node & tunnel:** virtualenv active ([Control Node](#control-node--environment-setup)), Mac WireGuard tunnel up, and `connection_mode: "wg"` set in `inventories/host_vars/multi-lab-vps.yml` and `inventories/host_vars/multi-lab-local.yml`.
 > - **Base modules:** [Hardening](#hardening--ansible-baseline), [DNS](#dns--bind9-authoritative-service), and [Web Server](#web-server--nginx-https-service) applied so `blackbox_exporter` probes succeed.
-> - **Connectivity:** confirm both targets respond to `playbooks/ping.yml` below, matching [Control Node verification](#step-1--prepare-the-control-node-toolchain).
+> - **Inventory groups:** `monitoring_targets` and `monitoring_servers` must be defined in `inventories/hosts.yml` (see Host Variables Configuration below).
+> - **Connectivity:** both targets respond to `playbooks/ping.yml` (verified in Host Variables Configuration below, matching [Control Node verification](#step-1--prepare-the-control-node-toolchain)).
 > - **Optional manual baseline:** compatible with hosts where the manual module already ran; shared additions are migrated cleanly.
-
-**Control node (Mac):**
-
-```bash
-ansible-playbook playbooks/ping.yml
-# → ping reachability verified
-```
 
 ### Host Variables Configuration
 
@@ -1380,6 +1374,26 @@ Set `monitoring_auditd_reboot` in `inventories/host_vars/multi-lab-local.yml`:
 ```yaml
 # inventories/host_vars/multi-lab-local.yml
 monitoring_auditd_reboot: false
+```
+
+Confirm both inventory group membership and target connectivity show the expected outputs below before starting Step 1:
+
+**Control node (Mac):**
+
+```bash
+ansible-inventory --graph
+# → |--@monitoring_targets:
+# → |  |--multi-lab-local
+# → |  |--multi-lab-vps
+# → |--@monitoring_servers:
+# → |  |--multi-lab-local
+```
+
+**Control node (Mac):**
+
+```bash
+ansible-playbook playbooks/ping.yml
+# → ping reachability verified
 ```
 
 ---
