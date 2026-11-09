@@ -34,3 +34,14 @@ all:
     dhcp_servers:
       hosts:
         multi-lab-local:
+
+    # Monitoring targets — node_exporter and AIDE integrity baseline on both VM and EC2
+    monitoring_targets:
+      hosts:
+        multi-lab-local:
+        multi-lab-vps:
+
+    # Monitoring server stack — Prometheus, blackbox_exporter, and Grafana on local VM only
+    monitoring_servers:
+      hosts:
+        multi-lab-local:

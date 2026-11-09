@@ -1,0 +1,104 @@
+# Deploy to:   monitoring_targets
+# Apply:       triggered via notify from monitoring tasks
+# Module:      monitoring
+# Requires:    none
+#
+# Service handlers for the monitoring role.
+# Why:         Ensures systemd drop-ins reload before restarts, daemons pick up new configs, and AIDE/auditd absorb changes idempotently.
+# Doc ref:     modules/monitoring/self-managed/monitoring-self-managed.md — Steps 1–5
+# Targets:     both
+
+---
+# Reloads systemd daemon before service restarts so wg0 ordering and bind drop-ins take effect (Steps 1, 4)
+- name: Reload systemd daemon (monitoring)
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: not ansible_check_mode
+  listen: Reload systemd daemon (monitoring)
+
+# Restarts prometheus-node-exporter daemon to apply updated listen address or unit drop-in (Step 1)
+- name: Restart prometheus-node-exporter (monitoring)
+  ansible.builtin.systemd_service:
+    name: prometheus-node-exporter
+    state: restarted
+  listen: Restart prometheus-node-exporter (monitoring)
+
+# Restarts Prometheus server daemon to apply updated flags or scrape configuration (Step 2)
+- name: Restart prometheus (monitoring)
+  ansible.builtin.systemd_service:
+    name: prometheus
+    state: restarted
+  listen: Restart prometheus (monitoring)
+
+# Restarts blackbox_exporter daemon to apply updated flags or probe modules (Step 3)
+- name: Restart prometheus-blackbox-exporter (monitoring)
+  ansible.builtin.systemd_service:
+    name: prometheus-blackbox-exporter
+    state: restarted
+  listen: Restart prometheus-blackbox-exporter (monitoring)
+
+# Restarts Grafana server daemon to apply WireGuard bind drop-in or provisioned datasources/dashboards (Step 4)
+- name: Restart grafana-server (monitoring)
+  ansible.builtin.systemd_service:
+    name: grafana-server
+    state: restarted
+  listen: Restart grafana-server (monitoring)
+
+# Validates AIDE configuration syntax before regenerating the integrity database baseline (Step 5)
+- name: Validate AIDE configuration syntax (monitoring)
+  ansible.builtin.command:
+    cmd: aide --config-check --config /etc/aide/aide.conf
+  changed_when: false
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (monitoring)
+
+# Initializes updated AIDE database baseline covering monitoring configuration paths (Step 5)
+- name: Initialize AIDE database (monitoring)
+  ansible.builtin.command:
+    cmd: aide --init --config /etc/aide/aide.conf
+  register: monitoring_aide_init
+  failed_when: monitoring_aide_init.rc not in [0, 17]
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (monitoring)
+
+# Activates newly initialized AIDE database baseline (Step 5)
+- name: Activate AIDE database (monitoring)
+  ansible.builtin.command:
+    cmd: mv /var/lib/aide/aide.db.new /var/lib/aide/aide.db
+  changed_when: true
+  when: not ansible_check_mode
+  listen: Regenerate AIDE database (monitoring)
+
+# Loads auditd rules directly when kernel immutable mode (-e 2) is inactive (Step 5)
+- name: Load auditd rules with augenrules (monitoring)
+  ansible.builtin.command:
+    cmd: augenrules --load
+  changed_when: true
+  when:
+    - not ansible_check_mode
+    - not hardening_auditd_immutable_mode
+  listen: Load auditd rules (monitoring)
+
+# WARNING: Rebooting the host terminates active network connections (including SSH and WireGuard). Ensure connectivity recovers before continuing.
+# Reboots host to load updated monitoring auditd rules when kernel is running in immutable mode (-e 2) (Step 5)
+- name: Reboot host to apply immutable auditd rules (monitoring)
+  ansible.builtin.reboot:
+    reboot_timeout: 600
+  when:
+    - not ansible_check_mode
+    - hardening_auditd_immutable_mode
+    - monitoring_auditd_reboot | default(false)
+  listen: Load auditd rules (monitoring)
+
+# Emits warning notification when monitoring auditd rules changed in immutable mode but automated reboot is disabled (Step 5)
+- name: Warn reboot required for immutable auditd rules (monitoring)
+  ansible.builtin.debug:
+    msg: >-
+      Auditd rules in /etc/audit/rules.d/99-zz-monitoring.rules were updated, but the kernel is in immutable
+      mode (-e 2) and 'monitoring_auditd_reboot' is false. A manual reboot is required to load the new audit rules.
+  when:
+    - not ansible_check_mode
+    - hardening_auditd_immutable_mode
+    - not (monitoring_auditd_reboot | default(false))
+  listen: Load auditd rules (monitoring)

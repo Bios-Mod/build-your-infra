@@ -1,0 +1,693 @@
+# Deploy to:   monitoring_targets
+# Apply:       ansible-playbook playbooks/monitoring.yml --tags monitoring_verify [--check --diff] --ask-become-pass
+# Module:      monitoring
+# Requires:    monitoring applied
+#
+# Verification tasks and assertions for the monitoring role.
+# Why:         Validates services, sockets, node_exporter HTTP metrics, UFW rules, Prometheus API convergence, Grafana, AIDE, and auditd.
+# Doc ref:     modules/monitoring/self-managed/monitoring-self-managed.md — Verification sections (Steps 1–5) and Step 6 (API checks)
+# Targets:     both
+
+---
+# ==============================================================================
+# Binary & File Presence Stat Guards (Supports check_mode)
+# ==============================================================================
+
+# Checks if prometheus-node-exporter binary exists to guard verification tasks in --check mode (Prerequisite)
+- name: Stat prometheus-node-exporter binary for verification
+  ansible.builtin.stat:
+    path: /usr/bin/prometheus-node-exporter
+  register: monitoring_verify_stat_node_exporter
+  check_mode: false
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Checks if prometheus binary exists to guard verification tasks in --check mode (Prerequisite)
+- name: Stat prometheus binary for verification
+  ansible.builtin.stat:
+    path: /usr/bin/prometheus
+  register: monitoring_verify_stat_prometheus
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Checks if prometheus-blackbox-exporter binary exists to guard verification tasks in --check mode (Prerequisite)
+- name: Stat prometheus-blackbox-exporter binary for verification
+  ansible.builtin.stat:
+    path: /usr/bin/prometheus-blackbox-exporter
+  register: monitoring_verify_stat_blackbox
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Checks if grafana-server binary exists to guard verification tasks in --check mode (Prerequisite)
+- name: Stat grafana-server binary for verification
+  ansible.builtin.stat:
+    path: /usr/sbin/grafana-server
+  register: monitoring_verify_stat_grafana
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Checks if aide binary exists to guard syntax validation in --check mode (Step 5 Verification)
+- name: Stat aide binary for verification
+  ansible.builtin.stat:
+    path: /usr/bin/aide
+  register: monitoring_verify_stat_aide
+  check_mode: false
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Checks if auditctl binary exists to guard kernel rule listing in --check mode (Step 5 Verification)
+- name: Stat auditctl binary for verification
+  ansible.builtin.stat:
+    path: /sbin/auditctl
+  register: monitoring_verify_stat_auditctl
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# ==============================================================================
+# Step 1 & Step 5 Verification — All Targets (node_exporter & AIDE)
+# ==============================================================================
+
+# Queries prometheus-node-exporter systemd active state across targets (Step 1 Verification)
+- name: Query prometheus-node-exporter active status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active prometheus-node-exporter
+  register: monitoring_verify_ne_active
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries prometheus-node-exporter systemd enabled state across targets (Step 1 Verification)
+- name: Query prometheus-node-exporter enabled status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-enabled prometheus-node-exporter
+  register: monitoring_verify_ne_enabled
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts prometheus-node-exporter is active and enabled on VM and EC2 (Step 1 Verification)
+- name: Assert prometheus-node-exporter service is active and enabled
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_ne_active.rc == 0
+      - monitoring_verify_ne_active.stdout.strip() == 'active'
+      - monitoring_verify_ne_enabled.rc == 0
+      - monitoring_verify_ne_enabled.stdout.strip() == 'enabled'
+    fail_msg: >-
+      prometheus-node-exporter is not active and enabled
+      (active: '{{ monitoring_verify_ne_active.stdout | default("unknown") }}',
+      enabled: '{{ monitoring_verify_ne_enabled.stdout | default("unknown") }}').
+  when: not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries TCP listening socket bound by prometheus-node-exporter (Step 1 Verification)
+- name: Query prometheus-node-exporter listening socket
+  ansible.builtin.command:
+    cmd: "ss -H -ltnp 'sport = :{{ monitoring_node_exporter_port }}'"
+  register: monitoring_verify_ne_ss
+  check_mode: false
+  changed_when: false
+  when: not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts node_exporter listens exclusively on expected host address (127.0.0.1 VM / 172.16.0.1 EC2) (Step 1 Verification)
+- name: Assert prometheus-node-exporter listens on expected address
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_ne_ss.rc == 0
+      - monitoring_verify_ne_ss.stdout is search((monitoring_node_exporter_listen | regex_escape) ~ '[ ]')
+    fail_msg: >-
+      Expected prometheus-node-exporter listening on {{ monitoring_node_exporter_listen }}.
+      Sockets output: {{ monitoring_verify_ne_ss.stdout | default('') }}
+  when: not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Fetches local node_exporter HTTP metrics endpoint directly (Step 1 Verification)
+- name: Query node_exporter HTTP /metrics endpoint
+  ansible.builtin.uri:
+    url: "http://{{ monitoring_node_exporter_listen }}/metrics"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: monitoring_verify_ne_metrics
+  check_mode: false
+  when: not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts /metrics HTTP response returns status 200 and includes node_exporter_build_info metric (Step 1 Verification)
+- name: Assert node_exporter /metrics endpoint reports build info
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_ne_metrics.status == 200
+      - "'node_exporter_build_info' in monitoring_verify_ne_metrics.content"
+    fail_msg: >-
+      node_exporter metrics endpoint http://{{ monitoring_node_exporter_listen }}/metrics did not contain
+      'node_exporter_build_info'. Status: {{ monitoring_verify_ne_metrics.status | default('unknown') }}
+  when: not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Checks AIDE drop-in /etc/aide/aide.conf.d/99-zz-monitoring presence and permissions (Step 5 Verification)
+- name: Stat AIDE monitoring drop-in 99-zz-monitoring
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d/99-zz-monitoring
+  register: monitoring_verify_stat_aide_dropin
+  check_mode: false
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts AIDE monitoring drop-in exists with mode 0644 (Step 5 Verification)
+- name: Assert AIDE drop-in 99-zz-monitoring exists with mode 0644
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_stat_aide_dropin.stat.exists
+      - monitoring_verify_stat_aide_dropin.stat.mode == '0644'
+    fail_msg: >-
+      AIDE drop-in /etc/aide/aide.conf.d/99-zz-monitoring is missing or has wrong permissions
+      (mode: {{ monitoring_verify_stat_aide_dropin.stat.mode | default('absent') }}).
+  when: not ansible_check_mode or monitoring_verify_stat_aide_dropin.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Executes AIDE configuration syntax check across all targets (Step 5 Verification)
+- name: Validate AIDE configuration syntax
+  ansible.builtin.command:
+    cmd: /usr/bin/aide --config-check --config /etc/aide/aide.conf
+  register: monitoring_verify_aide_check
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when: not ansible_check_mode or monitoring_verify_stat_aide.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts AIDE configuration syntax check exits with rc 0 (Step 5 Verification)
+- name: Assert AIDE configuration syntax check passes
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_aide_check.rc == 0
+    fail_msg: >-
+      AIDE configuration check failed (rc {{ monitoring_verify_aide_check.rc | default('unknown') }}):
+      {{ monitoring_verify_aide_check.stderr | default(monitoring_verify_aide_check.stdout | default('')) }}
+  when: not ansible_check_mode or monitoring_verify_stat_aide.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# ==============================================================================
+# Step 1 Verification — EC2 Only (UFW 9100 & wg0 Systemd Ordering)
+# ==============================================================================
+
+# Queries UFW rules on EC2 to confirm node_exporter port scoping on wg0 (Step 1 Verification)
+- name: Query UFW status verbose on EC2
+  ansible.builtin.command:
+    cmd: ufw status verbose
+  register: monitoring_verify_ec2_ufw
+  check_mode: false
+  changed_when: false
+  when:
+    - is_cloud | bool  # EC2 only
+    - not ansible_check_mode
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts UFW allows 9100/tcp on wg0 exclusively from monitoring_server_wg_ip (Step 1 Verification)
+- name: Assert EC2 UFW allows node_exporter from VM WireGuard IP on wg0
+  vars:
+    ec2_ufw_pattern: "{{ (monitoring_node_exporter_port | string) ~ '/tcp on wg0[ ]+ALLOW IN[ ]+' ~ (monitoring_server_wg_ip | regex_escape) }}"
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_ec2_ufw.stdout is search(ec2_ufw_pattern)
+    fail_msg: >-
+      Expected EC2 UFW rule allowing {{ monitoring_node_exporter_port }}/tcp on wg0 from {{ monitoring_server_wg_ip }}.
+      Output: {{ monitoring_verify_ec2_ufw.stdout | default('') }}
+  when:
+    - is_cloud | bool  # EC2 only
+    - not ansible_check_mode
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Inspects effective systemd unit configuration for prometheus-node-exporter on EC2 (Step 1 Verification)
+- name: Inspect prometheus-node-exporter effective systemd unit on EC2 # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl cat prometheus-node-exporter
+  register: monitoring_verify_ec2_unit_cat
+  check_mode: false
+  changed_when: false
+  when:
+    - is_cloud | bool  # EC2 only
+    - not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts EC2 node_exporter unit includes After=wg-quick@wg0.service drop-in directive (Step 1 Verification)
+- name: Assert EC2 prometheus-node-exporter orders startup after wg-quick@wg0
+  ansible.builtin.assert:
+    that:
+      - "'After=wg-quick@wg0.service' in monitoring_verify_ec2_unit_cat.stdout"
+    fail_msg: >-
+      Expected 'After=wg-quick@wg0.service' in 'systemctl cat prometheus-node-exporter' on EC2.
+  when:
+    - is_cloud | bool  # EC2 only
+    - not ansible_check_mode or monitoring_verify_stat_node_exporter.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# ==============================================================================
+# Steps 2, 3, 4, 5, 6 Verification — Monitoring Servers Only (VM)
+# ==============================================================================
+
+# Queries prometheus service active and enabled status on monitoring_servers (Step 2 Verification)
+- name: Query prometheus service active status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active prometheus
+  register: monitoring_verify_prom_active
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_prometheus.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries prometheus service enabled status on monitoring_servers (Step 2 Verification)
+- name: Query prometheus service enabled status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-enabled prometheus
+  register: monitoring_verify_prom_enabled
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_prometheus.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries prometheus-blackbox-exporter service active status on monitoring_servers (Step 3 Verification)
+- name: Query prometheus-blackbox-exporter service active status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active prometheus-blackbox-exporter
+  register: monitoring_verify_bb_active
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_blackbox.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries prometheus-blackbox-exporter service enabled status on monitoring_servers (Step 3 Verification)
+- name: Query prometheus-blackbox-exporter service enabled status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-enabled prometheus-blackbox-exporter
+  register: monitoring_verify_bb_enabled
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_blackbox.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries grafana-server service active status on monitoring_servers (Step 4 Verification)
+- name: Query grafana-server service active status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-active grafana-server
+  register: monitoring_verify_graf_active
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_grafana.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries grafana-server service enabled status on monitoring_servers (Step 4 Verification)
+- name: Query grafana-server service enabled status # noqa: command-instead-of-module
+  ansible.builtin.command:
+    cmd: systemctl is-enabled grafana-server
+  register: monitoring_verify_graf_enabled
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_grafana.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts Prometheus, blackbox_exporter, and Grafana services are active and enabled (Steps 2, 3, 4 Verification)
+- name: Assert monitoring server daemons are active and enabled
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_prom_active.rc == 0
+      - monitoring_verify_prom_active.stdout.strip() == 'active'
+      - monitoring_verify_prom_enabled.rc == 0
+      - monitoring_verify_prom_enabled.stdout.strip() == 'enabled'
+      - monitoring_verify_bb_active.rc == 0
+      - monitoring_verify_bb_active.stdout.strip() == 'active'
+      - monitoring_verify_bb_enabled.rc == 0
+      - monitoring_verify_bb_enabled.stdout.strip() == 'enabled'
+      - monitoring_verify_graf_active.rc == 0
+      - monitoring_verify_graf_active.stdout.strip() == 'active'
+      - monitoring_verify_graf_enabled.rc == 0
+      - monitoring_verify_graf_enabled.stdout.strip() == 'enabled'
+    fail_msg: >-
+      One or more monitoring server services are not active/enabled.
+      prometheus={{ monitoring_verify_prom_active.stdout | default('unknown') }}/{{ monitoring_verify_prom_enabled.stdout | default('unknown') }},
+      blackbox={{ monitoring_verify_bb_active.stdout | default('unknown') }}/{{ monitoring_verify_bb_enabled.stdout | default('unknown') }},
+      grafana={{ monitoring_verify_graf_active.stdout | default('unknown') }}/{{ monitoring_verify_graf_enabled.stdout | default('unknown') }}.
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - >-
+      not ansible_check_mode or
+      (monitoring_verify_stat_prometheus.stat.exists and
+       monitoring_verify_stat_blackbox.stat.exists and
+       monitoring_verify_stat_grafana.stat.exists)
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries active TCP listening sockets for Prometheus (9090), blackbox (9115), and Grafana (3000) (Steps 2, 3, 4 Verification)
+- name: Query monitoring server TCP listening sockets
+  ansible.builtin.command:
+    cmd: ss -H -ltnp
+  register: monitoring_verify_server_ss
+  check_mode: false
+  changed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - >-
+      not ansible_check_mode or
+      (monitoring_verify_stat_prometheus.stat.exists and
+       monitoring_verify_stat_blackbox.stat.exists and
+       monitoring_verify_stat_grafana.stat.exists)
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts Prometheus and blackbox bind only to loopback and Grafana binds to VM WireGuard IP (Steps 2, 3, 4 Verification)
+- name: Assert monitoring server sockets match expected listen bindings
+  vars:
+    ss_lines: "{{ monitoring_verify_server_ss.stdout_lines | default([]) }}"
+  ansible.builtin.assert:
+    that:
+      - ss_lines | select('search', '127[.]0[.]0[.]1:' ~ (monitoring_prometheus_port | string) ~ '[ ]') | list | length > 0
+      - ss_lines | select('search', '127[.]0[.]0[.]1:' ~ (monitoring_blackbox_port | string) ~ '[ ]') | list | length > 0
+      - ss_lines | select('search', (monitoring_server_wg_ip | regex_escape) ~ ':' ~ (monitoring_grafana_port | string) ~ '[ ]') | list | length > 0
+    fail_msg: >-
+      Expected listening sockets 127.0.0.1:{{ monitoring_prometheus_port }}, 127.0.0.1:{{ monitoring_blackbox_port }},
+      and {{ monitoring_server_wg_ip }}:{{ monitoring_grafana_port }}. Got: {{ ss_lines }}
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - >-
+      not ansible_check_mode or
+      (monitoring_verify_stat_prometheus.stat.exists and
+       monitoring_verify_stat_blackbox.stat.exists and
+       monitoring_verify_stat_grafana.stat.exists)
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Verifies Prometheus HTTP readiness endpoint (Step 2 & Step 6 Verification)
+- name: Query Prometheus readiness endpoint
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_prometheus_port }}/-/ready"
+    method: GET
+    status_code: 200
+  check_mode: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_prometheus.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries Prometheus instant query HTTP API until all scrape targets and blackbox probes converge cleanly (Step 6 Verification)
+- name: Query Prometheus instant metrics until targets and probes pass
+  ansible.builtin.uri:
+    url: "http://127.0.0.1:{{ monitoring_prometheus_port }}/api/v1/query?query={{ item.query | urlencode }}"
+    method: GET
+    return_content: true
+    status_code: 200
+  loop:
+    - label: "Total up series"
+      query: "count(up)"
+      expected: "{{ monitoring_expected_targets | int }}"
+    - label: "Down scrape targets"
+      query: "count(up == 0) or vector(0)"
+      expected: 0
+    - label: "Total probe_success series"
+      query: "count(probe_success)"
+      expected: "{{ monitoring_expected_probes | int }}"
+    - label: "Failed blackbox probes"
+      query: "count(probe_success == 0) or vector(0)"
+      expected: 0
+  loop_control:
+    label: "{{ item.label }}"
+  register: monitoring_verify_prom_api
+  until:
+    - (monitoring_verify_prom_api.json | default({})).get('status') == 'success'
+    - (monitoring_verify_prom_api.json.data.result | default([]) | length) > 0
+    - (monitoring_verify_prom_api.json.data.result[0].value[1] | int) == (item.expected | int)
+  retries: 12
+  delay: 5
+  check_mode: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_prometheus.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries Grafana HTTP health endpoint on WireGuard address (Step 4 Verification)
+- name: Query Grafana health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ monitoring_server_wg_ip }}:{{ monitoring_grafana_port }}/api/health"
+    method: GET
+    return_content: true
+    status_code: 200
+  register: monitoring_verify_graf_health
+  check_mode: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_grafana.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts Grafana /api/health reports database status ok (Step 4 Verification)
+- name: Assert Grafana health check reports database ok
+  ansible.builtin.assert:
+    that:
+      - (monitoring_verify_graf_health.json.database | default('')) == 'ok'
+    fail_msg: >-
+      Grafana /api/health did not report database == 'ok'. Response: {{ monitoring_verify_graf_health.json | default({}) }}
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_grafana.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Stats Grafana provisioning configs and dashboard JSON to confirm readable 0644 permissions under restrictive umask (Step 4 Verification)
+- name: Stat Grafana provisioning files and dashboard JSON
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - /etc/grafana/provisioning/datasources/prometheus.yml
+    - /etc/grafana/provisioning/dashboards/lab.yml
+    - /var/lib/grafana/dashboards/lab-overview.json
+  register: monitoring_verify_graf_files
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts Grafana provisioning files and dashboard exist with explicit 0644 permissions (Step 4 Verification)
+- name: Assert Grafana provisioning files have mode 0644
+  ansible.builtin.assert:
+    that:
+      - item.stat.exists
+      - item.stat.mode == '0644'
+    fail_msg: >-
+      Grafana file '{{ item.item }}' is missing or does not have mode 0644
+      (mode: {{ item.stat.mode | default('absent') }}).
+  loop: "{{ monitoring_verify_graf_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_grafana.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Stats active Grafana SQLite DB to verify grafana user ownership (Step 4 Verification)
+- name: Stat active Grafana SQLite database /var/lib/grafana/grafana.db
+  ansible.builtin.stat:
+    path: /var/lib/grafana/grafana.db
+  register: monitoring_verify_stat_grafana_db
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Stats wrong CLI DB path /usr/share/grafana/data/grafana.db to confirm it was never created (Step 4 Verification)
+- name: Stat unintended Grafana DB path /usr/share/grafana/data/grafana.db
+  ansible.builtin.stat:
+    path: /usr/share/grafana/data/grafana.db
+  register: monitoring_verify_stat_wrong_grafana_db
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts /var/lib/grafana/grafana.db is owned by grafana:grafana and unintended CLI database path is absent (Step 4 Verification)
+- name: Assert Grafana database path and ownership
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_stat_grafana_db.stat.exists
+      - monitoring_verify_stat_grafana_db.stat.pw_name == 'grafana'
+      - monitoring_verify_stat_grafana_db.stat.gr_name == 'grafana'
+      - not monitoring_verify_stat_wrong_grafana_db.stat.exists
+    fail_msg: >-
+      Grafana database check failed: /var/lib/grafana/grafana.db exists={{ monitoring_verify_stat_grafana_db.stat.exists }},
+      owner={{ monitoring_verify_stat_grafana_db.stat.pw_name | default('unknown') }}:{{ monitoring_verify_stat_grafana_db.stat.gr_name | default('unknown') }},
+      unintended /usr/share/grafana/data/grafana.db exists={{ monitoring_verify_stat_wrong_grafana_db.stat.exists }}.
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_grafana.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries UFW status on monitoring_servers to confirm Grafana port rule on wg0 (Step 4 Verification)
+- name: Query UFW status verbose on monitoring servers
+  ansible.builtin.command:
+    cmd: ufw status verbose
+  register: monitoring_verify_vm_ufw
+  check_mode: false
+  changed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts UFW allows Grafana port on wg0 (Step 4 Verification)
+- name: Assert UFW allows Grafana port on wg0 on monitoring servers
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_vm_ufw.stdout is search((monitoring_grafana_port | string) ~ '/tcp on wg0[ ]+ALLOW IN')
+    fail_msg: >-
+      Expected UFW rule allowing {{ monitoring_grafana_port }}/tcp on wg0.
+      Output: {{ monitoring_verify_vm_ufw.stdout | default('') }}
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Queries active auditd rules from kernel on monitoring_servers (Step 5 Verification)
+- name: Query active auditd rules via auditctl -l
+  ansible.builtin.command:
+    cmd: /sbin/auditctl -l
+  register: monitoring_verify_auditctl_list
+  check_mode: false
+  changed_when: false
+  failed_when: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_auditctl.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Displays notice when audit rules are staged in immutable mode awaiting manual reboot (Step 5 Verification)
+- name: Display notice for staged monitoring auditd rules awaiting reboot
+  ansible.builtin.debug:
+    msg: "audit rule staged; reboot required to load into kernel"
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - ((monitoring_audit_rules_deploy.changed | default(false)) or (monitoring_manual_audit_cleanup.changed | default(false)))
+    - hardening_auditd_immutable_mode
+    - not (monitoring_auditd_reboot | default(false))
+    - not ansible_check_mode or monitoring_verify_stat_auditctl.stat.exists
+  tags:
+    - monitoring
+    - monitoring_verify
+
+# Asserts loaded kernel auditd rules monitor /etc/prometheus and /etc/grafana with key monitoring_config (Step 5 Verification)
+- name: Assert auditd rules monitor Prometheus and Grafana configurations
+  ansible.builtin.assert:
+    that:
+      - monitoring_verify_auditctl_list.rc == 0
+      - monitoring_verify_auditctl_list.stdout is search('-w /etc/prometheus/? -p wa -k monitoring_config')
+      - monitoring_verify_auditctl_list.stdout is search('-w /etc/grafana/? -p wa -k monitoring_config')
+    fail_msg: >-
+      Active auditd rules do not contain expected watches for /etc/prometheus and /etc/grafana with key 'monitoring_config'.
+      Auditctl output: {{ monitoring_verify_auditctl_list.stdout | default('') }}
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_verify_stat_auditctl.stat.exists
+    - not (((monitoring_audit_rules_deploy.changed | default(false)) or (monitoring_manual_audit_cleanup.changed | default(false))) and
+           hardening_auditd_immutable_mode and
+           not (monitoring_auditd_reboot | default(false)))
+  tags:
+    - monitoring
+    - monitoring_verify

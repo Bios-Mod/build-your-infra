@@ -1,0 +1,58 @@
+# Deploy to:   monitoring_targets
+# Apply:       included automatically when role 'monitoring' is invoked
+# Module:      monitoring
+# Requires:    none
+#
+# Default variable definitions for the monitoring role.
+# Why:         Centralizes default addresses, ports, Grafana APT key metadata, and probe expectations without hardcoding secrets.
+# Doc ref:     modules/monitoring/self-managed/monitoring-self-managed.md — Steps 1–5
+# Targets:     both
+
+---
+# Root directory containing the source-of-truth monitoring configs
+monitoring_configs_dir: "{{ configs_root }}/monitoring/self-managed/configs"
+
+# Hardened OpenSSH daemon port configured by the hardening baseline
+hardening_ssh_port: "{{ ssh_hardened_port | default(22222) }}"  # noqa: var-naming[no-role-prefix]
+
+# Mirrors the hardening role default so audit drop-in reload logic is safe when not overridden in group_vars or host_vars
+hardening_auditd_immutable_mode: true  # noqa: var-naming[no-role-prefix]
+
+# WireGuard VPN IP of the monitoring server (local VM peer)
+monitoring_server_wg_ip: "{{ wireguard_vm_vpn_ip | default('172.16.0.3') }}"
+
+# WireGuard VPN IP of the EC2 target (WireGuard hub)
+monitoring_ec2_wg_ip: "{{ wireguard_server_vpn_ip | default('172.16.0.1') }}"
+
+# Listening port for prometheus-node-exporter on VM (loopback) and EC2 (WireGuard hub IP)
+monitoring_node_exporter_port: 9100
+
+# Resolved listen address (<listen_address>) substituted into /etc/default/prometheus-node-exporter
+monitoring_node_exporter_listen: "{{ (monitoring_ec2_wg_ip if is_cloud | bool else '127.0.0.1') ~ ':' ~ monitoring_node_exporter_port }}"
+
+# EC2 node_exporter scrape target (<ec2_scrape_target>) substituted into /etc/prometheus/prometheus.yml on VM
+monitoring_ec2_scrape_target: "{{ monitoring_ec2_wg_ip }}:{{ monitoring_node_exporter_port }}"
+
+# Prometheus HTTP UI/API port bound to loopback on monitoring servers
+monitoring_prometheus_port: 9090
+
+# blackbox_exporter HTTP prober port bound to loopback on monitoring servers
+monitoring_blackbox_port: 9115
+
+# Grafana HTTP UI/API port bound to the VM WireGuard IP on monitoring servers
+monitoring_grafana_port: 3000
+
+# Official Grafana APT repository signing key URL
+monitoring_grafana_apt_key_url: "https://apt.grafana.com/gpg.key"
+
+# Expected GPG primary fingerprint for Grafana's APT signing key
+monitoring_grafana_apt_key_fingerprint: "B53AE77BADB630A683046005963FA27710458545"
+
+# Initial Grafana admin password populated interactively via playbook vars_prompt on first install
+monitoring_grafana_admin_password: ""
+
+# Expected total 'up' time series from the 5 jobs in prometheus.yml (prometheus: 1, node: 2, blackbox-dns: 1, blackbox-http: 2, blackbox-tcp: 2)
+monitoring_expected_targets: 8
+
+# Expected total 'probe_success' time series across the 3 blackbox jobs in prometheus.yml (dns: 1, http: 2, tcp: 2)
+monitoring_expected_probes: 5

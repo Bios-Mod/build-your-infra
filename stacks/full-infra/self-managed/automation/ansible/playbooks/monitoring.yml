@@ -1,0 +1,49 @@
+# Deploy to:   monitoring_targets
+# Apply:       ansible-playbook playbooks/monitoring.yml [--limit <host>] [options] --ask-become-pass
+# Module:      monitoring
+# Requires:    playbooks/hardening.yml, playbooks/dns.yml, playbooks/web-server.yml executed
+#
+# Master playbook for deploying the Prometheus, blackbox_exporter, node_exporter, and Grafana monitoring stack.
+# Why:         Deploys pull-based telemetry on VM and EC2 over WireGuard while converging idempotently over manual installations.
+# Doc ref:     modules/monitoring/self-managed/monitoring-self-managed.md
+# Targets:     both
+
+---
+- name: Apply monitoring service
+  hosts: monitoring_targets
+  become: true
+  gather_facts: true
+
+  vars_prompt:
+    - name: monitoring_grafana_admin_password
+      prompt: "Enter Grafana admin password (used only on initial installation when grafana.db does not exist; leave blank if already set)"
+      private: true
+      default: ""
+
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: 600
+
+  pre_tasks:
+    # Validates control node toolchain environment against requirements.txt before running monitoring tasks
+    - name: Assert control node toolchain environment # noqa: run-once[task]
+      run_once: true
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full == controller_ansible_core_version
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.12', '>=')
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.15', '<')
+        fail_msg: >-
+          Control node environment mismatch. Activate the project virtualenv
+          (source .venv/bin/activate) and install pinned dependencies (pip install -r requirements.txt).
+          Expected ansible-core {{ controller_ansible_core_version }} and Python 3.12-3.14.
+          Running ansible-core {{ ansible_version.full }} on Python
+          {{ (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] }} ({{ ansible_playbook_python }}).
+
+  roles:
+    - role: monitoring
+      tags:
+        - monitoring
