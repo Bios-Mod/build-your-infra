@@ -78,4 +78,3 @@ This role automates Steps 1–5 of [`modules/monitoring/self-managed/monitoring-
 2. **ASCII-Armored Key (`grafana.asc`) Replaces Manual `grafana.gpg`:** Downloads `gpg.key` to `/etc/apt/keyrings/grafana.asc` (`0644`) without `gpg --dearmor`, updates `/etc/apt/sources.list.d/grafana.list` to reference `grafana.asc`, and removes any pre-existing `grafana.gpg`.
 3. **EC2 `auditd` Exclusion:** No `monitoring` auditd drop-in is deployed on EC2 because EC2 runs auditd in immutable mode (`-e 2`), which would force a kernel reboot and drop the WireGuard hub.
 4. **Idempotent Cleanup of Hardening Drop-Ins:** The role removes monitoring-specific lines written to `/etc/audit/rules.d/99-hardening.rules` and `/etc/aide/aide.conf.d/99-hardening` during manual deployment so `augenrules --load` does not fail with `Rule exists` when `99-zz-monitoring.rules` is loaded. Hardening-owned rules and comments remain untouched.
-

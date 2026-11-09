@@ -102,4 +102,3 @@
     - hardening_auditd_immutable_mode
     - not (monitoring_auditd_reboot | default(false))
   listen: Load auditd rules (monitoring)
-

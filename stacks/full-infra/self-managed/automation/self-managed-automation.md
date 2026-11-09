@@ -1349,15 +1349,17 @@ Add the `monitoring_targets` and `monitoring_servers` groups to `inventories/hos
 **Control node (Mac):**
 
 ```yaml
-# inventories/hosts.yml
-monitoring_targets:
-  hosts:
-    multi-lab-local:
-    multi-lab-vps:
+# add under all.children
+all:
+  children:
+    monitoring_targets:
+      hosts:
+        multi-lab-local:
+        multi-lab-vps:
 
-monitoring_servers:
-  hosts:
-    multi-lab-local:
+    monitoring_servers:
+      hosts:
+        multi-lab-local:
 ```
 
 Define `monitoring_auditd_reboot` in `inventories/host_vars/multi-lab-local.yml` (required on `monitoring_servers` when `hardening_auditd_immutable_mode` is `true`, and `false` while immutable mode is disabled during development):
