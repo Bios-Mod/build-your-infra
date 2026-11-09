@@ -30,27 +30,12 @@ connection. OS-level configuration starts in
 ## Step 1 — Billing protection
 
 ### What was done
-Free Tier usage alerts and a zero-spend budget enabled before provisioning
-any resource.
 
-> If [`environments/aws-native/aws-native-setup.md`](../aws-native/aws-native-setup.md)
-> has already been completed, this step is done — skip to Step 2.
-
-**Console**
-
-1. **Free Tier alert:** Billing and Cost Management → Billing Preferences →
-   Alert Preferences → enable *Free Tier usage alerts*.
-2. **Zero-spend budget:** Billing and Cost Management → Budgets → Create
-   budget → select *Zero spend budget* template → confirm.
+Enable Free Tier usage alerts and a zero-spend budget in AWS Billing and Cost Management following [`aws-native-setup.md` — Step 1](../aws-native/aws-native-setup.md#step-1--billing-alerts) (skip if already configured there).
 
 ### Why
-An unattended running instance accrues cost silently. The zero-spend budget
-fires on the first cent charged regardless of cause — it is the minimum
-safety net before any resource is provisioned.
 
-### Verification
-Billing and Cost Management → Budgets — confirm budget status shows *OK*
-and the alert email address is correct.
+An unattended running instance accrues cost silently; the zero-spend budget fires on the first cent charged as the minimum safety net before any resource is provisioned.
 
 ---
 

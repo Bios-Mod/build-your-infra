@@ -315,16 +315,6 @@ and re-run `plan` until the output is clean.
 ### Verification
 
 ```bash
-terraform state list
-
-# aws_acm_certificate.main
-# aws_cloudfront_distribution.main
-# aws_route53_record.apex
-# aws_route53_record.www
-# aws_s3_bucket.web_origin
-# aws_s3_bucket_policy.web_origin
-# aws_s3_bucket_public_access_block.web_origin
-
 # Confirm the site is still live
 curl -I https://buildyourinfra.click
 # → HTTP/2 200

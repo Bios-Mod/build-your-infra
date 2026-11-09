@@ -492,9 +492,4 @@ sudo lsattr /etc/resolv.conf
 
 ## Snapshot
 
-BIND9 is now operational as the authoritative internal resolver for
-`lab.internal`. Take a snapshot before proceeding to the next module —
-this preserves the verified state: hardened OS + SFTP + DNS.
-
-For EC2: create an AMI or EBS snapshot from the AWS console or CLI before
-continuing.
+Take a checkpoint (VM snapshot or EC2 AMI) before proceeding to the next module — see [`snapshots/README.md`](../../../snapshots/README.md) for naming, retention, and AMI cleanup rules.

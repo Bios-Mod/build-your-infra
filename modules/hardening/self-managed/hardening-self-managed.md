@@ -1775,8 +1775,4 @@ grep hardening_index /var/log/lynis-report.dat
 
 ## Snapshot
 
-Once hardening was complete, a `complete-hardening` snapshot was taken as
-the base restore point for all subsequent configurations — every service
-deployed on this lab builds on top of this secure baseline.
-
----
+Record the `complete-hardening` base restore point (VM snapshot / EC2 AMI) and review retention rules in [`snapshots/README.md`](../../../snapshots/README.md).

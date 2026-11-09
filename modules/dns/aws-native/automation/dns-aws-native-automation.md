@@ -259,8 +259,6 @@ terraform apply "dns.tfplan"
 
 ### Why
 
-### Why
-
 Deleting `import.tf` removes the import blocks and the provider block that
 lived there during Phase 1. `main.tf` takes over as the single source of
 truth — it contains the provider block, the `data` source for the VPC, and

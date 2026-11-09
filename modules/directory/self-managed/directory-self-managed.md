@@ -568,7 +568,4 @@ sudo aide --check --config /etc/aide/aide.conf
 
 ## Snapshot
 
-Samba 4 AD DC is deployed and validated on top of the hardened OS baseline.
-Take a snapshot before proceeding to the next module — this preserves the
-verified state: hardened OS + SFTP + DNS + web server + directory service,
-no additional services.
+Take a checkpoint (VM snapshot or EC2 AMI) before proceeding to the next module — see [`snapshots/README.md`](../../../snapshots/README.md) for naming, retention, and AMI cleanup rules.

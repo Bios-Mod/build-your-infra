@@ -263,8 +263,7 @@ first four modules to be validated independently. Once the rest of the
 stack is confirmed healthy, enabling the directory module adds the
 remaining resources in a single targeted apply.
 
-> **Billing starts immediately** on apply — Managed AD charges `$0.10/h`
-> from creation regardless of usage.
+> See [Module scope](#module-scope) for Managed AD hourly billing on apply.
 
 ### Verification
 

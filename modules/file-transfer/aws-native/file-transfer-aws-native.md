@@ -668,11 +668,7 @@ aws ec2 describe-addresses \
 
 ### Why
 
-Transfer Family is billed continuously while the server exists — there is no
-pause or stop option, only delete. The teardown step is the operational
-conclusion of this module, not an optional cleanup. Retaining the IAM role
-and Security Group preserves the configuration for future re-deployment
-without repeating Steps 2 and 3.
+Because [Transfer Family bills continuously until deleted](#file-transfer--aws-native), teardown is the operational conclusion of this module rather than optional cleanup. Retaining the IAM role and Security Group preserves the configuration for future re-deployment without repeating Steps 2 and 3.
 
 ### Verification
 
@@ -694,8 +690,6 @@ aws ce get-cost-and-usage \
 # → Amount reflects only the session just concluded — no ongoing charges
 ```
 
-> Cost Explorer data has up to 24h latency — the current day's
-> charges may not appear immediately. Use the Billing Dashboard in the
-> console for a real-time estimate.
+> **Cost Explorer latency:** see [Billing & Cost Explorer Audit](../../../stacks/full-infra/self-managed/automation/self-managed-automation.md#billing--cost-explorer-audit).
 
 ---
