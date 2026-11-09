@@ -56,3 +56,4 @@ monitoring_expected_targets: 8
 
 # Expected total 'probe_success' time series across the 3 blackbox jobs in prometheus.yml (dns: 1, http: 2, tcp: 2)
 monitoring_expected_probes: 5
+
