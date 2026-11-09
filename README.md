@@ -71,6 +71,49 @@ replaces each service with its AWS managed equivalent — no OS to manage.
 
 ---
 
+## Architecture
+
+Three planes connect through one WireGuard network. The Mac drives Terraform and Ansible, the EC2 instance is the WireGuard hub and public edge, and the local VM is a peer that also hosts the monitoring stack. GitHub Actions validates every change before it reaches `main`.
+
+```mermaid
+flowchart LR
+    subgraph MAC["Control node · Mac"]
+        ANS["Ansible"]
+        TFM["Terraform"]
+        BRW["Browser"]
+    end
+
+    CI["GitHub Actions<br/>lint · syntax · terraform validate"]
+
+    subgraph AWS["AWS eu-west-1 · multi-lab-vpc 10.0.0.0/16"]
+        subgraph EC2["EC2 multi-lab-vps · WireGuard hub 172.16.0.1"]
+            EC2S["BIND9 · Nginx + Let's Encrypt<br/>Samba AD DC · SFTP · node_exporter"]
+        end
+        R53["Route 53<br/>public zone"]
+    end
+
+    subgraph LAN["Local LAN 192.168.1.0/24"]
+        subgraph VM["VM multi-lab-local · WireGuard peer 172.16.0.3"]
+            VMS["Kea DHCP · Nginx self-signed<br/>SFTP · node_exporter"]
+            MON["Prometheus · blackbox_exporter<br/>Grafana :3000"]
+        end
+    end
+
+    TFM -->|provisions| AWS
+    ANS -->|SSH 22222 over WireGuard| EC2
+    ANS -->|SSH 22222 over LAN| VM
+    MAC <-->|WireGuard 172.16.0.2| EC2
+    VM <-->|WireGuard 172.16.0.0/24| EC2
+    MON -->|scrape :9100 · probe DNS HTTPS TCP| EC2S
+    BRW -->|Grafana over wg0| MON
+    R53 -->|A record| EC2
+    CI -.->|validates pushed code| MAC
+```
+
+The monitoring server runs on the local VM and reaches the EC2 hub only through `wg0`. Grafana is reachable only over WireGuard, keeping metrics and dashboards off public networks. The `aws-native` path (Managed AD, Transfer Family, CloudFront) is an independent alternative not shown here.
+
+---
+
 ## Deploying This Lab
 
 Choose your environment and follow its setup guide before applying any module:
