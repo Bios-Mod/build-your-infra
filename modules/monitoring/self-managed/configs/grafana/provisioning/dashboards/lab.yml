@@ -20,3 +20,4 @@ providers:
     allowUiUpdates: false
     options:
       path: /var/lib/grafana/dashboards
+

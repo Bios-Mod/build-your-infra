@@ -20,3 +20,4 @@
 /etc/systemd/system/grafana-server.service.d        CONTENTEX
 !/var/lib/prometheus
 !/var/lib/grafana
+

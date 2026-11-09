@@ -15,3 +15,4 @@ Without telemetry and synthetic checks, service degradation goes unnoticed until
 | --- | --- | --- |
 | self-managed (local VM + EC2) | Prometheus · Grafana · node_exporter · blackbox_exporter | [monitoring-self-managed.md](self-managed/monitoring-self-managed.md) |
 | aws-native | N/A — self-managed only | — |
+

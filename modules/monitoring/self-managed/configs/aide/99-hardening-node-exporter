@@ -11,3 +11,4 @@
 # ── MONITORING — node_exporter integrity ──────────────────────────────────────
 /etc/default/prometheus-node-exporter               CONTENTEX
 /etc/systemd/system/prometheus-node-exporter.service.d  CONTENTEX
+

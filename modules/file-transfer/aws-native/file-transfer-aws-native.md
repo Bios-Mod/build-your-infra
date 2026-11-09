@@ -16,7 +16,7 @@ environment and hardening module completed before applying this module.
 ## Scope
 
 | Layer | Resource |
-|---|---|
+| --- | --- |
 | Endpoint | AWS Transfer Family — SFTP protocol only |
 | Backend | S3 bucket `multi-lab-transfer-<account-id>` |
 | Auth | SSH public key — no password path |
@@ -29,7 +29,7 @@ environment and hardening module completed before applying this module.
 ## Relationship to Self-Managed
 
 | Self-managed | AWS Native |
-|---|---|
+| --- | --- |
 | OpenSSH internal-sftp subsystem | AWS Transfer Family managed endpoint |
 | Dedicated `sftpuser` system account | Transfer Family logical user |
 | Chroot jail (`/srv/sftp/sftpuser/`) | S3 bucket prefix scope (`/uploads`) |
@@ -53,7 +53,7 @@ versioning enabled to preserve overwritten files.
 S3 → Create bucket:
 
 | Parameter | Value |
-|---|---|
+| --- | --- |
 | Bucket name | `multi-lab-transfer-<account-id>` |
 | Region | `eu-west-1` |
 | Bucket type | General purpose |
@@ -61,7 +61,6 @@ S3 → Create bucket:
 | Block all public access | Enabled (all four options) |
 | Bucket versioning | Enabled |
 | Default encryption | SSE-S3 (enabled by default) |
-
 
 > Replace `<account-id>` with the 12-digit AWS account ID. S3 bucket names
 > are globally unique — including the account ID avoids collisions and makes
@@ -83,6 +82,7 @@ mistaken `rm` or overwrite during testing is recoverable.
 ### Verification
 
 **CLI**
+
 ```bash
 aws s3api get-bucket-location \
   --bucket multi-lab-transfer-<account-id> \
@@ -180,6 +180,7 @@ other S3 buckets, IAM, EC2, or any other service is granted.
 ### Verification
 
 **CLI**
+
 ```bash
 aws iam get-role \
   --role-name multi-lab-transfer-role \
@@ -207,7 +208,7 @@ allowing SFTP (TCP 22) from the operator's IP only.
 VPC → Security Groups → Create security group:
 
 | Parameter | Value |
-|---|---|
+| --- | --- |
 | Name | `multi-lab-transfer-sg` |
 | Description | SFTP access — operator IP only |
 | VPC | `multi-lab-vpc` |
@@ -242,6 +243,7 @@ and CloudWatch Logs via the internet gateway or a VPC endpoint.
 ### Verification
 
 **CLI**
+
 ```bash
 aws ec2 describe-security-groups \
   --filters "Name=group-name,Values=multi-lab-transfer-sg" \
@@ -273,7 +275,7 @@ subnet of `multi-lab-vpc`.
 EC2 → Elastic IPs → Allocate Elastic IP address:
 
 | Parameter | Value |
-|---|---|
+| --- | --- |
 | Network Border Group | `eu-west-1` |
 | Public IPv4 address pool | Amazon's pool of IPv4 addresses |
 
@@ -348,22 +350,22 @@ CloudWatch in a new tab:
 CloudWatch → Log groups → Create log group:
 
 | Parameter | Value |
-|---|---|
+| --- | --- |
 | Log group name | `/aws/transfer/multi-lab-transfer` |
 | Retention | 1 month (for this lab) |
 | Log class | Standard |
 
 > **Log class — Standard vs. Infrequent Access:**
-> Standard — full CloudWatch functionality: Insights queries, metric filters, 
+> Standard — full CloudWatch functionality: Insights queries, metric filters,
 > alarms, subscriptions, and live tail. Higher ingestion cost ($0.50/GB).
-> 
-> Infrequent Access — ~50% cheaper ingestion ($0.25/GB) but disables metric filters, 
-> alarms, live tail, and subscription filters. Only basic log viewing and Insights 
+>
+> Infrequent Access — ~50% cheaper ingestion ($0.25/GB) but disables metric filters,
+> alarms, live tail, and subscription filters. Only basic log viewing and Insights
 > queries are available.
-> 
-> For this lab, choose Standard — Transfer Family SFTP activity logs are low volume 
+>
+> For this lab, choose Standard — Transfer Family SFTP activity logs are low volume
 > (negligible cost), and Standard preserves the option to add metric filters or alarms
-> in future hardening steps without recreating the log group. Infrequent Access makes 
+> in future hardening steps without recreating the log group. Infrequent Access makes
 > sense for high-volume application logs where those features are not needed.
 
 → **Create** — close the tab and return to the Transfer Family wizard.
@@ -374,7 +376,7 @@ click the **refresh icon** → select `/aws/transfer/multi-lab-transfer`.
 **Page 5 parameters:**
 
 | Parameter | Value |
-|---|---|
+| --- | --- |
 | CloudWatch log group | `/aws/transfer/multi-lab-transfer` |
 | Logging role | Leave empty — only required when using Managed Workflows |
 | Managed workflows | Leave empty (out of scope for this module) |
@@ -384,7 +386,7 @@ click the **refresh icon** → select `/aws/transfer/multi-lab-transfer`.
 **Additional optional fields — Page 5:**
 
 | Parameter | Value | Reason |
-|---|---|---|
+| --- | --- | --- |
 | Optimized directories | Leave default (disabled) | Relevant only for buckets with >100k objects or deep prefix hierarchies — not applicable for a lab environment |
 | Pre-authentication display banner | Leave empty | Optional branding/warning message shown before login — out of scope |
 | SetStat option | Leave default (disabled) | Ignore SETSTAT enables compatibility with clients that send unsupported SFTP attribute commands — not needed for standard clients |
@@ -400,7 +402,6 @@ click the **refresh icon** → select `/aws/transfer/multi-lab-transfer`.
 > **Security policy `TransferSecurityPolicy-2024-01`:** restricts the
 > allowed cryptographic algorithms for the SFTP handshake. Always select
 > the most recent policy unless legacy client support is required.
-
 
 **Page 6 — Review and create:** confirm all settings → **Create server**.
 
@@ -423,6 +424,7 @@ cryptographic standards without manual cipher list management.
 Transfer Family → Servers — confirm server status is **Online**.
 
 **CLI**
+
 ```bash
 aws transfer list-servers \
   --profile multi-lab-admin \
@@ -464,7 +466,7 @@ chmod 644 ~/.ssh/id_ed25519_transfer.pub
 Transfer Family → Servers → `<server-id>` → Users → Add user:
 
 | Parameter | Value |
-|---|---|
+| --- | --- |
 | Username | `sftpuser` |
 | Role | `multi-lab-transfer-role` |
 | Policy | None — role permissions apply without restriction |
@@ -501,6 +503,7 @@ Transfer Family → Servers → `<server-id>` → Users → `sftpuser` —
 confirm role ARN, home directory, and SSH public key fingerprint are correct.
 
 **CLI**
+
 ```bash
 aws transfer describe-user \
   --server-id <server-id> \
@@ -508,7 +511,7 @@ aws transfer describe-user \
   --profile multi-lab-admin \
   --query "User.{Role:Role,HomeDirectoryType:HomeDirectoryType,Mappings:HomeDirectoryMappings}"
 # → {
-#     "Role": "arn:aws:iam::541801281490:role/multi-lab-transfer-role",
+#     "Role": "arn:aws:iam::<account-id>:role/multi-lab-transfer-role",
 #     "HomeDirectoryType": "LOGICAL",
 #     "Mappings": [{"Entry": "/", "Target": "/multi-lab-transfer-541801281490/uploads"}]
 #   }
@@ -524,6 +527,7 @@ Added a dedicated `Host` block to `~/.ssh/config` on the client machine and
 performed an end-to-end transfer verification.
 
 **Client SSH config** (`~/.ssh/config`):
+
 ```bash
 Host multi-lab-transfer
 HostName <server-id>.server.transfer.eu-west-1.amazonaws.com
@@ -579,6 +583,7 @@ CloudWatch → Log Management → Log groups → `/aws/transfer/multi-lab-transf
 stream exists and contains session events from the SFTP connection above. (Select the local timezone for coherence with the time)
 
 **CLI**
+
 ```bash
 aws logs describe-log-streams \
   --log-group-name /aws/transfer/multi-lab-transfer \
@@ -672,6 +677,7 @@ without repeating Steps 2 and 3.
 ### Verification
 
 **CLI**
+
 ```bash
 aws transfer list-servers \
   --profile multi-lab-admin \
