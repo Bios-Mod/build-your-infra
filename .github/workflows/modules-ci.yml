@@ -1,6 +1,6 @@
 # Deploy to:   GitHub Actions runner
 # Apply:       invoked via workflow_call from push-ci.yml and pull-request.yml
-# Module:      all modules (hardening, dns, file-transfer, web-server, directory, dhcp) + stacks/full-infra
+# Module:      all modules (hardening, dns, file-transfer, web-server, directory, dhcp, monitoring) + stacks/full-infra
 # Requires:    none
 #
 # Single source of truth for CI logic. Detects which module/environment
@@ -38,6 +38,7 @@ jobs:
       directory-self-managed: ${{ steps.filter.outputs.directory-self-managed }}
       directory-aws-native: ${{ steps.filter.outputs.directory-aws-native }}
       dhcp-self-managed: ${{ steps.filter.outputs.dhcp-self-managed }}
+      monitoring-self-managed: ${{ steps.filter.outputs.monitoring-self-managed }}
       ansible-self-managed: ${{ steps.filter.outputs.ansible-self-managed }}
       any-module: ${{ steps.filter.outputs.any-module }}
     steps:
@@ -74,6 +75,8 @@ jobs:
               - 'modules/directory/aws-native/**'
             dhcp-self-managed:
               - 'modules/dhcp/self-managed/**'
+            monitoring-self-managed:
+              - 'modules/monitoring/self-managed/**'
             ansible-self-managed:
               - 'stacks/full-infra/self-managed/automation/ansible/**'
             any-module:
@@ -310,6 +313,42 @@ jobs:
             sudo kea-dhcp4 -t "$dest"
           done
           sudo ip link delete ens160
+
+  monitoring-self-managed:
+    needs: changes
+    if: needs.changes.outputs.monitoring-self-managed == 'true'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install validators
+        run: sudo apt-get update && sudo apt-get install -y prometheus prometheus-blackbox-exporter jq auditd aide
+      - name: Validate prometheus.yml syntax
+        run: |
+          sed 's/<ec2_scrape_target>/172.16.0.1:9100/' \
+            modules/monitoring/self-managed/configs/prometheus/prometheus.yml \
+            > /tmp/prometheus-ci.yml
+          promtool check config /tmp/prometheus-ci.yml
+      - name: Validate blackbox.yml syntax
+        run: prometheus-blackbox-exporter --config.file=modules/monitoring/self-managed/configs/blackbox/blackbox.yml --config.check
+      - name: Validate Grafana dashboard JSON
+        run: jq empty modules/monitoring/self-managed/configs/grafana/dashboards/lab-overview.json
+      - name: Lint YAML configs
+        run: |
+          pip install yamllint --quiet
+          yamllint -d "{extends: default, rules: {
+            line-length: disable,
+            document-start: disable,
+            new-line-at-end-of-file: disable,
+            truthy: disable
+          }}" modules/monitoring/self-managed/configs/grafana/provisioning/ \
+            modules/monitoring/self-managed/configs/blackbox/blackbox.yml \
+            modules/monitoring/self-managed/configs/prometheus/prometheus.yml
+      - name: Sanity-check audit rules format
+        run: grep -E '^-w .+ -p .+ -k .+' modules/monitoring/self-managed/configs/audit/99-hardening.rules
+      - name: Validate AIDE conf syntax
+        run: |
+          sudo aide --config modules/monitoring/self-managed/configs/aide/99-hardening --check || true
+          sudo aide --config modules/monitoring/self-managed/configs/aide/99-hardening-node-exporter --check || true
 
   full-infra:
     needs: changes

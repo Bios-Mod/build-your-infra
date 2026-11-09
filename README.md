@@ -33,7 +33,7 @@
 [![CloudFront](https://img.shields.io/badge/CloudFront-CDN-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/web-server-aws-native.md)
 [![Directory Service](https://img.shields.io/badge/Directory%20Service-Managed%20AD-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/directory/aws-native/directory-aws-native.md)
 
-Server infrastructure is usually built once by hand and never reproduced: configurations drift, security baselines are undocumented, and nobody remembers why a setting was chosen. This lab solves that by deploying the same service set (hardening, file transfer, DNS, web, directory, DHCP) across three environments — local VM, VPS and AWS Native — documenting the reasoning behind every decision inline, and then automating each layer with the tool that fits it: Terraform provisions, Ansible configures, GitHub Actions validates.
+Server infrastructure is usually built once by hand and never reproduced: configurations drift, security baselines are undocumented, and nobody remembers why a setting was chosen. This lab solves that by deploying the same service set (hardening, file transfer, DNS, web, directory, DHCP, monitoring) across three environments — local VM, VPS and AWS Native — documenting the reasoning behind every decision inline, and then automating each layer with the tool that fits it: Terraform provisions, Ansible configures, GitHub Actions validates.
 
 Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Management Console (where the GUI provides the clearest workflow) and the CLI.
 
@@ -104,6 +104,7 @@ hardened base.
 | Web Server | Nginx + HTTPS · reverse proxy | S3 · CloudFront · ACM | [`modules/web-server/`](modules/web-server/README.md) |
 | Directory | Samba 4 AD DC | AWS Directory Service (Managed Microsoft AD) | [`modules/directory/`](modules/directory/README.md) |
 | DHCP | Kea DHCP | N/A — local only | [`modules/dhcp/`](modules/dhcp/README.md) |
+| Monitoring | Prometheus · Grafana · node_exporter · blackbox_exporter | N/A — self-managed only | [`modules/monitoring/`](modules/monitoring/README.md) |
 
 > **Directory dependency:** Samba 4 AD DC mode includes its own
 > internal DNS server that can replace or integrate with BIND9.
@@ -174,6 +175,9 @@ See [`continuous-integration.md`](continuous-integration.md) for the full workfl
 │   │   └── self-managed
 │   ├── hardening
 │   │   ├── aws-native
+│   │   ├── README.md
+│   │   └── self-managed
+│   ├── monitoring
 │   │   ├── README.md
 │   │   └── self-managed
 │   └── web-server

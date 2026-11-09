@@ -1,0 +1,14 @@
+# Deploy to:   /etc/audit/rules.d/99-hardening.rules
+# Apply:       sudo tee -a /etc/audit/rules.d/99-hardening.rules < ~/build-your-infra/modules/monitoring/self-managed/configs/audit/99-hardening.rules && sudo augenrules --load
+# Module:      monitoring
+# Requires:    modules/hardening/ — 99-hardening.rules baseline must exist
+#
+# Audit rules — Prometheus and Grafana configuration write monitoring (VM only)
+# Parameters modified from baseline:  appends monitoring_config watch rules
+#
+# Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
+# Note:        Not applied on EC2 to avoid auditd immutable-mode (-e 2) reboot on WireGuard hub.
+
+# ── MONITORING — Prometheus and Grafana configuration ─────────────────────────
+-w /etc/prometheus/ -p wa -k monitoring_config
+-w /etc/grafana/ -p wa -k monitoring_config

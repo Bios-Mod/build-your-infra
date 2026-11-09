@@ -1,0 +1,17 @@
+# Deploy to:   /etc/default/prometheus
+# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/prometheus/prometheus /etc/default/prometheus && sudo systemctl daemon-reload && sudo systemctl restart prometheus
+# Module:      monitoring
+# Requires:    none
+#
+# Prometheus server daemon flags — restricts HTTP UI/API to loopback and sets 15-day TSDB retention.
+# Parameters modified from baseline:  ARGS="" -> ARGS="--web.listen-address=127.0.0.1:9090 --storage.tsdb.retention.time=15d"
+#
+# Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
+# Note:        Ubuntu unit executes /usr/bin/prometheus $ARGS; compiled-in Debian defaults stay active
+#              (--config.file=/etc/prometheus/prometheus.yml, --storage.tsdb.path=/var/lib/prometheus/metrics2/).
+
+# Set the command-line arguments to pass to the server.
+# Due to shell escaping, to pass backslashes for regexes, you need to double
+# them (\\d for \d). If running under systemd, you need to double them again
+# (\\\\d to mean \d), and escape newlines too.
+ARGS="--web.listen-address=127.0.0.1:9090 --storage.tsdb.retention.time=15d"

@@ -1,0 +1,13 @@
+# Deploy to:   /etc/aide/aide.conf.d/99-hardening
+# Apply:       sudo tee -a /etc/aide/aide.conf.d/99-hardening < ~/build-your-infra/modules/monitoring/self-managed/configs/aide/99-hardening-node-exporter
+# Module:      monitoring
+# Requires:    modules/hardening/ — 99-hardening AIDE baseline must exist
+#
+# AIDE scope extension — node_exporter defaults and systemd drop-in integrity (EC2)
+# Parameters modified from baseline:  adds node_exporter defaults file and wg0-ordering drop-in directory
+#
+# Platform:    Ubuntu 24.04 LTS · EC2 (multi-lab-vps)
+
+# ── MONITORING — node_exporter integrity ──────────────────────────────────────
+/etc/default/prometheus-node-exporter               CONTENTEX
+/etc/systemd/system/prometheus-node-exporter.service.d  CONTENTEX
