@@ -1,0 +1,22 @@
+# Deploy to:   /etc/aide/aide.conf.d/99-hardening
+# Apply:       sudo tee -a /etc/aide/aide.conf.d/99-hardening < ~/build-your-infra/modules/monitoring/self-managed/configs/aide/99-hardening
+# Module:      monitoring
+# Requires:    modules/hardening/ — 99-hardening AIDE baseline must exist
+#
+# AIDE scope extension — Prometheus, exporters, and Grafana configuration integrity (VM)
+# Parameters modified from baseline:  adds monitoring config dirs and drop-in files, excludes TSDB and Grafana state dirs
+#
+# Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
+# Note:        Ensure /etc/systemd/system/prometheus-node-exporter.service.d exists before running aide --init
+#              so AIDE tracks unauthorized drop-ins cleanly without missing-directory warnings.
+
+# ── MONITORING — Prometheus, exporters, and Grafana integrity ─────────────────
+/etc/prometheus                                     CONTENTEX
+/etc/grafana                                        CONTENTEX
+/etc/default/prometheus                             CONTENTEX
+/etc/default/prometheus-node-exporter               CONTENTEX
+/etc/default/prometheus-blackbox-exporter           CONTENTEX
+/etc/systemd/system/prometheus-node-exporter.service.d  CONTENTEX
+/etc/systemd/system/grafana-server.service.d        CONTENTEX
+!/var/lib/prometheus
+!/var/lib/grafana

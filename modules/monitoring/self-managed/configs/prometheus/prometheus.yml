@@ -1,0 +1,89 @@
+# Deploy to:   /etc/prometheus/prometheus.yml
+# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/prometheus/prometheus.yml /etc/prometheus/prometheus.yml && sudo sed -i 's/<ec2_scrape_target>/172.16.0.1:9100/' /etc/prometheus/prometheus.yml && promtool check config /etc/prometheus/prometheus.yml && sudo systemctl restart prometheus
+# Module:      monitoring
+# Requires:    modules/hardening/ (wg0 active); modules/dns/ and modules/web-server/ for probe targets
+#
+# Prometheus scrape configuration for VM, EC2 (via WireGuard), and blackbox probes.
+# Parameters modified from baseline:  replaces example scrape_configs with lab targets and host labels
+#
+# Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
+# Note:        VM (multi-lab-local) only — EC2 has no prometheus.yml. Substitute <ec2_scrape_target> with sed on the deployed copy /etc/prometheus/prometheus.yml, never in the repository file.
+# Verify:      promtool check config /etc/prometheus/prometheus.yml
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: prometheus
+    static_configs:
+      - targets: ['127.0.0.1:9090']
+        labels:
+          host: multi-lab-local
+
+  - job_name: node
+    static_configs:
+      - targets: ['127.0.0.1:9100']
+        labels:
+          host: multi-lab-local
+      - targets: ['<ec2_scrape_target>']
+        labels:
+          host: multi-lab-vps
+
+  - job_name: blackbox-dns
+    metrics_path: /probe
+    params:
+      module: [dns_lab_soa]
+    static_configs:
+      - targets: ['172.16.0.1:53']
+        labels:
+          host: multi-lab-vps
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [http_2xx_tls]
+    static_configs:
+      - targets: ['https://127.0.0.1']
+        labels:
+          host: multi-lab-local
+      - targets: ['https://buildyourinfra.click']
+        labels:
+          host: multi-lab-vps
+    relabel_configs:
+      - source_labels: [__address__]
+        regex: 'https://127\.0\.0\.1'
+        target_label: __param_module
+        replacement: http_2xx_insecure
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+
+  - job_name: blackbox-tcp
+    metrics_path: /probe
+    params:
+      module: [tcp_connect]
+    static_configs:
+      - targets: ['127.0.0.1:22222']
+        labels:
+          host: multi-lab-local
+      - targets: ['172.16.0.1:22222']
+        labels:
+          host: multi-lab-vps
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115

@@ -1,0 +1,35 @@
+# Deploy to:   local control node (metadata only)
+# Apply:       read by Ansible Galaxy and dependency resolver
+# Module:      monitoring
+# Requires:    none
+#
+# Role metadata and platform compatibility definitions for the monitoring role.
+# Why:         Declares author, license, supported OS distributions, and dependencies for the role.
+# Doc ref:     modules/monitoring/self-managed/monitoring-self-managed.md
+# Targets:     both
+
+---
+galaxy_info:
+  role_name: monitoring
+  author: Bios-Mod
+  description: Prometheus, node_exporter, blackbox_exporter, and Grafana role with WireGuard scoping, auditd, and AIDE.
+  company: build-your-infra
+  license: MIT
+  min_ansible_version: "2.16"
+
+  platforms:
+    - name: Ubuntu
+      versions:
+        - noble
+
+  galaxy_tags:
+    - monitoring
+    - prometheus
+    - grafana
+    - blackbox
+    - observability
+    - aide
+    - auditd
+    - ubuntu
+
+dependencies: []

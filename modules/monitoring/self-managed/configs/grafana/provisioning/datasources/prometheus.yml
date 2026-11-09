@@ -1,0 +1,20 @@
+# Deploy to:   /etc/grafana/provisioning/datasources/prometheus.yml
+# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/grafana/provisioning/datasources/prometheus.yml /etc/grafana/provisioning/datasources/prometheus.yml && sudo systemctl restart grafana-server
+# Module:      monitoring
+# Requires:    Prometheus running on 127.0.0.1:9090
+#
+# Grafana datasource provisioning — registers local Prometheus as default datasource.
+# Parameters modified from baseline:  new provisioning file
+#
+# Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://127.0.0.1:9090
+    isDefault: true
+    editable: false

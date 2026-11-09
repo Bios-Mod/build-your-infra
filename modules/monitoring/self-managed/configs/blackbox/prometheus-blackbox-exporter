@@ -1,0 +1,17 @@
+# Deploy to:   /etc/default/prometheus-blackbox-exporter
+# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/blackbox/prometheus-blackbox-exporter /etc/default/prometheus-blackbox-exporter && sudo systemctl daemon-reload && sudo systemctl restart prometheus-blackbox-exporter
+# Module:      monitoring
+# Requires:    none
+#
+# Blackbox exporter daemon flags — binds HTTP prober endpoint to loopback.
+# Parameters modified from baseline:  adds --web.listen-address=127.0.0.1:9115 alongside --config.file=/etc/prometheus/blackbox.yml
+#
+# Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
+
+# Set the command-line arguments to pass to the server.
+# Due to shell escaping, to pass backslashes for regexes, you need to double
+# them (\\d for \d). If running under systemd, you need to double them again
+# (\\\\d to mean \d), and escape newlines too.
+# On sysvinit systems, when changing the configuration pathname also
+# change it in the init script.
+ARGS="--config.file=/etc/prometheus/blackbox.yml --web.listen-address=127.0.0.1:9115"

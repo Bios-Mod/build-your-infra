@@ -1,0 +1,74 @@
+# Deploy to:   monitoring_targets
+# Apply:       ansible-playbook playbooks/monitoring.yml [--limit <host>] [options] --ask-become-pass
+# Module:      monitoring
+# Requires:    playbooks/hardening.yml, playbooks/dns.yml, playbooks/web-server.yml executed; monitoring_targets and monitoring_servers in inventories/hosts.yml
+#
+# Master playbook for deploying the Prometheus, blackbox_exporter, node_exporter, and Grafana monitoring stack.
+# Why:         Fails explicitly if monitoring inventory groups are missing, then deploys pull-based telemetry over WireGuard idempotently.
+# Doc ref:     modules/monitoring/self-managed/monitoring-self-managed.md
+# Targets:     both
+
+---
+# Runs on 'all' before prompting for secrets so missing groups fail instead of exiting silently (also works with --limit)
+- name: Verify monitoring inventory groups
+  hosts: all
+  gather_facts: false
+  become: false
+
+  tasks:
+    # Control-node check: requires monitoring_targets/monitoring_servers in hosts.yml (Host Variables Configuration, self-managed-automation.md)
+    - name: Assert monitoring inventory groups are defined # noqa: run-once[task]
+      run_once: true
+      delegate_to: localhost
+      check_mode: false
+      ansible.builtin.assert:
+        that:
+          - groups['monitoring_targets'] | default([]) | length > 0
+          - groups['monitoring_servers'] | default([]) | length > 0
+        fail_msg: >-
+          Missing 'monitoring_targets' and/or 'monitoring_servers' groups in inventories/hosts.yml.
+          Configure both groups per the "Host Variables Configuration" section in
+          stacks/full-infra/self-managed/automation/self-managed-automation.md.
+      tags:
+        - monitoring
+        - monitoring_verify
+
+# Runs monitoring role across monitoring_targets after group check and secret prompt
+- name: Apply monitoring service
+  hosts: monitoring_targets
+  become: true
+  gather_facts: true
+
+  vars_prompt:
+    - name: monitoring_grafana_admin_password
+      prompt: "Grafana admin password (initial install on VM multi-lab-local when grafana.db does not exist; leave empty on EC2 or if already set)"
+      private: true
+      default: ""
+
+  module_defaults:
+    ansible.builtin.apt:
+      lock_timeout: 600
+
+  pre_tasks:
+    # Validates control node toolchain environment against requirements.txt before running monitoring tasks
+    - name: Assert control node toolchain environment # noqa: run-once[task]
+      run_once: true
+      delegate_to: localhost
+      become: false
+      check_mode: false
+      ansible.builtin.assert:
+        that:
+          - ansible_version.full == controller_ansible_core_version
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.12', '>=')
+          - (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] is version('3.15', '<')
+        fail_msg: >-
+          Control node environment mismatch. Activate the project virtualenv
+          (source .venv/bin/activate) and install pinned dependencies (pip install -r requirements.txt).
+          Expected ansible-core {{ controller_ansible_core_version }} and Python 3.12-3.14.
+          Running ansible-core {{ ansible_version.full }} on Python
+          {{ (lookup('pipe', ansible_playbook_python ~ ' -V')).split()[1] }} ({{ ansible_playbook_python }}).
+
+  roles:
+    - role: monitoring
+      tags:
+        - monitoring

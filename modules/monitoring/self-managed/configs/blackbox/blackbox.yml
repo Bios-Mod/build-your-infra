@@ -1,0 +1,45 @@
+# Deploy to:   /etc/prometheus/blackbox.yml
+# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/blackbox/blackbox.yml /etc/prometheus/blackbox.yml && sudo prometheus-blackbox-exporter --config.file=/etc/prometheus/blackbox.yml --config.check && sudo systemctl restart prometheus-blackbox-exporter
+# Module:      monitoring
+# Requires:    none
+#
+# Blackbox exporter probe modules for lab DNS, HTTPS, and TCP endpoints.
+# Parameters modified from baseline:  defines dns_lab_soa, http_2xx_insecure, http_2xx_tls, tcp_connect
+#
+# Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
+# Verify:      sudo prometheus-blackbox-exporter --config.file=/etc/prometheus/blackbox.yml --config.check
+
+modules:
+  dns_lab_soa:
+    prober: dns
+    timeout: 5s
+    dns:
+      query_name: lab.internal
+      query_type: SOA
+      transport_protocol: udp
+      preferred_ip_protocol: ip4
+
+  http_2xx_insecure:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200, 502]
+      follow_redirects: false
+      preferred_ip_protocol: ip4
+      tls_config:
+        insecure_skip_verify: true
+
+  http_2xx_tls:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200, 502]
+      preferred_ip_protocol: ip4
+      tls_config:
+        insecure_skip_verify: false
+
+  tcp_connect:
+    prober: tcp
+    timeout: 5s
+    tcp:
+      preferred_ip_protocol: ip4

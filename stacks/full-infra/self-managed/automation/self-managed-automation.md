@@ -1336,6 +1336,144 @@ What the assertions check on the local VM:
 
 ---
 
+## Monitoring — Prometheus and Grafana Stack
+
+The `monitoring` role automates Steps 1–5 of [`monitoring-self-managed.md`](../../../../modules/monitoring/self-managed/monitoring-self-managed.md): Prometheus, `blackbox_exporter`, Grafana OSS, and `node_exporter` on the local VM (`multi-lab-local`), plus `node_exporter` alone on EC2 (`multi-lab-vps`, scraped over `wg0`). It assumes hosts already have the manual module applied and cleans up shared `99-hardening` additions automatically. Every run is idempotent (`changed=0` on convergence) without modifying existing Grafana databases.
+
+> **Prerequisites:**
+> - **Control node & tunnel:** virtualenv active ([Control Node](#control-node--environment-setup)), Mac WireGuard tunnel up, and `connection_mode: "wg"` set in `inventories/host_vars/multi-lab-vps.yml` and `inventories/host_vars/multi-lab-local.yml`.
+> - **Base modules:** [Hardening](#hardening--ansible-baseline), [DNS](#dns--bind9-authoritative-service), and [Web Server](#web-server--nginx-https-service) applied so `blackbox_exporter` probes succeed.
+> - **Inventory groups:** `monitoring_targets` and `monitoring_servers` must be defined in `inventories/hosts.yml` (see Host Variables Configuration below).
+> - **Connectivity:** both targets respond to `playbooks/ping.yml` (verified in Host Variables Configuration below, matching [Control Node verification](#step-1--prepare-the-control-node-toolchain)).
+> - **Optional manual baseline:** compatible with hosts where the manual module already ran; shared additions are migrated cleanly.
+
+### Host Variables Configuration
+
+Target IPs and scrape addresses derive automatically from existing WireGuard variables. Add the `monitoring_targets` and `monitoring_servers` groups to `inventories/hosts.yml`:
+
+**Control node (Mac):**
+
+```yaml
+# add under all.children
+all:
+  children:
+    monitoring_targets:
+      hosts:
+        multi-lab-local:
+        multi-lab-vps:
+
+    monitoring_servers:
+      hosts:
+        multi-lab-local:
+```
+
+Set `monitoring_auditd_reboot` in `inventories/host_vars/multi-lab-local.yml`:
+
+**Control node (Mac):**
+
+```yaml
+# inventories/host_vars/multi-lab-local.yml
+monitoring_auditd_reboot: false
+```
+
+Confirm both inventory group membership and target connectivity show the expected outputs below before starting Step 1:
+
+**Control node (Mac):**
+
+```bash
+ansible-inventory --graph
+# → |--@monitoring_targets:
+# → |  |--multi-lab-local
+# → |  |--multi-lab-vps
+# → |--@monitoring_servers:
+# → |  |--multi-lab-local
+```
+
+**EC2 · multi-lab-vps · Run on control node:**
+
+```bash
+ansible-playbook playbooks/ping.yml --limit multi-lab-vps
+# → ping reachability verified
+```
+
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/ping.yml --limit multi-lab-local
+# → ping reachability verified
+```
+
+---
+
+### Step 1 — Apply (Role `monitoring`)
+
+#### What was done
+
+Deploys `prometheus-node-exporter` across both targets and Prometheus, `blackbox_exporter`, Grafana OSS, and auditd config watches on the local VM. Enforces `wg0` firewall rules, systemd startup ordering, Grafana provisioning, and independent `99-zz-monitoring` AIDE and auditd drop-ins while cleaning any manual `99-hardening` additions. Apply EC2 first so `node_exporter` is active before the VM verifies scrapes.
+
+**EC2 · multi-lab-vps · Run on control node:**
+
+```bash
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-vps --check --diff --ask-become-pass
+# BECOME password = sudo password for <admin_username> on EC2; Grafana prompt: press Enter (unused on EC2)
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-vps --ask-become-pass
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-vps --ask-become-pass
+# → second run: changed=0
+```
+
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-local --check --diff --ask-become-pass
+# BECOME password = sudo password for <admin_username> on VM; Grafana prompt: enter password only if grafana.db does not exist (fresh install), press Enter if manual module already set it
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-local --ask-become-pass
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-local --ask-become-pass
+# → second run: changed=0
+```
+
+#### Why
+
+- **Isolated `99-zz-monitoring` drop-ins:** Avoid `hardening` overwrites and strip manual `99-hardening` lines so `augenrules --load` avoids duplicates.
+- **Grafana `grafana.asc` and `vars_prompt`:** Uses ASCII-armored `grafana.asc` (`0644`) for `_apt` and initializes `grafana.db` via `grafana cli` running as `grafana`.
+- **WireGuard-scoped UFW and `wg0` ordering:** Restricts `9100/tcp` (EC2) and `3000/tcp` (VM) to `wg0`, orders binds after `wg-quick@wg0`, and skips EC2 auditd rules.
+
+#### Verification
+
+Run [Step 2 (`--tags monitoring_verify`)](#step-2--verify-tag-monitoring_verify) to execute the read-only assertions across both targets.
+
+---
+
+### Step 2 — Verify (Tag `monitoring_verify`)
+
+#### What was done
+
+**EC2 · multi-lab-vps · Run on control node:**
+
+```bash
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-vps --tags monitoring_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+**VM · multi-lab-local · Run on control node:**
+
+```bash
+ansible-playbook playbooks/monitoring.yml --limit multi-lab-local --tags monitoring_verify --ask-become-pass
+# → changed=0 failed=0
+```
+
+> **Note:** Press Enter at the Grafana admin password prompt on both EC2 and VM.
+
+| Check | Expected | Manual verification |
+| --- | --- | --- |
+| `node_exporter` & EC2 UFW | Active/enabled, bound (`127.0.0.1:9100` VM / `172.16.0.1:9100` EC2), `wg0` ordering and UFW `9100/tcp` on EC2 | [Step 1](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-1--install-and-configure-node_exporter) |
+| Prometheus & `blackbox_exporter` | Loopback services (`:9090`, `:9115`) active, `/-/ready` 200, API reports 8 `up` and 5 `probe_success` | [Step 2](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-2--install-and-configure-prometheus) · [Step 3](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-3--install-and-configure-blackbox_exporter) |
+| Grafana | Active on `172.16.0.3:3000`, UFW `3000/tcp` on `wg0`, `/api/health` ok, `0644` configs, DB owned by `grafana` | [Step 4](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-4--install-provision-and-expose-grafana) |
+| AIDE & auditd | `99-zz-monitoring` (`0644`) passes `aide --config-check` on VM & EC2; `monitoring_config` watches loaded on VM | [Step 5](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-5--hardening-integration-auditd--aide) |
+
+Controlled `named` fault injection ([manual Step 6](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-6--end-to-end-verification-and-fault-injection)) and interactive browser checks from the Mac ([manual Step 7](../../../../modules/monitoring/self-managed/monitoring-self-managed.md#step-7--access-grafana-from-the-mac)) remain manual procedures outside Ansible.
+
+---
+
 ## Full-Stack Orchestration (site.yml)
 
 **Starting point:** The control node virtual environment is active, Ansible collections and toolchain dependencies are installed, and both target environments (EC2 and local VM) have completed the bootstrap phase (`playbooks/bootstrap.yml`) with dedicated administrator keys in place.
@@ -1348,13 +1486,14 @@ What the assertions check on the local VM:
 
 #### What was done
 
-`playbooks/site.yml` composes the six automated modules in sequential dependency order using `import_playbook`:
+`playbooks/site.yml` composes the seven automated modules in sequential dependency order using `import_playbook`:
 1. `hardening.yml` (groups `vm:ec2`, tag `hardening`) — System, access, and logging baseline.
 2. `file-transfer.yml` (groups `vm:ec2`, tags `file-transfer`, `file_transfer`) — Hardened SFTP chroot jail on port 22222.
 3. `dns.yml` (group `dns_servers` / EC2 hub, tag `dns`) — Authoritative BIND9 DNS server for `lab.internal`.
 4. `web-server.yml` (groups `vm:ec2`, tag `web-server`) — Nginx HTTPS reverse proxy with TLS certificates.
 5. `directory.yml` (group `directory_servers` / EC2 hub, tag `directory`) — Samba 4 Active Directory Domain Controller.
 6. `dhcp.yml` (group `dhcp_servers` / local VM, tag `dhcp`) — Kea DHCPv4 service for local LAN.
+7. `monitoring.yml` (groups `monitoring_targets`, tag `monitoring`) — Prometheus, `blackbox_exporter`, Grafana on VM, and `node_exporter` across both targets.
 
 Each playbook retains its specific group targeting, allowing execution to be scoped to a single target host with `--limit` or to specific modules using module-scoped tags (`--tags <module>`).
 
@@ -1398,12 +1537,13 @@ While `site.yml` orchestrates all module playbooks for ongoing maintenance and c
 - **Out-of-Band Cloud Infrastructure (Security Groups & SSM):** AWS Security Groups, VPC routes, and IAM instance profiles are managed declaratively in Terraform or AWS Console. Ansible operates exclusively within the guest OS and does not create cloud perimeter resources. See [Terraform — Infrastructure Provisioning](#terraform--infrastructure-provisioning).
 - **WireGuard Asymmetric Key Exchange:** Private keys are generated locally on each host and never leave the system. Public keys must be exchanged between the EC2 hub (`multi-lab-vps.yml`) and peers (`multi-lab-local.yml`) out-of-band before the tunnel can establish. See [Hardening Step 2](#step-2--access-chain-manual-steps-36--tag-hardening_2b).
 - **WireGuard Client DNS Configuration on VM (`hardening_wg_client_dns`):** On the local VM, `hardening_wg_client_dns` must be explicitly configured to `"172.16.0.1"` in `inventories/host_vars/multi-lab-local.yml` before running `site.yml` a second time (or during full convergence). Because `wg-quick` registers the DNS server with a routing domain `~.` on `wg0`, all VM queries are routed over the tunnel. If left at the default Quad9 (`9.9.9.9`), the queries cannot reach Quad9 across the tunnel (`172.16.0.0/24`), leaving the VM without working DNS resolution. See [DNS Step 1](#dns--bind9-authoritative-service).
-- **Interactive Password Prompts (`vars_prompt`):** Administrative passwords for the system admin (`bootstrap.yml`) and Samba Active Directory Administrator (`directory.yml`) are prompted interactively and hashed in memory. They are never stored in plaintext in version control or host variable files. See [Directory Step 1](#step-1--apply-tag-directory).
+- **Interactive Password Prompts (`vars_prompt`):** Administrative passwords for the system admin (`bootstrap.yml`), Samba Active Directory Administrator (`directory.yml`), and initial Grafana `admin` account (`monitoring.yml`, prompted on first install only when `/var/lib/grafana/grafana.db` is absent — leave blank on converged hosts) are supplied interactively and never stored in plaintext in version control or host variable files. See [Directory Step 1](#step-1--apply-tag-directory) and [Monitoring Step 1](#step-1--apply-role-monitoring).
 - **Controlled Reboots for Immutable Audit Rules (`*_auditd_reboot`):** The hardening baseline locks the kernel audit subsystem in immutable mode (`-e 2`). New audit drop-ins (`file-transfer`, `dns`, `web-server`, `directory`) require a kernel reboot to take effect on EC2 (`*_auditd_reboot: true`). Automated reboots temporarily drop the active WireGuard tunnel, requiring tunnel verification before resuming. See [Hardening Step 3](#step-3--system-hardening-manual-steps-712--tag-hardening_2c).
 - **Public Domain & Route 53 Delegation Prerequisite:** Let's Encrypt requires public DNS resolution for the registered domain (`buildyourinfra.click`). The public hosted zone and registrar delegation are configured once as an account-level prerequisite outside Ansible. See [Web Server Step 1](#step-1--apply-tag-web-server).
 - **Let's Encrypt Rate Limits:** Automated certificate issuance enforces `web_server_certbot_staging: true` during initial testing to avoid hitting ACME production rate limits before production cutover. See [Web Server Step 1](#step-1--apply-tag-web-server).
 - **SMB2 Protocol Omission:** Samba 4.19.5 on Ubuntu 24.04 ARM64 has an upstream bug preventing SMB2 file-sharing service startup in AD DC mode. AD authentication, Kerberos, LDAP, and RPC operate normally; SMB2 file sharing is excluded as an accepted deviation. See [Directory Step 1](#step-1--apply-tag-directory).
 - **Client-Side Configuration Steps:** Workstation-specific settings (SFTP client alias in `~/.ssh/config`, WireGuard peer DNS forwarding, joining client machines to the Active Directory domain) run outside the control node playbook and are applied on the operator's machine. See [File Transfer Step 2](#step-2--verify-tag-file_transfer_verify) and [Directory Step 2](#step-2--verify-tag-directory_verify).
+- **Manual Monitoring Checks (Fault Injection & Browser Access):** Controlled `named` fault-injection testing (manual Step 6) and inspecting Grafana datasources and `Lab Overview` panels from the Mac browser over WireGuard (manual Step 7) are intentionally kept manual outside Ansible. See [Monitoring Step 2](#step-2--verify-tag-monitoring_verify).
 
 #### Verification
 
@@ -1475,6 +1615,10 @@ ansible-playbook playbooks/site.yml --tags directory_verify --ask-become-pass
 # Verify Kea DHCPv4 service assertions on local VM
 ansible-playbook playbooks/site.yml --tags dhcp_verify --ask-become-pass
 # → changed=0 failed=0
+
+# Verify Monitoring stack assertions across VM and EC2
+ansible-playbook playbooks/site.yml --tags monitoring_verify --ask-become-pass
+# → changed=0 failed=0
 ```
 
 Summary of assertions validated across the full-stack suite:
@@ -1487,6 +1631,7 @@ Summary of assertions validated across the full-stack suite:
 | Web Server (`web-server_verify`) | Nginx service active, TLS certificate valid, HTTP to HTTPS redirect, reverse proxy 502 upstream response, auditd watch | [Web Server Step 2](#step-2--verify-tag-web-server_verify) |
 | Directory (`directory_verify`) | `samba-ad-dc` active, domain level 2016, Kerberos ticket via `kinit`, LDAP SRV query, AD listening ports (53, 88, 389, 445), auditd watch | [Directory Step 2](#step-2--verify-tag-directory_verify) |
 | DHCP (`dhcp_verify`) | `kea-dhcp4-server` active, `kea-dhcp4 -t` syntax clean, UDP port 67 bound, lease CSV exists, broadcast DHCP discovery response | [DHCP Step 2](#step-2--verify-tag-dhcp_verify) |
+| Monitoring (`monitoring_verify`) | `prometheus-node-exporter` active on VM & EC2, Prometheus/blackbox/Grafana active and bound, UFW rules on `wg0`, 8 targets `up`, 5 probes `probe_success`, Grafana `/api/health` ok, AIDE & auditd drop-ins | [Monitoring Step 2](#step-2--verify-tag-monitoring_verify) |
 
 #### Why
 
@@ -1509,6 +1654,7 @@ The following resources generate ongoing costs or represent external dependencie
   - **Public IPv4 Address / Elastic IP (`multi-lab-eip`):** Incurs $0.005/hr (~$3.60/month) continuously since February 2024, regardless of whether attached to a running instance, stopped instance, or unallocated.
   - **VPC & Network Perimeter:** `multi-lab-vpc`, public subnet `multi-lab-vpc-subnet-public1-eu-west-1a`, Internet Gateway `multi-lab-vpc-igw`, Route Table `multi-lab-vpc-rtb-public`, Security Group `multi-lab-sg`, and IAM instance profile/role `multi-lab-ec2-role`. (No ongoing direct charges for standard VPC/IAM, but network dependencies prevent clean account teardown if orphaned).
   - **Route 53 A-Record:** Managed dynamically when `route53_zone_name` is set in `terraform.tfvars`. `terraform destroy` removes this record automatically.
+  - **Monitoring Stack (`monitoring`):** Adds no new billable AWS resources — Prometheus, `blackbox_exporter`, and Grafana run on the existing `multi-lab-local` VM, and `node_exporter` runs on the existing `multi-lab-aws` EC2 instance over WireGuard with no new EC2 instances, EBS volumes, or Security Group changes.
 - **External Prerequisites (Out-of-Band / Route 53):**
   - **Route 53 Public Hosted Zone:** $0.50/month (unprorated flat fee per hosted zone per month). Not created or deleted by the self-managed Terraform stack.
   - **Registered Domain Name (`buildyourinfra.click`):** Annual registrar registration and renewal fee. Non-refundable once registered.

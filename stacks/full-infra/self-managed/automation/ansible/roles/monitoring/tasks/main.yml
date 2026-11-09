@@ -1,0 +1,880 @@
+# Deploy to:   monitoring_targets
+# Apply:       ansible-playbook playbooks/monitoring.yml --tags monitoring [--check --diff] --ask-become-pass
+# Module:      monitoring
+# Requires:    playbooks/hardening.yml, playbooks/dns.yml, playbooks/web-server.yml executed
+#
+# Tasks for the monitoring role.
+# Why:         Deploys node_exporter across targets and Prometheus, blackbox_exporter, and Grafana on monitoring_servers with UFW, AIDE, and auditd integration.
+# Doc ref:     modules/monitoring/self-managed/monitoring-self-managed.md — Steps 1–5
+# Targets:     both
+
+---
+# ==============================================================================
+# Prerequisites & Pre-flight Assertions
+# ==============================================================================
+
+# Queries active OpenSSH daemon configuration to verify the hardening baseline port is active (Prerequisite)
+- name: Query active OpenSSH daemon configuration
+  ansible.builtin.command:
+    cmd: /usr/sbin/sshd -T
+  register: monitoring_sshd_config_query
+  changed_when: false
+  check_mode: false
+  tags:
+    - monitoring
+
+# Asserts that hardening baseline is applied on the target host by checking active OpenSSH port (Prerequisite)
+- name: Assert hardening baseline is applied
+  ansible.builtin.assert:
+    that:
+      - ("port " ~ (hardening_ssh_port | string)) in monitoring_sshd_config_query.stdout_lines
+    fail_msg: >-
+      Hardening baseline prerequisite not met: active OpenSSH port is not {{ hardening_ssh_port }}.
+      Ensure role 'hardening' is fully deployed on the target before deploying 'monitoring'.
+  tags:
+    - monitoring
+
+# Asserts parameterized monitoring source configs contain exactly one active placeholder each (Steps 1, 2, 4)
+- name: Assert source monitoring configs contain expected single active placeholder each
+  vars:
+    monitoring_nl: "\n"
+    monitoring_ne_raw: "{{ lookup('file', monitoring_configs_dir ~ '/node-exporter/prometheus-node-exporter') }}"
+    monitoring_prom_raw: "{{ lookup('file', monitoring_configs_dir ~ '/prometheus/prometheus.yml') }}"
+    monitoring_graf_raw: "{{ lookup('file', monitoring_configs_dir ~ '/grafana/grafana-override.conf') }}"
+    monitoring_ne_active: "{{ monitoring_ne_raw.splitlines() | map('trim') | reject('match', '^[ ]*#') | join(monitoring_nl) }}"
+    monitoring_prom_active: "{{ monitoring_prom_raw.splitlines() | map('trim') | reject('match', '^[ ]*#') | join(monitoring_nl) }}"
+    monitoring_graf_active: "{{ monitoring_graf_raw.splitlines() | map('trim') | reject('match', '^[ ]*#') | join(monitoring_nl) }}"
+  ansible.builtin.assert:
+    that:
+      - monitoring_ne_active.count('<listen_address>') == 1
+      - monitoring_prom_active.count('<ec2_scrape_target>') == 1
+      - monitoring_graf_active.count('<vm_wg_ip>') == 1
+      - monitoring_node_exporter_listen | length > 0
+      - "'<' not in monitoring_node_exporter_listen and '>' not in monitoring_node_exporter_listen and 'CHANGE_ME' not in monitoring_node_exporter_listen"
+      - monitoring_ec2_scrape_target | length > 0
+      - "'<' not in monitoring_ec2_scrape_target and '>' not in monitoring_ec2_scrape_target and 'CHANGE_ME' not in monitoring_ec2_scrape_target"
+      - monitoring_server_wg_ip | length > 0
+      - "'<' not in monitoring_server_wg_ip and '>' not in monitoring_server_wg_ip and 'CHANGE_ME' not in monitoring_server_wg_ip"
+    fail_msg: >-
+      Source config placeholder check failed or resolved monitoring address variables contain placeholders/CHANGE_ME.
+  tags:
+    - monitoring
+
+# Asserts monitoring_auditd_reboot is defined as boolean on monitoring_servers when auditd immutable mode is active (Step 5)
+- name: Assert monitoring_auditd_reboot is defined when auditd immutable mode is active
+  ansible.builtin.assert:
+    that:
+      - monitoring_auditd_reboot is defined
+      - monitoring_auditd_reboot is boolean
+    fail_msg: >-
+      Variable 'monitoring_auditd_reboot' (boolean) must be defined in inventories/host_vars/multi-lab-local.yml
+      when hardening_auditd_immutable_mode is true.
+  when:
+    - hardening_auditd_immutable_mode | bool
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Checks if prometheus-node-exporter binary exists to guard --check mode runs on unprovisioned hosts (Step 1)
+- name: Stat prometheus-node-exporter binary
+  ansible.builtin.stat:
+    path: /usr/bin/prometheus-node-exporter
+  register: monitoring_stat_node_exporter_bin
+  check_mode: false
+  tags:
+    - monitoring
+
+# Checks if /etc/aide/aide.conf.d directory exists for AIDE drop-in --check guards (Step 5)
+- name: Stat /etc/aide/aide.conf.d directory
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d
+  register: monitoring_stat_aide_dir
+  check_mode: false
+  tags:
+    - monitoring
+
+# Checks if hardening AIDE baseline file exists before idempotent manual cleanup (Step 5)
+- name: Stat hardening AIDE baseline file
+  ansible.builtin.stat:
+    path: /etc/aide/aide.conf.d/99-hardening
+  register: monitoring_stat_hardening_aide_file
+  check_mode: false
+  tags:
+    - monitoring
+
+# Checks if /etc/audit/rules.d directory exists on monitoring_servers for auditd drop-in --check guards (Step 5)
+- name: Stat /etc/audit/rules.d directory
+  ansible.builtin.stat:
+    path: /etc/audit/rules.d
+  register: monitoring_stat_audit_dir
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Checks if hardening auditd rules file exists before idempotent manual cleanup (Step 5)
+- name: Stat hardening auditd rules file
+  ansible.builtin.stat:
+    path: /etc/audit/rules.d/99-hardening.rules
+  register: monitoring_stat_hardening_audit_file
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Checks if promtool binary exists to guard config validation in --check mode (Step 2)
+- name: Stat promtool binary
+  ansible.builtin.stat:
+    path: /usr/bin/promtool
+  register: monitoring_stat_promtool_bin
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Checks if prometheus-blackbox-exporter binary exists to guard config validation in --check mode (Step 3)
+- name: Stat prometheus-blackbox-exporter binary
+  ansible.builtin.stat:
+    path: /usr/bin/prometheus-blackbox-exporter
+  register: monitoring_stat_blackbox_bin
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Checks if Grafana ASCII APT keyring exists to guard GPG fingerprint verification in --check mode (Step 4)
+- name: Stat /etc/apt/keyrings/grafana.asc key file
+  ansible.builtin.stat:
+    path: /etc/apt/keyrings/grafana.asc
+  register: monitoring_stat_grafana_asc
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Checks if grafana-server binary exists to guard service and group ownership tasks in --check mode (Step 4)
+- name: Stat grafana-server binary
+  ansible.builtin.stat:
+    path: /usr/sbin/grafana-server
+  register: monitoring_stat_grafana_bin
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# ==============================================================================
+# Manual Step Cleanup — Idempotent Removal of Appended Lines in 99-hardening
+# ==============================================================================
+
+# WARNING: Modifies hardening-owned /etc/aide/aide.conf.d/99-hardening solely to repair active lines corrupted when manual Step 5 (`tee -a`)
+# appended `# Deploy to:` onto a line lacking a trailing newline (e.g., `/boot CONTENTEX# Deploy to: ...`), preventing AIDE syntax failure (rc 17).
+# Repairs glued `# Deploy to:` header comments appended by manual tee -a on 99-hardening across VM and EC2 (Step 5)
+- name: Repair glued Deploy-to header comments in 99-hardening AIDE file
+  ansible.builtin.replace:
+    path: /etc/aide/aide.conf.d/99-hardening
+    regexp: '^(?!\s*#)(\S.*?\S)[ \t]*#[ \t]*Deploy to:.*$'
+    replace: '\1'
+  notify:
+    - Regenerate AIDE database (monitoring)
+  when: not ansible_check_mode or monitoring_stat_hardening_aide_file.stat.exists
+  tags:
+    - monitoring
+
+# WARNING: Modifies hardening-owned /etc/audit/rules.d/99-hardening.rules solely to repair active lines corrupted when manual Step 5 (`tee -a`)
+# appended `# Deploy to:` onto a line lacking a trailing newline (e.g., `-e 2# Deploy to: ...`), preserving `-e 2` intact before rule cleanup.
+# Repairs glued `# Deploy to:` header comments appended by manual tee -a on 99-hardening.rules on VM (Step 5)
+- name: Repair glued Deploy-to header comments in 99-hardening.rules
+  ansible.builtin.replace:
+    path: /etc/audit/rules.d/99-hardening.rules
+    regexp: '^(?!\s*#)(\S.*?\S)[ \t]*#[ \t]*Deploy to:.*$'
+    replace: '\1'
+  notify:
+    - Load auditd rules (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_hardening_audit_file.stat.exists
+  tags:
+    - monitoring
+
+# WARNING: Modifies hardening-owned 99-hardening.rules as an accepted deviation solely to strip active monitoring audit rules
+# appended by manual Step 5 (`tee -a`), preventing duplicate rule errors (`Rule exists`) when augenrules loads 99-zz-monitoring.rules.
+# Removes manual monitoring auditd lines from /etc/audit/rules.d/99-hardening.rules while keeping headers untouched (Step 5)
+- name: Remove manual monitoring auditd rules from 99-hardening.rules
+  vars:
+    monitoring_manual_audit_raw: "{{ lookup('file', monitoring_configs_dir ~ '/audit/99-hardening.rules') }}"
+    monitoring_ws_eol: '\s*$'
+  ansible.builtin.lineinfile:
+    path: /etc/audit/rules.d/99-hardening.rules
+    regexp: "{{ '^' ~ (item | regex_escape) ~ monitoring_ws_eol }}"
+    state: absent
+  loop: >-
+    {{
+      monitoring_manual_audit_raw.splitlines() |
+      map('trim') |
+      reject('match', '^#') |
+      reject('equalto', '') |
+      list
+    }}
+  register: monitoring_manual_audit_cleanup
+  notify:
+    - Load auditd rules (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_hardening_audit_file.stat.exists
+  tags:
+    - monitoring
+
+# WARNING: Modifies hardening-owned /etc/aide/aide.conf.d/99-hardening as an accepted deviation solely to strip active monitoring
+# AIDE entries appended by manual Step 5 (`tee -a`) on VM, preventing duplicate entries alongside 99-zz-monitoring.
+# Removes manual VM monitoring AIDE lines from /etc/aide/aide.conf.d/99-hardening while keeping headers untouched (Step 5)
+- name: Remove manual VM monitoring AIDE lines from 99-hardening
+  vars:
+    monitoring_manual_vm_aide_raw: "{{ lookup('file', monitoring_configs_dir ~ '/aide/99-hardening') }}"
+    monitoring_ws_eol: '\s*$'
+  ansible.builtin.lineinfile:
+    path: /etc/aide/aide.conf.d/99-hardening
+    regexp: "{{ '^' ~ (item | regex_escape) ~ monitoring_ws_eol }}"
+    state: absent
+  loop: >-
+    {{
+      monitoring_manual_vm_aide_raw.splitlines() |
+      map('trim') |
+      reject('match', '^#') |
+      reject('equalto', '') |
+      list
+    }}
+  notify:
+    - Regenerate AIDE database (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_hardening_aide_file.stat.exists
+  tags:
+    - monitoring
+
+# WARNING: Modifies hardening-owned /etc/aide/aide.conf.d/99-hardening as an accepted deviation solely to strip active node_exporter
+# AIDE entries appended by manual Step 5 (`tee -a`) on EC2, preventing duplicate entries alongside 99-zz-monitoring.
+# Removes manual EC2 monitoring AIDE lines from /etc/aide/aide.conf.d/99-hardening while keeping headers untouched (Step 5)
+- name: Remove manual EC2 monitoring AIDE lines from 99-hardening
+  vars:
+    monitoring_manual_ec2_aide_raw: "{{ lookup('file', monitoring_configs_dir ~ '/aide/99-hardening-node-exporter') }}"
+    monitoring_ws_eol: '\s*$'
+  ansible.builtin.lineinfile:
+    path: /etc/aide/aide.conf.d/99-hardening
+    regexp: "{{ '^' ~ (item | regex_escape) ~ monitoring_ws_eol }}"
+    state: absent
+  loop: >-
+    {{
+      monitoring_manual_ec2_aide_raw.splitlines() |
+      map('trim') |
+      reject('match', '^#') |
+      reject('equalto', '') |
+      list
+    }}
+  notify:
+    - Regenerate AIDE database (monitoring)
+  when:
+    - is_cloud | bool  # EC2 only
+    - not ansible_check_mode or monitoring_stat_hardening_aide_file.stat.exists
+  tags:
+    - monitoring
+
+# ==============================================================================
+# Step 1 — Install and Configure node_exporter (All Targets)
+# ==============================================================================
+
+# Installs prometheus-node-exporter from Ubuntu APT repositories on VM and EC2 (Step 1)
+- name: Install prometheus-node-exporter package
+  ansible.builtin.apt:
+    name: prometheus-node-exporter
+    state: present
+  tags:
+    - monitoring
+
+# Deploys /etc/default/prometheus-node-exporter substituting <listen_address> per host without modifying source repo config (Step 1)
+- name: Deploy prometheus-node-exporter defaults configuration
+  vars:
+    monitoring_nl: "\n"
+    monitoring_ne_defaults_raw: "{{ lookup('file', monitoring_configs_dir ~ '/node-exporter/prometheus-node-exporter') }}"
+  ansible.builtin.copy:
+    content: "{{ (monitoring_ne_defaults_raw | replace('<listen_address>', monitoring_node_exporter_listen)) ~ monitoring_nl }}"
+    dest: /etc/default/prometheus-node-exporter
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart prometheus-node-exporter (monitoring)
+  when: not ansible_check_mode or monitoring_stat_node_exporter_bin.stat.exists
+  tags:
+    - monitoring
+
+# Creates systemd drop-in directory for prometheus-node-exporter on EC2 so WireGuard ordering can be enforced (Step 1)
+- name: Create prometheus-node-exporter systemd drop-in directory on EC2
+  ansible.builtin.file:
+    path: /etc/systemd/system/prometheus-node-exporter.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: is_cloud | bool  # EC2 only
+  tags:
+    - monitoring
+
+# Deploys wg0 startup ordering drop-in on EC2 so wg0 owns 172.16.0.1 before node_exporter binds (Step 1)
+- name: Deploy wg0 ordering drop-in for prometheus-node-exporter on EC2
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/node-exporter/wg0-ordering.conf"
+    dest: /etc/systemd/system/prometheus-node-exporter.service.d/wg0-ordering.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (monitoring)
+    - Restart prometheus-node-exporter (monitoring)
+  when:
+    - is_cloud | bool  # EC2 only
+    - not ansible_check_mode or monitoring_stat_node_exporter_bin.stat.exists
+  tags:
+    - monitoring
+
+# Ensures prometheus-node-exporter systemd unit is enabled and running (Step 1)
+- name: Enable and start prometheus-node-exporter service
+  ansible.builtin.systemd_service:
+    name: prometheus-node-exporter
+    enabled: true
+    state: started
+  when: not ansible_check_mode or monitoring_stat_node_exporter_bin.stat.exists
+  tags:
+    - monitoring
+
+# ==============================================================================
+# Steps 1 & 4 — UFW Firewall Perimeter Over WireGuard (wg0)
+# ==============================================================================
+
+# Allows inbound node_exporter scrapes on 9100/tcp over wg0 exclusively from the VM WireGuard IP on EC2 (Step 1)
+- name: Allow node_exporter scrapes over wg0 from monitoring server on EC2
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: wg0
+    from_ip: "{{ monitoring_server_wg_ip }}"
+    to_port: "{{ monitoring_node_exporter_port | string }}"
+    proto: tcp
+    comment: "node_exporter from VM over wg0"
+  when: is_cloud | bool  # EC2 only
+  tags:
+    - monitoring
+
+# Allows inbound Grafana HTTP UI traffic on 3000/tcp exclusively over wg0 on monitoring servers (Step 4)
+- name: Allow Grafana UI over wg0 on monitoring servers
+  community.general.ufw:
+    rule: allow
+    direction: in
+    interface: wg0
+    to_port: "{{ monitoring_grafana_port | string }}"
+    proto: tcp
+    comment: "Grafana UI over WireGuard"
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# ==============================================================================
+# Steps 2 & 3 — Prometheus and blackbox_exporter (Monitoring Servers)
+# ==============================================================================
+
+# Installs Prometheus server, blackbox_exporter prober, and GnuPG for Grafana key verification (Steps 2, 3, 4)
+- name: Install Prometheus, blackbox_exporter, and GnuPG packages
+  ansible.builtin.apt:
+    name:
+      - prometheus
+      - prometheus-blackbox-exporter
+      - gnupg
+    state: present
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Deploys /etc/default/prometheus setting loopback HTTP listen and 15-day TSDB retention (Step 2)
+- name: Deploy Prometheus daemon defaults configuration
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/prometheus/prometheus"
+    dest: /etc/default/prometheus
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart prometheus (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_promtool_bin.stat.exists
+  tags:
+    - monitoring
+
+# Deploys /etc/default/prometheus-blackbox-exporter setting loopback listen address and config path (Step 3)
+- name: Deploy blackbox_exporter daemon defaults configuration
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/blackbox/prometheus-blackbox-exporter"
+    dest: /etc/default/prometheus-blackbox-exporter
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart prometheus-blackbox-exporter (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_blackbox_bin.stat.exists
+  tags:
+    - monitoring
+
+# Deploys /etc/prometheus/prometheus.yml substituting <ec2_scrape_target> and validating syntax with promtool (Step 2)
+- name: Deploy Prometheus scrape configuration
+  vars:
+    monitoring_nl: "\n"
+    monitoring_prom_cfg_raw: "{{ lookup('file', monitoring_configs_dir ~ '/prometheus/prometheus.yml') }}"
+  ansible.builtin.copy:
+    content: "{{ (monitoring_prom_cfg_raw | replace('<ec2_scrape_target>', monitoring_ec2_scrape_target)) ~ monitoring_nl }}"
+    dest: /etc/prometheus/prometheus.yml
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "/usr/bin/promtool check config %s"
+  notify:
+    - Restart prometheus (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_promtool_bin.stat.exists
+  tags:
+    - monitoring
+
+# Deploys /etc/prometheus/blackbox.yml validating probe definitions with prometheus-blackbox-exporter --config.check (Step 3)
+- name: Deploy blackbox_exporter probe configuration
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/blackbox/blackbox.yml"
+    dest: /etc/prometheus/blackbox.yml
+    owner: root
+    group: root
+    mode: "0644"
+    validate: "/usr/bin/prometheus-blackbox-exporter --config.file=%s --config.check"
+  notify:
+    - Restart prometheus-blackbox-exporter (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_blackbox_bin.stat.exists
+  tags:
+    - monitoring
+
+# Ensures prometheus service is enabled and running on monitoring servers (Step 2)
+- name: Enable and start prometheus service
+  ansible.builtin.systemd_service:
+    name: prometheus
+    enabled: true
+    state: started
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_promtool_bin.stat.exists
+  tags:
+    - monitoring
+
+# Ensures prometheus-blackbox-exporter service is enabled and running on monitoring servers (Step 3)
+- name: Enable and start prometheus-blackbox-exporter service
+  ansible.builtin.systemd_service:
+    name: prometheus-blackbox-exporter
+    enabled: true
+    state: started
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_blackbox_bin.stat.exists
+  tags:
+    - monitoring
+
+# ==============================================================================
+# Step 4 — Grafana Repository, Admin Password, Provisioning, and Service
+# ==============================================================================
+
+# Creates /etc/apt/keyrings directory with world-readable traverse permissions for _apt (Step 4)
+- name: Ensure /etc/apt/keyrings directory exists
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Downloads official Grafana ASCII-armored APT signing key with explicit 0644 mode for _apt under restrictive umask (Step 4)
+# Accepted deviation from manual Step 4: stores .asc directly instead of running gpg --dearmor into .gpg
+- name: Download Grafana APT signing key
+  ansible.builtin.get_url:
+    url: "{{ monitoring_grafana_apt_key_url }}"
+    dest: /etc/apt/keyrings/grafana.asc
+    owner: root
+    group: root
+    mode: "0644"
+  register: monitoring_grafana_key_dl
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Inspects Grafana GPG key metadata in machine-readable colon format before writing APT source list (Step 4)
+- name: Read Grafana APT GPG key fingerprints
+  ansible.builtin.command:
+    cmd: gpg --show-keys --with-colons /etc/apt/keyrings/grafana.asc
+  register: monitoring_grafana_gpg_keys
+  changed_when: false
+  check_mode: false
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_grafana_asc.stat.exists
+  tags:
+    - monitoring
+
+# Asserts downloaded Grafana signing key matches expected primary fingerprint (Step 4)
+- name: Assert Grafana APT GPG key fingerprint matches expected value
+  ansible.builtin.assert:
+    that:
+      - (monitoring_grafana_gpg_keys.stdout_lines | select('match', '^fpr:+' ~ monitoring_grafana_apt_key_fingerprint ~ ':') | list | length) >= 1
+    fail_msg: >-
+      Grafana APT key fingerprint mismatch in /etc/apt/keyrings/grafana.asc.
+      Expected '{{ monitoring_grafana_apt_key_fingerprint }}'. Got: {{ monitoring_grafana_gpg_keys.stdout | default('') }}
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_grafana_asc.stat.exists
+  tags:
+    - monitoring
+
+# Configures official Grafana APT repository pointing to grafana.asc with explicit 0644 permissions (Step 4)
+# Overwrites manual grafana.list (which pointed to grafana.gpg) when converging an existing manual deployment
+- name: Configure Grafana APT repository source list
+  vars:
+    monitoring_nl: "\n"
+  ansible.builtin.copy:
+    content: "deb [signed-by=/etc/apt/keyrings/grafana.asc] https://apt.grafana.com stable main{{ monitoring_nl }}"
+    dest: /etc/apt/sources.list.d/grafana.list
+    owner: root
+    group: root
+    mode: "0644"
+  register: monitoring_grafana_apt_list
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Removes legacy dearmored grafana.gpg left by the manual procedure once grafana.list references grafana.asc (Step 4)
+- name: Remove legacy dearmored grafana.gpg keyring file
+  ansible.builtin.file:
+    path: /etc/apt/keyrings/grafana.gpg
+    state: absent
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Installs Grafana OSS package, refreshing APT cache only when the signing key or repository source list changed (Step 4)
+- name: Install Grafana OSS package
+  ansible.builtin.apt:
+    name: grafana
+    state: present
+    update_cache: "{{ (monitoring_grafana_key_dl.changed | default(false)) or (monitoring_grafana_apt_list.changed | default(false)) }}"
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Checks whether Grafana SQLite database already exists before password initialization (Step 4)
+- name: Stat /var/lib/grafana/grafana.db database file
+  ansible.builtin.stat:
+    path: /var/lib/grafana/grafana.db
+  register: monitoring_stat_grafana_db
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Asserts non-empty admin password was provided at prompt when grafana.db does not exist yet (Step 4)
+- name: Assert Grafana admin password is provided for initial database initialization
+  ansible.builtin.assert:
+    that:
+      - monitoring_grafana_admin_password | length > 0
+    fail_msg: >-
+      'monitoring_grafana_admin_password' must not be empty when /var/lib/grafana/grafana.db does not exist.
+      Re-run the playbook and enter an initial admin password at the prompt.
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not monitoring_stat_grafana_db.stat.exists
+  tags:
+    - monitoring
+
+# WARNING: grafana-server must not have started before this task executes; once grafana-server creates /var/lib/grafana/grafana.db
+# on first start with the default password, creates: /var/lib/grafana/grafana.db prevents this task from resetting it.
+# Sets built-in Grafana admin password via stdin running as grafana user against the service database path (Step 4)
+- name: Initialize Grafana admin password before first service start
+  ansible.builtin.command:
+    argv:
+      - runuser
+      - -u
+      - grafana
+      - --
+      - grafana
+      - cli
+      - --homepath
+      - /usr/share/grafana
+      - --config
+      - /etc/grafana/grafana.ini
+      - --configOverrides
+      - cfg:default.paths.data=/var/lib/grafana
+      - admin
+      - reset-admin-password
+      - --password-from-stdin
+    stdin: "{{ monitoring_grafana_admin_password }}"
+    creates: /var/lib/grafana/grafana.db
+  no_log: true
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Creates systemd drop-in directory for grafana-server (Step 4)
+- name: Create grafana-server systemd drop-in directory
+  ansible.builtin.file:
+    path: /etc/systemd/system/grafana-server.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Deploys grafana-server systemd override substituting <vm_wg_ip> to bind HTTP to wg0 after wg-quick@wg0 (Step 4)
+- name: Deploy grafana-server systemd override drop-in
+  vars:
+    monitoring_nl: "\n"
+    monitoring_graf_override_raw: "{{ lookup('file', monitoring_configs_dir ~ '/grafana/grafana-override.conf') }}"
+  ansible.builtin.copy:
+    content: "{{ (monitoring_graf_override_raw | replace('<vm_wg_ip>', monitoring_server_wg_ip)) ~ monitoring_nl }}"
+    dest: /etc/systemd/system/grafana-server.service.d/override.conf
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Reload systemd daemon (monitoring)
+    - Restart grafana-server (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_grafana_bin.stat.exists
+  tags:
+    - monitoring
+
+# Provisions local Prometheus datasource YAML with explicit 0644 permissions for grafana user (Step 4)
+- name: Deploy Grafana Prometheus datasource provisioning configuration
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/grafana/provisioning/datasources/prometheus.yml"
+    dest: /etc/grafana/provisioning/datasources/prometheus.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart grafana-server (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_grafana_bin.stat.exists
+  tags:
+    - monitoring
+
+# Provisions Grafana Lab dashboard provider YAML with explicit 0644 permissions for grafana user (Step 4)
+- name: Deploy Grafana dashboard provider provisioning configuration
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/grafana/provisioning/dashboards/lab.yml"
+    dest: /etc/grafana/provisioning/dashboards/lab.yml
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart grafana-server (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_grafana_bin.stat.exists
+  tags:
+    - monitoring
+
+# Creates provisioned dashboard storage directory owned by root:grafana (Step 4)
+- name: Create Grafana dashboards provisioning directory
+  ansible.builtin.file:
+    path: /var/lib/grafana/dashboards
+    state: directory
+    owner: root
+    group: grafana
+    mode: "0755"
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_grafana_bin.stat.exists
+  tags:
+    - monitoring
+
+# Deploys custom Lab Overview Grafana dashboard JSON with explicit 0644 permissions (Step 4)
+- name: Deploy Lab Overview Grafana dashboard JSON
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/grafana/dashboards/lab-overview.json"
+    dest: /var/lib/grafana/dashboards/lab-overview.json
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Restart grafana-server (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_grafana_bin.stat.exists
+  tags:
+    - monitoring
+
+# Ensures grafana-server service is enabled and running (Step 4)
+- name: Enable and start grafana-server service
+  ansible.builtin.systemd_service:
+    name: grafana-server
+    enabled: true
+    state: started
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_grafana_bin.stat.exists
+  tags:
+    - monitoring
+
+# ==============================================================================
+# Step 5 — AIDE Baseline Extension (All Targets)
+# ==============================================================================
+
+# Ensures prometheus-node-exporter drop-in directory exists on VM so AIDE monitors it without missing-directory warnings (Step 5)
+- name: Ensure prometheus-node-exporter systemd drop-in directory exists on VM for AIDE
+  ansible.builtin.file:
+    path: /etc/systemd/system/prometheus-node-exporter.service.d
+    state: directory
+    owner: root
+    group: root
+    mode: "0755"
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Deploys AIDE drop-in 99-zz-monitoring covering server and exporter configs on monitoring_servers (Step 5)
+# Named 99-zz-monitoring to load alphabetically after 99-hardening (which defines CONTENTEX)
+- name: Deploy AIDE monitoring integrity configuration on monitoring_servers
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/aide/99-hardening"
+    dest: /etc/aide/aide.conf.d/99-zz-monitoring
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Regenerate AIDE database (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_aide_dir.stat.exists
+  tags:
+    - monitoring
+
+# Deploys AIDE drop-in 99-zz-monitoring covering node_exporter defaults and wg0 drop-in on EC2 (Step 5)
+- name: Deploy AIDE monitoring integrity configuration on EC2
+  ansible.builtin.copy:
+    src: "{{ monitoring_configs_dir }}/aide/99-hardening-node-exporter"
+    dest: /etc/aide/aide.conf.d/99-zz-monitoring
+    owner: root
+    group: root
+    mode: "0644"
+  notify:
+    - Regenerate AIDE database (monitoring)
+  when:
+    - is_cloud | bool  # EC2 only
+    - not ansible_check_mode or monitoring_stat_aide_dir.stat.exists
+  tags:
+    - monitoring
+
+# Validates combined AIDE configuration syntax before flushing database regeneration handler (Step 5)
+- name: Validate AIDE configuration syntax
+  ansible.builtin.command:
+    cmd: /usr/bin/aide --config-check --config /etc/aide/aide.conf
+  changed_when: false
+  check_mode: false
+  when: not ansible_check_mode
+  tags:
+    - monitoring
+
+# ==============================================================================
+# Step 5 — auditd Configuration Watch Rules (Monitoring Servers Only)
+# ==============================================================================
+
+# Checks /etc/prometheus directory exists before deploying auditd watch rules (Step 5)
+- name: Stat /etc/prometheus directory for auditd rule prerequisite
+  ansible.builtin.stat:
+    path: /etc/prometheus
+  register: monitoring_stat_etc_prometheus
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Checks /etc/grafana directory exists before deploying auditd watch rules (Step 5)
+- name: Stat /etc/grafana directory for auditd rule prerequisite
+  ansible.builtin.stat:
+    path: /etc/grafana
+  register: monitoring_stat_etc_grafana
+  check_mode: false
+  when: inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+  tags:
+    - monitoring
+
+# Asserts watched monitoring directories exist before deploying auditd drop-in rules (Step 5)
+- name: Assert /etc/prometheus and /etc/grafana directories exist for auditd watches
+  ansible.builtin.assert:
+    that:
+      - monitoring_stat_etc_prometheus.stat.exists
+      - monitoring_stat_etc_grafana.stat.exists
+    fail_msg: >-
+      Directories /etc/prometheus and /etc/grafana must exist before deploying auditd watch rules.
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode
+  tags:
+    - monitoring
+
+# Deploys auditd drop-in 99-zz-monitoring.rules with ASCII header and active monitoring_config watches on VM only (Step 5)
+- name: Deploy monitoring auditd configuration watch rules
+  vars:
+    monitoring_audit_raw: "{{ lookup('file', monitoring_configs_dir ~ '/audit/99-hardening.rules') }}"
+    monitoring_nl: "\n"
+    monitoring_audit_header: "# monitoring audit rules (managed by Ansible)"
+    monitoring_active_rules: >-
+      {{
+        monitoring_audit_raw.splitlines() |
+        map('trim') |
+        reject('match', '^#') |
+        reject('equalto', '') |
+        list
+      }}
+  ansible.builtin.copy:
+    content: "{{ monitoring_audit_header ~ monitoring_nl ~ (monitoring_active_rules | join(monitoring_nl)) ~ monitoring_nl }}"
+    dest: /etc/audit/rules.d/99-zz-monitoring.rules
+    owner: root
+    group: root
+    mode: "0640"
+  register: monitoring_audit_rules_deploy
+  notify:
+    - Load auditd rules (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_audit_dir.stat.exists
+  tags:
+    - monitoring
+
+# ==============================================================================
+# Handler Flushing & Verification
+# ==============================================================================
+
+# Flushes notified handlers (daemon-reload, service restarts, AIDE regeneration, auditd reload) prior to verification assertions
+- name: Flush handlers
+  ansible.builtin.meta: flush_handlers
+  tags:
+    - monitoring
+
+# Executes read-only verification assertions for all monitoring components
+- name: Verify monitoring deployment
+  ansible.builtin.import_tasks: verify.yml
+  tags:
+    - monitoring
+    - monitoring_verify

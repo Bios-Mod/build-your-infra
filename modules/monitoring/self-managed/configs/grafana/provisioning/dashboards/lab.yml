@@ -1,0 +1,22 @@
+# Deploy to:   /etc/grafana/provisioning/dashboards/lab.yml
+# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/grafana/provisioning/dashboards/lab.yml /etc/grafana/provisioning/dashboards/lab.yml && sudo systemctl restart grafana-server
+# Module:      monitoring
+# Requires:    /var/lib/grafana/dashboards directory created
+#
+# Grafana dashboard provider provisioning — loads JSON dashboards from disk.
+# Parameters modified from baseline:  new provisioning file
+#
+# Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
+
+apiVersion: 1
+
+providers:
+  - name: lab
+    orgId: 1
+    folder: Lab
+    type: file
+    disableDeletion: false
+    updateIntervalSeconds: 30
+    allowUiUpdates: false
+    options:
+      path: /var/lib/grafana/dashboards

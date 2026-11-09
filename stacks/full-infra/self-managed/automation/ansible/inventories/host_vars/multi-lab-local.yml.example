@@ -103,3 +103,7 @@ dhcp_reservations:
 # Controls automatic host reboot when auditd rules change in immutable mode (-e 2).
 # Not triggered on local VM while hardening_auditd_immutable_mode is false.
 dhcp_auditd_reboot: false
+
+# Controls automatic host reboot when monitoring auditd rules change in immutable mode (-e 2).
+# Not triggered on local VM while hardening_auditd_immutable_mode is false.
+monitoring_auditd_reboot: false

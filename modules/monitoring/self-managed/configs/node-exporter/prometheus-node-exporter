@@ -1,0 +1,17 @@
+# Deploy to:   /etc/default/prometheus-node-exporter
+# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/node-exporter/prometheus-node-exporter /etc/default/prometheus-node-exporter && sudo sed -i 's/<listen_address>/127.0.0.1:9100/' /etc/default/prometheus-node-exporter && sudo systemctl daemon-reload && sudo systemctl restart prometheus-node-exporter  # VM; use 172.16.0.1:9100 on EC2
+# Module:      monitoring
+# Requires:    modules/hardening/ — WireGuard wg0 active on EC2 before binding to 172.16.0.1
+#
+# Prometheus node_exporter daemon flags — binds metrics HTTP endpoint to listen_address.
+# Parameters modified from baseline:  ARGS="" -> ARGS="--web.listen-address=<listen_address>"
+#
+# Note:        Substitute <listen_address> with sed on the deployed copy /etc/default/prometheus-node-exporter — never edit the repository file:
+#                - VM (multi-lab-local): 127.0.0.1:9100
+#                - EC2 (multi-lab-vps): 172.16.0.1:9100
+
+# Set the command-line arguments to pass to the server.
+# Due to shell escaping, to pass backslashes for regexes, you need to double
+# them (\\d for \d). If running under systemd, you need to double them again
+# (\\\\d to mean \d), and escape newlines too.
+ARGS="--web.listen-address=<listen_address>"

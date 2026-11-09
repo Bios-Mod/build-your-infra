@@ -39,3 +39,8 @@
   import_playbook: dhcp.yml
   tags:
     - dhcp
+
+- name: Orchestrate monitoring service
+  import_playbook: monitoring.yml
+  tags:
+    - monitoring

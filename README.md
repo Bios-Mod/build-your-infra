@@ -33,7 +33,7 @@
 [![CloudFront](https://img.shields.io/badge/CloudFront-CDN-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/web-server/aws-native/web-server-aws-native.md)
 [![Directory Service](https://img.shields.io/badge/Directory%20Service-Managed%20AD-FF9900?style=flat-square&logo=amazonaws&logoColor=white)](modules/directory/aws-native/directory-aws-native.md)
 
-Server infrastructure is usually built once by hand and never reproduced: configurations drift, security baselines are undocumented, and nobody remembers why a setting was chosen. This lab solves that by deploying the same service set (hardening, file transfer, DNS, web, directory, DHCP) across three environments — local VM, VPS and AWS Native — documenting the reasoning behind every decision inline, and then automating each layer with the tool that fits it: Terraform provisions, Ansible configures, GitHub Actions validates.
+Server infrastructure is usually built once by hand and never reproduced: configurations drift, security baselines are undocumented, and nobody remembers why a setting was chosen. This lab solves that by deploying the same service set (hardening, file transfer, DNS, web, directory, DHCP, monitoring) across three environments — local VM, VPS and AWS Native — documenting the reasoning behind every decision inline, and then automating each layer with the tool that fits it: Terraform provisions, Ansible configures, GitHub Actions validates.
 
 Built and tested on Ubuntu Server 24.04 LTS. Deployments use both the AWS Management Console (where the GUI provides the clearest workflow) and the CLI.
 
@@ -104,6 +104,7 @@ hardened base.
 | Web Server | Nginx + HTTPS · reverse proxy | S3 · CloudFront · ACM | [`modules/web-server/`](modules/web-server/README.md) |
 | Directory | Samba 4 AD DC | AWS Directory Service (Managed Microsoft AD) | [`modules/directory/`](modules/directory/README.md) |
 | DHCP | Kea DHCP | N/A — local only | [`modules/dhcp/`](modules/dhcp/README.md) |
+| Monitoring | Prometheus · Grafana · node_exporter · blackbox_exporter | N/A — self-managed only | [`modules/monitoring/`](modules/monitoring/README.md) |
 
 > **Directory dependency:** Samba 4 AD DC mode includes its own
 > internal DNS server that can replace or integrate with BIND9.
@@ -118,11 +119,11 @@ Each layer of the lab is automated with the tool that matches its scope. Terrafo
 | --- | --- | --- | --- |
 | aws-native | Terraform | Per-module import + redeploy | `modules/<name>/aws-native/automation/terraform/` |
 | self-managed | Terraform | EC2 greenfield from the canonical Ubuntu 24.04 ARM64 AMI — infrastructure layer | `stacks/full-infra/self-managed/automation/terraform/` |
-| self-managed | Ansible | OS configuration layer — hardening, file-transfer, dns, web-server, directory, and dhcp automated via [`site.yml`](stacks/full-infra/self-managed/automation/ansible/playbooks/site.yml); see [`self-managed-automation.md`](stacks/full-infra/self-managed/automation/self-managed-automation.md) | `stacks/full-infra/self-managed/automation/ansible/` (roles, inventory, playbooks) |
+| self-managed | Ansible | OS configuration layer — hardening, file-transfer, dns, web-server, directory, dhcp, and monitoring automated via [`site.yml`](stacks/full-infra/self-managed/automation/ansible/playbooks/site.yml); see [`self-managed-automation.md`](stacks/full-infra/self-managed/automation/self-managed-automation.md) | `stacks/full-infra/self-managed/automation/ansible/` (roles, inventory, playbooks) |
 
 The aws-native implementation order is `hardening` → `dns` → `file-transfer` → `web-server` → `directory`. Each module is independently deployable, and the full-stack composition sources them all.
 
-The self-managed Terraform stack provisions a clean EC2 host running Ubuntu Server 24.04 LTS ARM64 from the canonical AMI — infrastructure only. Ansible roles reproduce the entire OS configuration baseline from scratch without relying on pre-baked images. The self-managed implementation order is `hardening` → `file-transfer` → `dns` → `web-server` → `directory` → `dhcp`, where `site.yml` provides full-stack convergence over already initialized hosts (initial host bootstrap and progressive `connection_mode` transitions are documented separately in the guide). To eliminate all ongoing cloud billing after experimentation, see the [Teardown](stacks/full-infra/self-managed/automation/self-managed-automation.md#teardown--destroy-all-lab-resources) guide for step-by-step instructions on how to remove every resource the lab creates.
+The self-managed Terraform stack provisions a clean EC2 host running Ubuntu Server 24.04 LTS ARM64 from the canonical AMI — infrastructure only. Ansible roles reproduce the entire OS configuration baseline from scratch without relying on pre-baked images. The self-managed implementation order is `hardening` → `file-transfer` → `dns` → `web-server` → `directory` → `dhcp` → `monitoring`, where `site.yml` provides full-stack convergence over already initialized hosts (initial host bootstrap and progressive `connection_mode` transitions are documented separately in the guide). To eliminate all ongoing cloud billing after experimentation, see the [Teardown](stacks/full-infra/self-managed/automation/self-managed-automation.md#teardown--destroy-all-lab-resources) guide for step-by-step instructions on how to remove every resource the lab creates.
 
 ---
 
@@ -174,6 +175,9 @@ See [`continuous-integration.md`](continuous-integration.md) for the full workfl
 │   │   └── self-managed
 │   ├── hardening
 │   │   ├── aws-native
+│   │   ├── README.md
+│   │   └── self-managed
+│   ├── monitoring
 │   │   ├── README.md
 │   │   └── self-managed
 │   └── web-server
