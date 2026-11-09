@@ -166,6 +166,36 @@
 # Manual Step Cleanup — Idempotent Removal of Appended Lines in 99-hardening
 # ==============================================================================
 
+# WARNING: Modifies hardening-owned /etc/aide/aide.conf.d/99-hardening solely to repair active lines corrupted when manual Step 5 (`tee -a`)
+# appended `# Deploy to:` onto a line lacking a trailing newline (e.g., `/boot CONTENTEX# Deploy to: ...`), preventing AIDE syntax failure (rc 17).
+# Repairs glued `# Deploy to:` header comments appended by manual tee -a on 99-hardening across VM and EC2 (Step 5)
+- name: Repair glued Deploy-to header comments in 99-hardening AIDE file
+  ansible.builtin.replace:
+    path: /etc/aide/aide.conf.d/99-hardening
+    regexp: '^(?!\s*#)(\S.*?\S)[ \t]*#[ \t]*Deploy to:.*$'
+    replace: '\1'
+  notify:
+    - Regenerate AIDE database (monitoring)
+  when: not ansible_check_mode or monitoring_stat_hardening_aide_file.stat.exists
+  tags:
+    - monitoring
+
+# WARNING: Modifies hardening-owned /etc/audit/rules.d/99-hardening.rules solely to repair active lines corrupted when manual Step 5 (`tee -a`)
+# appended `# Deploy to:` onto a line lacking a trailing newline (e.g., `-e 2# Deploy to: ...`), preserving `-e 2` intact before rule cleanup.
+# Repairs glued `# Deploy to:` header comments appended by manual tee -a on 99-hardening.rules on VM (Step 5)
+- name: Repair glued Deploy-to header comments in 99-hardening.rules
+  ansible.builtin.replace:
+    path: /etc/audit/rules.d/99-hardening.rules
+    regexp: '^(?!\s*#)(\S.*?\S)[ \t]*#[ \t]*Deploy to:.*$'
+    replace: '\1'
+  notify:
+    - Load auditd rules (monitoring)
+  when:
+    - inventory_hostname in groups['monitoring_servers']  # monitoring_servers (VM) only
+    - not ansible_check_mode or monitoring_stat_hardening_audit_file.stat.exists
+  tags:
+    - monitoring
+
 # WARNING: Modifies hardening-owned 99-hardening.rules as an accepted deviation solely to strip active monitoring audit rules
 # appended by manual Step 5 (`tee -a`), preventing duplicate rule errors (`Rule exists`) when augenrules loads 99-zz-monitoring.rules.
 # Removes manual monitoring auditd lines from /etc/audit/rules.d/99-hardening.rules while keeping headers untouched (Step 5)
