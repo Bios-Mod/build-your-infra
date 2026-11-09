@@ -1642,123 +1642,54 @@ Summary of assertions validated across the full-stack suite:
 
 ## Teardown — Destroy All Lab Resources
 
-When testing and experimentation conclude, all infrastructure and cloud resources created across both paths must be destroyed to eliminate recurring cloud billing.
-
 ### Billable Resources Inventory
 
-The following resources generate ongoing costs or represent external dependencies:
-
-- **Self-Managed Stack (Terraform):**
-  - **EC2 Instance (`multi-lab-aws`):** Compute charges for the t4g.micro Graviton2 instance.
-  - **EBS Root Volume:** 20 GiB gp3 block device ($0.08/GB-month = ~$1.60/month). Accrues cost continuously even when the instance is stopped.
-  - **Public IPv4 Address / Elastic IP (`multi-lab-eip`):** Incurs $0.005/hr (~$3.60/month) continuously since February 2024, regardless of whether attached to a running instance, stopped instance, or unallocated.
-  - **VPC & Network Perimeter:** `multi-lab-vpc`, public subnet `multi-lab-vpc-subnet-public1-eu-west-1a`, Internet Gateway `multi-lab-vpc-igw`, Route Table `multi-lab-vpc-rtb-public`, Security Group `multi-lab-sg`, and IAM instance profile/role `multi-lab-ec2-role`. (No ongoing direct charges for standard VPC/IAM, but network dependencies prevent clean account teardown if orphaned).
-  - **Route 53 A-Record:** Managed dynamically when `route53_zone_name` is set in `terraform.tfvars`. `terraform destroy` removes this record automatically.
-  - **Monitoring Stack (`monitoring`):** Adds no new billable AWS resources — Prometheus, `blackbox_exporter`, and Grafana run on the existing `multi-lab-local` VM, and `node_exporter` runs on the existing `multi-lab-aws` EC2 instance over WireGuard with no new EC2 instances, EBS volumes, or Security Group changes.
-- **External Prerequisites (Out-of-Band / Route 53):**
-  - **Route 53 Public Hosted Zone:** $0.50/month (unprorated flat fee per hosted zone per month). Not created or deleted by the self-managed Terraform stack.
-  - **Registered Domain Name (`buildyourinfra.click`):** Annual registrar registration and renewal fee. Non-refundable once registered.
-- **AWS Native Stack (Optional Deployment):**
-  - **AWS Directory Service (Managed Microsoft AD):** $0.10/hr (~$72/month) continuous billing from creation.
-  - **AWS Transfer Family Server:** $0.30/hr (~$216/month) continuous billing from creation, plus associated Elastic IP ($0.005/hr).
-  - **Persistent & Baseline Resources:** S3 storage buckets (`multi-lab-web-origin-*`, `multi-lab-transfer-*`, `multi-lab-cloudtrail-*`), CloudFront distribution (`multi-lab-cf`), CloudWatch log groups (`/aws/vpc/multi-lab-vpc`), Route 53 Private Hosted Zone ($0.50/month), GuardDuty detector, and SNS topic (`multi-lab-ad-alerts`).
-
----
+- **EC2 + EBS (`multi-lab-aws`):** `t4g.micro` instance and 20 GiB `gp3` root volume (accrues even when stopped).
+- **Elastic IP (`multi-lab-eip`):** Static public IPv4 address for the self-managed stack.
+- **Route 53 public hosted zone & domain (`buildyourinfra.click`):** Out-of-band prerequisites outside Terraform.
+- **Managed AD (`aws-native` only):** AWS Directory Service directory, if the `aws-native` stack was deployed.
+- **Transfer Family (`aws-native` only):** SFTP server and endpoint EIP, if the `aws-native` stack was deployed.
+- **Monitoring (`monitoring`):** Adds no new billable AWS resources (runs on the existing VM and EC2 instance over WireGuard).
 
 ### Step 1 — Destroy (Infrastructure Teardown & Local Cleanup)
 
 #### What was done
 
-Follow the destruction procedure in order:
+##### 1. Self-Managed Stack (Terraform)
 
-##### 1. Self-Managed Cloud Stack Teardown (Terraform)
-
-Destroy the EC2 instance, Elastic IP, EBS volume, and perimeter resources managed by the self-managed Terraform configuration.
-
-**CLI — Run on control node (Mac):**
+**Control node (Mac):**
 
 ```bash
 cd ~/build-your-infra/stacks/full-infra/self-managed/automation/terraform
-
-# Execute terraform destroy using existing terraform.tfvars
 terraform destroy
-
-# → Plan: 0 to add, 0 to change, N to destroy
 # → Destroy complete! Resources: N destroyed.
 ```
 
-> **Note:** `terraform destroy` reads `terraform.tfvars` for required parameters (`ami_id`, `instance_type`, `key_name`). CIDR variables default to closed (`""`), avoiding exposing any ports during the destroy cycle. Destroying the stack deletes the managed Route 53 A record pointing to the Elastic IP, but leaves the public hosted zone intact.
-
-**Console Alternative:**
-1. **EC2 Console (`eu-west-1`):** Navigate to **Instances** → Select `multi-lab-aws` → **Instance state** → **Terminate instance**.
-2. **Elastic IPs:** Navigate to **Network & Security** → **Elastic IPs** → Select `multi-lab-eip` → **Actions** → **Release Elastic IP addresses**.
-3. **VPC Console:** Navigate to **Your VPCs** → Select `multi-lab-vpc` → **Actions** → **Delete VPC** (automatically deletes subnets, IGW, and route tables).
-4. **Security Groups & IAM:** Delete security group `multi-lab-sg` and IAM role `multi-lab-ec2-role` in their respective consoles.
+Expected result: EC2, EBS, Elastic IP, VPC perimeter, IAM role, and the managed Route 53 A record are destroyed while the public hosted zone remains intact.
 
 ##### 2. Route 53 Hosted Zone & Domain Retention (Optional)
 
-Decide whether to retain or decommission the public domain:
-- **Retain:** If you plan to redeploy the lab or use the domain for other projects, keep the public hosted zone ($0.50/month) and leave domain auto-renewal active.
-- **Decommission:** To achieve $0.00/month recurring cost, delete all custom DNS records (keeping only apex NS and SOA records), delete the hosted zone, and disable domain auto-renewal.
-
-**CLI — Run on control node (Mac):**
+**Control node (Mac):**
 
 ```bash
-# Locate the public hosted zone ID by exact domain name
-ZONE_ID=$(aws route53 list-hosted-zones-by-name \
-  --dns-name "buildyourinfra.click." \
-  --profile multi-lab-admin \
-  --query "HostedZones[?Name=='buildyourinfra.click.'].Id" \
-  --output text | cut -d'/' -f3)
-
-# Delete the public hosted zone (only after custom records are removed)
-aws route53 delete-hosted-zone \
-  --id "$ZONE_ID" \
-  --profile multi-lab-admin
-
-# Disable annual auto-renewal for the registered domain (us-east-1 endpoint)
-aws route53domains disable-domain-auto-renew \
-  --domain-name "buildyourinfra.click" \
-  --region us-east-1 \
-  --profile multi-lab-admin
+ZONE_ID=$(aws route53 list-hosted-zones-by-name --dns-name "buildyourinfra.click." --profile multi-lab-admin --query "HostedZones[?Name=='buildyourinfra.click.'].Id" --output text | cut -d'/' -f3)
+aws route53 delete-hosted-zone --id "$ZONE_ID" --profile multi-lab-admin
+aws route53domains disable-domain-auto-renew --domain-name "buildyourinfra.click" --region us-east-1 --profile multi-lab-admin
 ```
 
-> [!CAUTION]
-> `aws route53 delete-hosted-zone` fails with `HostedZoneNotEmpty` while records other than the default apex NS and SOA exist; those custom records must be deleted beforehand via Console (described below) or with `aws route53 change-resource-record-sets`. Always query the hosted zone by exact domain name (`--dns-name "buildyourinfra.click."`). Never delete unrelated hosted zones in the AWS account. Domain registrations are non-refundable; disabling auto-renewal ensures the domain simply lapses at the end of its paid registration period without new charges.
+> **Warning:** Deleting the zone fails with `HostedZoneNotEmpty` until custom records are removed beforehand, always query the hosted zone by exact name (`--dns-name "buildyourinfra.click."`), and domain registrations are non-refundable.
 
-**Console Alternative:**
-1. **Route 53 Console:** Navigate to **Hosted zones** → Select `buildyourinfra.click` → Delete all non-default records → Click **Delete zone**.
-2. **Registered domains:** Navigate to **Registered domains** → Select `buildyourinfra.click` → Under **Auto-renew**, click **Disable**.
+##### 3. AWS Native Stack (If Deployed)
 
-##### 3. AWS Native Stack Teardown (If Deployed)
-
-If the `aws-native` stack was provisioned, destroy resources in reverse order of deployment to respect inter-module dependencies. Terraform will display the destruction plan and prompt for `yes` confirmation; review that it destroys exclusively `multi-lab-*` resources (Managed AD, S3, CloudFront, Transfer Family).
-
-**CLI — Run on control node (Mac):**
+**Control node (Mac):**
 
 ```bash
-# If using the full-stack orchestration composition:
 cd ~/build-your-infra/stacks/full-infra/aws-native/automation/terraform
 terraform destroy
-
-# Alternatively, if deployed module-by-module, destroy in reverse dependency order:
-# 1. Directory (Managed AD - stops $0.10/hr charges):
-cd ~/build-your-infra/modules/directory/aws-native/automation/terraform && terraform destroy
-
-# 2. Web Server (CloudFront & S3 origin):
-cd ~/build-your-infra/modules/web-server/aws-native/automation/terraform && terraform destroy
-
-# 3. File Transfer (Transfer Family - stops $0.30/hr charges & Transfer EIP):
-cd ~/build-your-infra/modules/file-transfer/aws-native/automation/terraform && terraform destroy
-
-# 4. DNS (Private Hosted Zone & Resolver Logging):
-cd ~/build-your-infra/modules/dns/aws-native/automation/terraform && terraform destroy
-
-# 5. Hardening (VPC, Subnets, GuardDuty, CloudTrail, Flow Logs):
-cd ~/build-your-infra/modules/hardening/aws-native/automation/terraform && terraform destroy
+# → Destroy complete! Resources: N destroyed.
 ```
 
-See individual module automation guides for specific module teardown documentation: [`hardening-aws-native-automation.md`](../../../../modules/hardening/aws-native/automation/hardening-aws-native-automation.md), [`dns-aws-native-automation.md`](../../../../modules/dns/aws-native/automation/dns-aws-native-automation.md), [`file-transfer-aws-native-automation.md`](../../../../modules/file-transfer/aws-native/automation/file-transfer-aws-native-automation.md), [`web-server-aws-native-automation.md`](../../../../modules/web-server/aws-native/automation/web-server-aws-native-automation.md), and [`directory-aws-native-automation.md`](../../../../modules/directory/aws-native/automation/directory-aws-native-automation.md).
+If deployed module by module, destroy in reverse dependency order following each module guide: [`directory-aws-native-automation.md`](../../../../modules/directory/aws-native/automation/directory-aws-native-automation.md), [`web-server-aws-native-automation.md`](../../../../modules/web-server/aws-native/automation/web-server-aws-native-automation.md), [`file-transfer-aws-native-automation.md`](../../../../modules/file-transfer/aws-native/automation/file-transfer-aws-native-automation.md), [`dns-aws-native-automation.md`](../../../../modules/dns/aws-native/automation/dns-aws-native-automation.md), and [`hardening-aws-native-automation.md`](../../../../modules/hardening/aws-native/automation/hardening-aws-native-automation.md).
 
 ##### 4. Local Workstation Cleanup (Zero Cost)
 
@@ -1783,98 +1714,43 @@ ssh-keygen -R <vm_lan_ip>
 
 #### Why
 
-AWS charges compute per second, public IPv4 addresses per hour, and EBS storage continuously. Managed AD and Transfer Family generate high hourly costs ($0.10/hr and $0.30/hr). A systematic, ordered teardown guarantees no orphaned dependencies prevent resource destruction, eliminates all billing, and returns the cloud account to a clean baseline.
-
----
+Ordered teardown clears dependency chains first and stops all recurring EC2, EBS, public IPv4, and managed service charges.
 
 ### Step 2 — Verify (Cloud Billing & Resource Verification)
 
 #### What was done
 
-Execute explicit AWS CLI verification checks against `eu-west-1` using the `multi-lab-admin` profile to confirm that zero billable infrastructure remains active:
+`Destroy complete!` confirms Terraform-managed resource removal; run these checks in `eu-west-1` (`multi-lab-admin`) to verify no billable resources remain:
 
 **Control node (Mac):**
 
 ```bash
-# 1. Verify no running or stopped EC2 instances remain:
-aws ec2 describe-instances \
-  --profile multi-lab-admin \
-  --region eu-west-1 \
-  --filters "Name=tag:Name,Values=multi-lab-*" "Name=instance-state-name,Values=pending,running,stopping,stopped" \
-  --query "Reservations[*].Instances[*].[InstanceId,State.Name,Tags[?Key=='Name'].Value|[0]]" \
-  --output table
+aws ec2 describe-instances --profile multi-lab-admin --region eu-west-1 --filters "Name=tag:Name,Values=multi-lab-*" "Name=instance-state-name,Values=pending,running,stopping,stopped" --query "Reservations[*].Instances[*].[InstanceId,State.Name,Tags[?Key=='Name'].Value|[0]]" --output table
 # → empty
-
-# 2. Verify no EBS storage volumes remain:
-aws ec2 describe-volumes \
-  --profile multi-lab-admin \
-  --region eu-west-1 \
-  --filters "Name=tag:Name,Values=multi-lab-*" \
-  --query "Volumes[*].[VolumeId,State,Size]" \
-  --output table
+aws ec2 describe-addresses --profile multi-lab-admin --region eu-west-1 --filters "Name=tag:Name,Values=multi-lab-*" --query "Addresses[*].[PublicIp,AllocationId,AssociationId]" --output table
 # → empty
+```
 
-# 3. Verify no Elastic IPs / public IPv4 allocations remain:
-aws ec2 describe-addresses \
-  --profile multi-lab-admin \
-  --region eu-west-1 \
-  --filters "Name=tag:Name,Values=multi-lab-*" \
-  --query "Addresses[*].[PublicIp,AllocationId,AssociationId]" \
-  --output table
+**Only if `aws-native` was deployed — Control node (Mac):**
+
+```bash
+aws transfer list-servers --profile multi-lab-admin --region eu-west-1 --query "Servers[*].[ServerId,State]" --output table
 # → empty
-
-# 4. Verify VPC has been deleted:
-aws ec2 describe-vpcs \
-  --profile multi-lab-admin \
-  --region eu-west-1 \
-  --filters "Name=tag:Name,Values=multi-lab-*" \
-  --query "Vpcs[*].[VpcId,CidrBlock]" \
-  --output table
+aws ds describe-directories --profile multi-lab-admin --region eu-west-1 --query "DirectoryDescriptions[?Name=='multi-lab.internal'].[DirectoryId,Stage]" --output table
 # → empty
+```
 
-# 5. Verify no NAT Gateways remain:
-aws ec2 describe-nat-gateways \
-  --profile multi-lab-admin \
-  --region eu-west-1 \
-  --filter "Name=state,Values=available,pending" \
-  --query "NatGateways[*].[NatGatewayId,State]" \
-  --output table
+**Only if the Route 53 hosted zone was decommissioned — Control node (Mac):**
+
+```bash
+aws route53 list-hosted-zones-by-name --dns-name "buildyourinfra.click." --profile multi-lab-admin --query "HostedZones[?Name=='buildyourinfra.click.'].[Id,Name]" --output table
 # → empty
-
-# 6. Verify Transfer Family server is deleted (aws-native):
-aws transfer list-servers \
-  --profile multi-lab-admin \
-  --region eu-west-1 \
-  --query "Servers[*].[ServerId,State]" \
-  --output table
-# → empty
-
-# 7. Verify Managed AD directory is deleted (aws-native):
-aws ds describe-directories \
-  --profile multi-lab-admin \
-  --region eu-west-1 \
-  --query "DirectoryDescriptions[?Name=='multi-lab.internal'].[DirectoryId,Stage]" \
-  --output table
-# → empty
-
-# 8. Check Route 53 public hosted zone status (exact query):
-aws route53 list-hosted-zones-by-name \
-  --dns-name "buildyourinfra.click." \
-  --profile multi-lab-admin \
-  --query "HostedZones[?Name=='buildyourinfra.click.'].[Id,Name]" \
-  --output table
-# → empty (if decommissioned) or 1 entry (if retained)
 ```
 
 ##### Billing & Cost Explorer Audit
 
-AWS Billing and Cost Explorer data updates with a 24-hour reporting latency.
-To confirm complete cessation of billing:
-1. Log in to the **AWS Management Console**.
-2. Navigate to **Billing and Cost Management** → **Cost Explorer**.
-3. Set the date range to include the day after teardown, group by **Usage type** or **Service**, and inspect daily unblended costs.
-4. Daily costs must drop to **$0.00** (or ~$0.016/day if only the Route 53 public hosted zone is retained).
+AWS Billing and Cost Explorer update with a 24-hour latency. After 24 hours, check Cost Explorer and confirm daily unblended cost drops to **$0.00** (or ~$0.016/day if only the Route 53 public hosted zone is retained).
 
 #### Why
 
-AWS CLI validation queries verify state directly from AWS API endpoints, eliminating the possibility of orphaned resources caused by aborted scripts, forgotten manual test resources, or partial Terraform runs. Performing a Cost Explorer audit 24 hours later provides independent billing confirmation directly from AWS financial metering.
+Read-only AWS CLI queries paired with the delayed Cost Explorer check confirm from AWS billing endpoints that no orphaned billable resources remain.
