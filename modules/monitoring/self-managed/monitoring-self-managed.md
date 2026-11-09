@@ -44,7 +44,7 @@ probing, and visualization — alerting pipelines are outside this module.
 ## Environment
 
 | Component | Host | Listen address | Access scope |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `prometheus` | VM (`multi-lab-local`) | `127.0.0.1:9090` | Loopback only (UI and HTTP API) |
 | `prometheus-blackbox-exporter` | VM (`multi-lab-local`) | `127.0.0.1:9115` | Loopback only (queried by Prometheus) |
 | `prometheus-node-exporter` (VM) | VM (`multi-lab-local`) | `127.0.0.1:9100` | Loopback only (scraped by Prometheus) |
@@ -74,6 +74,11 @@ memory, filesystem, load, and network counters from each host.
 > specifically to `172.16.0.1:9100`, Linux refuses the `bind()` call if the
 > exporter starts before `wg0` owns that IP. The systemd drop-in enforces
 > `After=wg-quick@wg0.service` and `Wants=wg-quick@wg0.service`.
+
+> **Placeholder substitution:** substitute `<listen_address>` with `sed` on
+> the deployed copy `/etc/default/prometheus-node-exporter`, never in the
+> repository file. Use a distinct value per host: `127.0.0.1:9100` on VM
+> (`multi-lab-local`) and `172.16.0.1:9100` on EC2 (`multi-lab-vps`).
 
 **VM (`multi-lab-local`) — bind to loopback only:**
 
@@ -163,7 +168,7 @@ sudo systemctl is-active prometheus-node-exporter
 ss -tlnp | grep 9100
 # → LISTEN ... 172.16.0.1:9100 ...
 
-systemctl cat prometheus-node-exporter | grep -A2 wg-quick@wg0
+sudo systemctl cat prometheus-node-exporter | grep -A2 wg-quick@wg0
 # → After=wg-quick@wg0.service
 # → Wants=wg-quick@wg0.service
 
@@ -187,9 +192,12 @@ preserving the Ubuntu package's compiled-in defaults
 `/etc/prometheus/prometheus.yml` configures a `15s` scrape interval and five
 jobs: `prometheus`, `node`, `blackbox-dns`, `blackbox-http`, and `blackbox-tcp`.
 
-> **Placeholder substitution:** replace `<ec2_scrape_target>` in
-> `/etc/prometheus/prometheus.yml` with `172.16.0.1:9100` before validating
-> with `promtool check config`.
+> **Placeholder substitution:** substitute `<ec2_scrape_target>`
+> (`172.16.0.1:9100`) with `sed` on the deployed copy
+> `/etc/prometheus/prometheus.yml` — never in the repository file — before
+> validating with `promtool check config`. Apply this on the VM
+> (`multi-lab-local`) only; Prometheus runs exclusively there and EC2 has no
+> `prometheus.yml`.
 
 **VM (`multi-lab-local`):**
 
@@ -242,10 +250,12 @@ curl -sf http://127.0.0.1:9090/-/ready
 
 curl -sf http://127.0.0.1:9090/api/v1/targets \
   | python3 -c "import sys,json; [print(t['labels']['job'], t['labels']['host'], t['health']) for t in json.load(sys.stdin)['data']['activeTargets']]"
+
+# → blackbox-* targets remain "down" until blackbox_exporter starts in Step 3
 # → prometheus multi-lab-local up
 # → node multi-lab-local up
 # → node multi-lab-vps up
-# → blackbox-* targets remain "down" until blackbox_exporter starts in Step 3
+
 ```
 
 ---
@@ -351,11 +361,18 @@ file-based provisioning registers the local Prometheus datasource and the custom
 > afterward. Never commit passwords to the repository or pass them as plaintext
 > CLI flags visible in shell history or `ps`.
 
+> **Placeholder substitution:** substitute `<vm_wg_ip>` (`172.16.0.3`) with
+> `sed` on the deployed copy
+> `/etc/systemd/system/grafana-server.service.d/override.conf` — never in
+> the repository file. Apply on the VM (`multi-lab-local`) only.
+
+> **Restrictive umask:** on the hardened VM, files created with `sudo tee` or `sudo cp` default to mode `600` (root-only). APT reads the repository key and source list as the `_apt` user, and Grafana reads its provisioning files as the `grafana` user, so unreadable files cause `NO_PUBKEY` errors or a failed service start. Set `644` explicitly on every file a non-root service must read.
+
 **VM (`multi-lab-local`):**
 
 ```bash
 sudo apt update
-sudo apt install -y apt-transport-https software-properties-common wget gnupg
+sudo apt install -y apt-transport-https wget gnupg
 
 sudo mkdir -p /etc/apt/keyrings
 wget -q -O - https://apt.grafana.com/gpg.key | gpg --dearmor | sudo tee /etc/apt/keyrings/grafana.gpg > /dev/null
@@ -363,10 +380,11 @@ gpg --show-keys --with-fingerprint /etc/apt/keyrings/grafana.gpg
 # → Key fingerprint = B53A E77B ADB6 30A6 8304  6005 963F A277 1045 8545
 
 echo "deb [signed-by=/etc/apt/keyrings/grafana.gpg] https://apt.grafana.com stable main" | sudo tee /etc/apt/sources.list.d/grafana.list > /dev/null
+sudo chmod 644 /etc/apt/keyrings/grafana.gpg /etc/apt/sources.list.d/grafana.list
 sudo apt update
 sudo apt install -y grafana
 grafana-server -v
-# → Version 11.x.x ...
+# → Version 
 
 # Bind Grafana to wg0 (172.16.0.3:3000) and order after wg-quick@wg0.service
 sudo mkdir -p /etc/systemd/system/grafana-server.service.d
@@ -380,6 +398,7 @@ sudo ufw reload
 # Provision Prometheus datasource and Lab Overview dashboard
 sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/grafana/provisioning/datasources/prometheus.yml /etc/grafana/provisioning/datasources/prometheus.yml
 sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/grafana/provisioning/dashboards/lab.yml /etc/grafana/provisioning/dashboards/lab.yml
+sudo chmod 644 /etc/grafana/provisioning/datasources/prometheus.yml /etc/grafana/provisioning/dashboards/lab.yml
 sudo install -d -m 755 -o root -g grafana /var/lib/grafana/dashboards
 sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/grafana/dashboards/lab-overview.json /var/lib/grafana/dashboards/lab-overview.json
 sudo chmod 644 /var/lib/grafana/dashboards/lab-overview.json
@@ -388,7 +407,7 @@ sudo chmod 644 /var/lib/grafana/dashboards/lab-overview.json
 read -rsp "New Grafana admin password: " GRAFANA_PASS && echo
 printf '%s\n' "$GRAFANA_PASS" | sudo grafana-cli --homepath /usr/share/grafana --config /etc/grafana/grafana.ini admin reset-admin-password --password-from-stdin
 unset GRAFANA_PASS
-sudo chown grafana:grafana /var/lib/grafana/grafana.db*
+sudo chown -R grafana:grafana /var/lib/grafana /var/log/grafana
 
 sudo systemctl daemon-reload
 sudo systemctl enable --now grafana-server
@@ -413,15 +432,27 @@ and SFTP without introducing another self-signed browser warning. Overriding
 the package-managed `/etc/grafana/grafana.ini` untouched for clean APT upgrades,
 and provisioning the datasource and `lab-overview.json` from files ensures the
 dashboard comes up identically on every rebuild without importing third-party
-community JSON.
+community JSON. Because `grafana-cli` executes as `root` before Grafana's first
+startup, it creates and initializes `/var/lib/grafana/grafana.db` (and touches
+log paths) under root ownership; running
+`sudo chown -R grafana:grafana /var/lib/grafana /var/log/grafana` before
+starting `grafana-server` ensures the unprivileged `grafana` service user can
+read and write its database, dashboards, and log directory.
 
 ### Verification
 
 **VM (`multi-lab-local`):**
 
 ```bash
+ls -l /etc/apt/keyrings/grafana.gpg /etc/grafana/provisioning/datasources/prometheus.yml
+# → -rw-r--r-- ...
+
 sudo systemctl is-active grafana-server
 # → active
+
+# Diagnostic — run only if grafana-server is not active
+sudo journalctl -u grafana-server -n 20 --no-pager
+# → ... HTTP Server Listen address=172.16.0.3:3000 ...
 
 ss -tlnp | grep 3000
 # → LISTEN ... 172.16.0.3:3000 ...
@@ -550,39 +581,28 @@ sudo aide --check --config /etc/aide/aide.conf
 
 ### What was done
 
-Verify that all eight scrape targets across all five Prometheus jobs report `up == 1`,
-every synthetic probe returns `probe_success == 1`, the provisioned
-`Lab Overview` dashboard displays metrics for both `multi-lab-local` and
-`multi-lab-vps` from the Mac browser, and execute a brief controlled failure by
-stopping `named` (BIND9) on EC2 to verify end-to-end detection and recovery.
+Verify via `promtool query instant` that Prometheus is ready, all eight scrape
+targets across the five jobs in `prometheus.yml` report `up == 1`, and all
+five synthetic probes return `probe_success == 1`. Then execute a brief
+controlled failure by stopping `named` (BIND9) on EC2 to verify end-to-end
+probe failure detection and recovery.
 
 > **Temporary service disruption:** stopping `named` on EC2 suspends
-> `lab.internal` DNS resolution across WireGuard peers for ~20 seconds while
+> `lab.internal` DNS resolution across WireGuard peers for ~30 seconds while
 > the failure transition is recorded. Restart `named` immediately after
 > observing `probe_success == 0`.
 
-**VM (`multi-lab-local`) — check Prometheus targets and synthetic probes:**
+**VM (`multi-lab-local`) — inspect target and probe series:**
 
 ```bash
-curl -sf http://127.0.0.1:9090/api/v1/targets \
-  | python3 -c "import sys,json; [print(t['labels']['job'], t['labels']['host'], t['labels']['instance'], t['health']) for t in json.load(sys.stdin)['data']['activeTargets']]"
+# List scrape status (1 = up) for all 8 targets across all 5 jobs
+promtool query instant http://127.0.0.1:9090 'up'
+# → up{host="multi-lab-local", instance="127.0.0.1:9090", job="prometheus"} => 1 @[...] (8 series total, all => 1)
 
-curl -sf --get http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=up' \
-  | python3 -c "import sys,json; [print(r['metric']['job'], r['metric']['host'], r['value'][1]) for r in json.load(sys.stdin)['data']['result']]"
-
-curl -sf --get http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=probe_success' \
-  | python3 -c "import sys,json; [print(r['metric']['job'], r['metric']['host'], r['metric']['instance'], r['value'][1]) for r in json.load(sys.stdin)['data']['result']]"
+# List synthetic probe status (1 = pass) for all 5 probes across the 3 blackbox jobs
+promtool query instant http://127.0.0.1:9090 'probe_success'
+# → probe_success{host="multi-lab-vps", instance="172.16.0.1:53", job="blackbox-dns"} => 1 @[...] (5 series total, all => 1)
 ```
-
-**Mac workstation — inspect Grafana dashboard:**
-
-Open `http://172.16.0.3:3000` in a browser (with WireGuard active), sign in as
-`admin`, open **Dashboards → Lab → Lab Overview**, and verify both
-`multi-lab-local` and `multi-lab-vps` populate the `$host` selector and all
-ten panels (`Targets Up`, `Blackbox Probes`, `Host Uptime`,
-`SSL Certificate Expiry`, `CPU Usage (%)`, `Memory Usage (%)`,
-`Root Filesystem Usage (%)`, `Load Average (1m)`, `Network Traffic (RX / TX)`,
-and `Probe Duration`).
 
 **EC2 (`multi-lab-vps`) + VM (`multi-lab-local`) — fault injection test:**
 
@@ -591,17 +611,16 @@ and `Probe Duration`).
 sudo systemctl stop named
 ```
 
-Wait ~20 seconds (one `15s` scrape cycle), then verify on the VM:
+Wait 30 seconds (two `15s` scrape cycles), then verify on the VM:
 
 ```bash
-# 2. VM · multi-lab-local — confirm probe failure is recorded
-curl -sf --get http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=probe_success{job="blackbox-dns"}' \
-  | python3 -c "import sys,json; [print(r['metric']['job'], r['metric']['instance'], r['value'][1]) for r in json.load(sys.stdin)['data']['result']]"
-# → blackbox-dns 172.16.0.1:53 0
+# 2. VM · multi-lab-local — confirm blackbox-dns probe records the DNS outage (0)
+promtool query instant http://127.0.0.1:9090 'probe_success{job="blackbox-dns"}'
+# → probe_success{host="multi-lab-vps", instance="172.16.0.1:53", job="blackbox-dns"} => 0 @[...]
 ```
 
-Restart `named` immediately on EC2 and confirm recovery on the VM after one
-`15s` scrape cycle:
+Restart `named` immediately on EC2 and confirm recovery on the VM after 30
+seconds (two `15s` scrape cycles):
 
 ```bash
 # 3. EC2 · multi-lab-vps — restore BIND9
@@ -611,10 +630,9 @@ sudo systemctl is-active named
 ```
 
 ```bash
-# 4. VM · multi-lab-local — confirm probe recovers to 1
-curl -sf --get http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=probe_success{job="blackbox-dns"}' \
-  | python3 -c "import sys,json; [print(r['metric']['job'], r['metric']['instance'], r['value'][1]) for r in json.load(sys.stdin)['data']['result']]"
-# → blackbox-dns 172.16.0.1:53 1
+# 4. VM · multi-lab-local — confirm blackbox-dns probe recovers to 1
+promtool query instant http://127.0.0.1:9090 'probe_success{job="blackbox-dns"}'
+# → probe_success{host="multi-lab-vps", instance="172.16.0.1:53", job="blackbox-dns"} => 1 @[...]
 ```
 
 ### Why
@@ -622,27 +640,102 @@ curl -sf --get http://127.0.0.1:9090/api/v1/query --data-urlencode 'query=probe_
 Checking `up == 1` alone confirms metrics endpoints answer HTTP GET requests.
 Injecting an actual DNS outage validates the complete end-to-end loop —
 service stops on EC2 → `blackbox_exporter` SOA check fails over `wg0` →
-Prometheus flips `probe_success{job="blackbox-dns"}` from `1` to `0` → Grafana
-reflects `FAIL` in the `Blackbox Probes` panel → restarting `named` restores `1`.
+Prometheus flips `probe_success{job="blackbox-dns"}` from `1` to `0` →
+restarting `named` restores `1`.
 
 ### Verification
 
+**VM · multi-lab-local:**
+
 ```bash
-# VM · multi-lab-local — expected healthy steady-state outputs:
-# up metrics (8 target series across 5 jobs):
-# → prometheus multi-lab-local 1
-# → node multi-lab-local 1
-# → node multi-lab-vps 1
-# → blackbox-dns multi-lab-vps 1
-# → blackbox-http multi-lab-local 1
-# → blackbox-http multi-lab-vps 1
-# → blackbox-tcp multi-lab-local 1
-# → blackbox-tcp multi-lab-vps 1
-#
-# probe_success metrics (5 series across 3 blackbox jobs):
-# → blackbox-dns multi-lab-vps 172.16.0.1:53 1
-# → blackbox-http multi-lab-local https://127.0.0.1 1
-# → blackbox-http multi-lab-vps https://buildyourinfra.click 1
-# → blackbox-tcp multi-lab-local 127.0.0.1:22222 1
-# → blackbox-tcp multi-lab-vps 172.16.0.1:22222 1
+# Confirm Prometheus HTTP API readiness
+curl -sf http://127.0.0.1:9090/-/ready
+# → Prometheus Server is Ready.
+
+# Confirm total configured scrape targets
+promtool query instant http://127.0.0.1:9090 'count(up)'
+# → {} => 8 @[...]
+
+# Confirm zero down targets
+promtool query instant http://127.0.0.1:9090 'count(up == 0) or vector(0)'
+# → {} => 0 @[...]
+
+# Confirm total configured synthetic probes
+promtool query instant http://127.0.0.1:9090 'count(probe_success)'
+# → {} => 5 @[...]
+
+# Confirm zero failed synthetic probes
+promtool query instant http://127.0.0.1:9090 'count(probe_success == 0) or vector(0)'
+# → {} => 0 @[...]
+
+# Run only if any check above does not return the expected value (no output when healthy; lists failing series otherwise)
+promtool query instant http://127.0.0.1:9090 'up == 0 or probe_success == 0'
+# → (no output)
 ```
+
+The expected totals `8` and `5` derive from the 5 jobs defined in
+`prometheus.yml` (`prometheus`: 1, `node`: 2, `blackbox-dns`: 1,
+`blackbox-http`: 2, `blackbox-tcp`: 2).
+
+---
+
+## Step 7 — Access Grafana from the Mac
+
+### What was done
+
+With the WireGuard tunnel active on the Mac control node (`172.16.0.2`), verify
+connectivity to the VM (`172.16.0.3`) across the EC2 WireGuard hub, sign in
+to Grafana, and review the `Lab Overview` dashboard.
+
+**Mac · control node (with WireGuard tunnel active):**
+
+```bash
+# Confirm Layer 3 reachability to the VM over WireGuard via the EC2 hub
+ping -c 2 172.16.0.3
+# → 2 packets transmitted, 2 packets received, 0.0% packet loss
+
+# Confirm Grafana health endpoint reports database ok
+curl -s http://172.16.0.3:3000/api/health
+# → { "database": "ok", ... }
+
+# Confirm Grafana login page responds over HTTP
+curl -sI http://172.16.0.3:3000/login | head -n 1
+# → HTTP/1.1 200 OK
+```
+
+> **Troubleshooting connectivity:** if `ping` fails, check `wg show` on both
+> the Mac and the EC2 hub (`multi-lab-vps`), verify `net.ipv4.ip_forward = 1`
+> on EC2, and confirm `ufw route allow in on wg0 out on wg0` is enabled on EC2.
+> If `ping` succeeds but `curl` hangs, check the UFW rule allowing `3000/tcp` on
+> `wg0` on the VM (`multi-lab-local`).
+
+**Browser verification (Mac with WireGuard active):**
+
+1. Open `http://172.16.0.3:3000` and sign in as `admin` using the password set in Step 4.
+2. Go to **Connections → Data sources → Prometheus** and click **Test** — confirm Grafana reports that it successfully queried the Prometheus API.
+3. Go to **Dashboards → Lab → Lab Overview**, set the time range to **Last 1 hour**, and set the `host` variable to **All**.
+4. Check every panel:
+   - `Targets Up`: `8` targets showing `UP`.
+   - `Blackbox Probes`: `5` probes showing `OK`.
+   - `Host Uptime`: one value per host (`multi-lab-local`, `multi-lab-vps`).
+   - `SSL Certificate Expiry`: remaining days for both HTTPS targets (`https://127.0.0.1` and `https://buildyourinfra.click`).
+   - `CPU Usage (%)`, `Memory Usage (%)`, `Root Filesystem Usage (%)`, `Load Average (1m)`, and `Network Traffic (RX / TX)`: one series per host (`multi-lab-local`, `multi-lab-vps`).
+   - `Probe Duration`: one series per probe.
+5. Change `host` to a single value and confirm all panels filter accordingly.
+
+### Why
+
+Grafana listens only on `172.16.0.3` and UFW permits `3000/tcp` on `wg0` only,
+so access from outside the VMs depends on peer-to-peer routing through the EC2
+hub (confirmed by `ping` and `curl`). Grafana runs over HTTP without its own
+TLS certificate because WireGuard encrypts the traffic end-to-end, matching SSH,
+DNS, and SFTP in this lab.
+
+### Verification
+
+CLI target and probe checks are covered in
+[Step 6](#step-6--end-to-end-verification-and-fault-injection). This step is
+complete when the WireGuard connectivity checks above pass and all five checks
+in the [browser verification list](#step-7--access-grafana-from-the-mac)
+succeed (`Prometheus` datasource test passes, `Lab Overview` shows `8` targets
+`UP` and `5` probes `OK` across all 10 panels, and `$host` filtering works).

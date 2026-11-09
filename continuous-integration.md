@@ -43,7 +43,7 @@ Aws-native jobs run `terraform fmt -check` and `terraform validate` only. Both c
 | `actions/setup-python@v5` | `ansible-self-managed` | sets up Python 3.12 for Ansible linting and syntax checks |
 | `hashicorp/setup-terraform@v4` | every `-aws-native` job, `full-infra` | installs Terraform 1.15.6 CLI on the runner |
 
-No custom build action is required — self-managed jobs install their validator package (`openssh-server`, `bind9-utils`, `samba-common-bin`, `nginx`, `fail2ban`, `auditd`, `aide`) directly via `apt-get` and invoke the tool's native syntax-check flag.
+No custom build action is required — self-managed jobs install their validator package (`openssh-server`, `bind9-utils`, `samba-common-bin`, `nginx`, `fail2ban`, `auditd`, `aide`, `prometheus`, `prometheus-blackbox-exporter`, `jq`) directly via `apt-get` and invoke the tool's native syntax-check flag.
 
 ## Workflow structure
 

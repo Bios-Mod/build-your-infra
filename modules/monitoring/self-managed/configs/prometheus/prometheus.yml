@@ -1,5 +1,5 @@
 # Deploy to:   /etc/prometheus/prometheus.yml
-# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/prometheus/prometheus.yml /etc/prometheus/prometheus.yml && promtool check config /etc/prometheus/prometheus.yml && sudo systemctl restart prometheus
+# Apply:       sudo cp ~/build-your-infra/modules/monitoring/self-managed/configs/prometheus/prometheus.yml /etc/prometheus/prometheus.yml && sudo sed -i 's/<ec2_scrape_target>/172.16.0.1:9100/' /etc/prometheus/prometheus.yml && promtool check config /etc/prometheus/prometheus.yml && sudo systemctl restart prometheus
 # Module:      monitoring
 # Requires:    modules/hardening/ (wg0 active); modules/dns/ and modules/web-server/ for probe targets
 #
@@ -7,7 +7,7 @@
 # Parameters modified from baseline:  replaces example scrape_configs with lab targets and host labels
 #
 # Platform:    Ubuntu 24.04 LTS · Local VM (multi-lab-local)
-# Note:        Replace <ec2_scrape_target> with 172.16.0.1:9100 before applying.
+# Note:        VM (multi-lab-local) only — EC2 has no prometheus.yml. Substitute <ec2_scrape_target> with sed on the deployed copy /etc/prometheus/prometheus.yml, never in the repository file.
 # Verify:      promtool check config /etc/prometheus/prometheus.yml
 
 global:
@@ -87,4 +87,3 @@ scrape_configs:
         target_label: instance
       - target_label: __address__
         replacement: 127.0.0.1:9115
-
