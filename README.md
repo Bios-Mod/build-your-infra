@@ -1,4 +1,4 @@
-![build-your-infra banner](./banner.png)
+![build-your-infra banner](./banner.jpeg)
 
 # build-your-infra — Multi-Environment Infrastructure Lab
 
